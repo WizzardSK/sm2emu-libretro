@@ -703,7 +703,9 @@ bool retro_load_game(const retro_game_info* game)
         const auto save_path = directory(RETRO_ENVIRONMENT_GET_SAVE_DIRECTORY);
         rom::GameDatabase database;
         if (!database.load(db_path.string()))
-            throw std::runtime_error("Cannot load system/sm2-emu/games.xml");
+            throw std::runtime_error(
+                "Missing or invalid sm2-emu/games.xml. Download 'SM2-Emu' from "
+                "Online Updater > Core System Files Downloader.");
         auto loaded = rom::RomLoader::load(
             database, game->path, {}, libretro::rom_crc_verification_enabled());
         if (!loaded) throw std::runtime_error("ROM loading failed; see missing-file/CRC details in log");
