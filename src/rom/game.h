@@ -101,6 +101,8 @@ enum class AnalogControl : u8 {
     Elevation,  ///< Desert Tank centred turret-elevation axis.
     Bat1,       ///< Dynamite Baseball bat swing.
     Bat2,
+    Handlebar2Right, ///< Power Sled second rider, independently wired pedals.
+    Handlebar2Left,
 };
 
 /// One analogue mux channel, mirroring the fields of MAME's PORT_BIT for an
@@ -147,6 +149,7 @@ enum class DriveProtocol : u8 {
     Daytona,
     Stcc,
     Rally,
+    Indy,
 };
 
 /// A protection chip a title's main board needs. One value per chip/mode
@@ -302,6 +305,10 @@ struct GameSpec {
 
     /// Initial gate position: 0 is neutral and 1..4 are the four gears.
     u32 start_gear = 1;
+
+    /// Wait cycles per texture RAM access. Virtual On's stage briefing lasts as
+    /// long as its texture upload, which is slower on the cabinet. 0 = none.
+    u32 texture_wait = 0;
 
     /// True when shifting is two momentary buttons (shift up / shift down) on
     /// IN1 bits 0x10 and 0x20 rather than the 0x70 sequential gate. Indy 500 and

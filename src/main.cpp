@@ -260,8 +260,9 @@ void print_usage()
         "      --graphics-backend <software|vulkan|opengl>\n"
         "                      Which renderer to use. 'opengl' means whichever GL\n"
         "                      flavour this binary was built with\n"
-        "      --render-scale <n>  Internal 3D render scale, 1..4 (default 1 =\n"
-        "                      native). GPU backends only; native under software\n"
+        "      --render-scale <n>  Internal 3D render scale, 1..8 (default 1 =\n"
+        "                      native, 8 = ~4K). GPU backends only; native under\n"
+        "                      software; auto-reduced to the GPU dimension limit\n"
         "      --gpu <name>    Use the device with this exact name\n"
         "      --no-vsync      Present without waiting for vertical blank\n"
         "      --no-throttle   Run as fast as this computer manages instead of at\n"
@@ -763,6 +764,7 @@ int main(int argc, char** argv)
     options.config.wheel_brake_invert  = from_file.wheel_brake_invert;
 
     options.config.lightgun_crosshair       = from_file.lightgun_crosshair;
+    options.config.lightgun_hide_flash      = from_file.lightgun_hide_flash;
     options.config.lightgun_recoil          = from_file.lightgun_recoil;
     options.config.lightgun_recoil_strength = from_file.lightgun_recoil_strength;
     options.config.sinden_border            = from_file.sinden_border;
@@ -1004,6 +1006,10 @@ int main(int argc, char** argv)
                 machine_iface->inputs().in1 = static_cast<u8>(0xff & ~press.in1);
             }
             machine_iface->run_frame();
+            if (loaded->game.lightgun.present) {
+                machine_iface->video().filter_gun_flash(options.config.lightgun_hide_flash,
+                                                       machine_iface->inputs().in1);
+            }
 
             // A numbered software frame every so often, so one headless run can be
             // searched for the instant that lines up with a MAME capture instead of
@@ -1744,6 +1750,10 @@ int main(int argc, char** argv)
                 {
                     auto scope = core::maybe_scope(stage_run_frame, profile_sample);
                     machine_iface->run_frame();
+                }
+                if (loaded->game.lightgun.present) {
+                    machine_iface->video().filter_gun_flash(options.config.lightgun_hide_flash,
+                                                           machine_iface->inputs().in1);
                 }
                 if (profile_sample) {
                     // Read straight back out rather than timed separately: the

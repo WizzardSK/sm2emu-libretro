@@ -75,7 +75,8 @@ public:
     [[nodiscard]] u32 sample_rate() const { return m_clock / kClockDivider; }
 
     /// Per-slot output gain in 1/256 units (256 == unity), applied before both
-    /// the direct-out and effect-send mixes. Unity bypasses the gain path.
+    /// the direct-out and effect-send mixes so it scales the whole voice. All
+    /// unity leaves the mixer bit-exact. The hook for the per-set gain.
     void set_slot_gains(const u16 gains[32]);
 
     /// A byte arrived from the host's UART.
@@ -97,7 +98,7 @@ public:
     [[nodiscard]] const Stats& stats() const { return m_stats; }
 
     /// How many of the 32 slots are currently sounding.
-    [[nodiscard]] u32 active_slots() const;
+    [[nodiscard]] u32 active_slots() const { return m_active_slots; }
 
     /// Save/restore the whole chip: control registers, all 32 slots, ring
     /// buffer, IRQ/timer/MIDI/DMA state, the effects DSP and the fixed-seed RNG.
@@ -106,6 +107,9 @@ public:
     /// which are re-derived from the slot registers on load. The ScspMemory
     /// back-pointer and the three callbacks are excluded (re-bound by wiring).
     void serialize(Archive& ar);
+
+    /// Frontend choice; filter history is serialized separately.
+    void set_output_low_pass_enabled(bool enabled);
 
 private:
     enum SCSP_STATE { SCSP_ATTACK, SCSP_DECAY1, SCSP_DECAY2, SCSP_RELEASE };
@@ -225,6 +229,7 @@ private:
     } m_udata;
 
     SCSP_SLOT m_Slots[32];
+    u32 m_active_slots = 0;  ///< Slots with active set, kept in step with them.
     s16 m_RINGBUF[128];
     u8 m_BUFPTR;
 
@@ -269,13 +274,31 @@ private:
     int m_PSCALES[8][256];
     int m_ASCALES[8][256];
 
+    struct OutputLpf
+    {
+        float b0 = 1, b1 = 0, b2 = 0, a1 = 0, a2 = 0;
+        float z1 = 0, z2 = 0;
+
+        float process(float x)
+        {
+            const float y = b0 * x + z1;
+            z1 = b1 * x - a1 * y + z2;
+            z2 = b2 * x - a2 * y;
+            return y;
+        }
+    };
+    OutputLpf m_out_lpf[2];
+    bool m_output_lpf_enabled = false;
+
     /// MVOL, as a multiplier. MAME sets it as a stream output gain; here it is
     /// applied where the mixer writes its result.
     float m_master_gain = 1.0f;
 
-    /// Per-slot output gain used by the optional upstream audio balancer.
-    u16  m_slot_gain[32]    = {};
-    bool m_slot_gain_active = false;
+    /// Per-slot output gain, 1/256 units (256 == unity); see set_slot_gains.
+    /// m_slot_gain_active is false when every entry is unity, bypassing the
+    /// gain path so the faithful case stays bit-exact.
+    u16  m_slot_gain[32]     = {};
+    bool m_slot_gain_active  = false;
 
     /// Samples produced since reset. The timers and the MIDI transmitter are
     /// scheduled against this.

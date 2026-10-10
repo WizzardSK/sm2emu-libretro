@@ -158,6 +158,7 @@ private:
     struct Frame {
         HostBuffer vertices;
         HostBuffer polygons;
+        HostBuffer geometry;
         HostBuffer sheets;
         HostBuffer luma;
 

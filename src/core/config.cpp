@@ -31,7 +31,7 @@ constexpr const char* kFileName = "sm2-emu.ini";
 
 /// Mirrors render::kMaxRenderScale; kept local to avoid pulling in the render
 /// backend header just for a clamp bound.
-constexpr u32 kMaxRenderScale = 4;
+constexpr u32 kMaxRenderScale = 8;
 
 [[nodiscard]] std::string trim(std::string_view text)
 {
@@ -281,6 +281,10 @@ bool load_config(const std::string& path, Config* out, std::vector<std::string>*
             if (!parse_bool(value, &out->lightgun_crosshair)) {
                 bad_value();
             }
+        } else if (key == "lightgun_hide_flash") {
+            if (!parse_bool(value, &out->lightgun_hide_flash)) {
+                bad_value();
+            }
         } else if (key == "lightgun_recoil") {
             if (!parse_bool(value, &out->lightgun_recoil)) {
                 bad_value();
@@ -325,7 +329,7 @@ bool load_config(const std::string& path, Config* out, std::vector<std::string>*
             if (!parse_u32(value, &scale)) {
                 bad_value();
             } else if (scale < 1 || scale > kMaxRenderScale) {
-                // A value outside 1..4 is reported but clamped rather than
+                // An out-of-range value is reported but clamped rather than
                 // rejected, so a file from a future version still starts.
                 problems->push_back(path + ":" + std::to_string(number) + ": '" + key
                                     + "' out of range 1.." + std::to_string(kMaxRenderScale)
@@ -516,6 +520,7 @@ bool save_config(const std::string& path, const Config& config)
         << "show_fps = " << bool_text(config.show_fps) << "\n"
         << "lightgun = " << bool_text(config.lightgun) << "\n"
         << "lightgun_crosshair = " << bool_text(config.lightgun_crosshair) << "\n"
+        << "lightgun_hide_flash = " << bool_text(config.lightgun_hide_flash) << "\n"
         << "lightgun_recoil = " << bool_text(config.lightgun_recoil) << "\n"
         << "lightgun_recoil_strength = " << config.lightgun_recoil_strength << "\n"
         << "sinden_border = " << bool_text(config.sinden_border) << "\n"
@@ -526,7 +531,7 @@ bool save_config(const std::string& path, const Config& config)
         << "window_width = " << config.window_width << "\n"
         << "window_height = " << config.window_height << "\n"
         << "\n"
-        << "# Internal 3D render scale (1..4). 1 is native 496x384; higher\n"
+        << "# Internal 3D render scale (1..8). 1 is native 496x384; higher\n"
         << "# renders the 3D pass at N times that for crisper geometry. GPU\n"
         << "# backends only (the software renderer stays native), and it takes\n"
         << "# effect on the next launch.\n"

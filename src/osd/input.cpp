@@ -1214,6 +1214,7 @@ void Input::poll(hw::Inputs* inputs) const
 
 void Input::poll(hw::Inputs* inputs, const rom::GameSpec& game) const
 {
+    inputs->in3 = 0xff;
     const rom::InputFlags game_inputs = game.inputs;
     (void)game_inputs;
 
@@ -1372,6 +1373,46 @@ void Input::poll(hw::Inputs* inputs, const rom::GameSpec& game) const
                 inputs->analog[channel] = left ? 0xff : 0x00;
             }
         }
+    }
+
+    // Power Sled. Entry and Call are IN1 buttons 1 and 2, which the generic
+    // player-one mapping already covers. Its two cabinet-only buttons are not:
+    // Cancel Error on IN0 0x80 and Cancel Network Check on IN3 0x02, the latter
+    // letting a lone unit give up waiting for the rest of the linked set.
+    if (game.name == "powsled" || game.parent == "powsled") {
+        constexpr u8 kCancelError   = 0x80;  // IN0
+        constexpr u8 kCancelNetwork = 0x02;  // IN3
+
+        constexpr u8 kP2Entry       = 0x04;  // IN1, button 3
+        constexpr u8 kP2Call        = 0x08;  // IN1, button 4
+
+        bool cancel_error = false, cancel_network = false;
+        bool p2_entry = false, p2_call = false;
+        if (keys != nullptr) {
+            const auto down = [&](SDL_Scancode sc) {
+                return static_cast<int>(sc) < key_count && keys[sc];
+            };
+            cancel_error   = down(SDL_SCANCODE_B);
+            cancel_network = down(SDL_SCANCODE_N);
+            p2_entry       = down(SDL_SCANCODE_C);
+            p2_call        = down(SDL_SCANCODE_V);
+        }
+        for (const Pad& pad : m_pads) {
+            if (pad.handle == nullptr || pad.player != 0) {
+                continue;
+            }
+            cancel_error   |= SDL_GetGamepadButton(pad.handle, SDL_GAMEPAD_BUTTON_LEFT_SHOULDER);
+            cancel_network |= SDL_GetGamepadButton(pad.handle, SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER);
+            p2_entry       |= SDL_GetGamepadButton(pad.handle, SDL_GAMEPAD_BUTTON_WEST);
+            p2_call        |= SDL_GetGamepadButton(pad.handle, SDL_GAMEPAD_BUTTON_NORTH);
+        }
+        if (cancel_error)   inputs->in0 &= static_cast<u8>(~kCancelError);
+        if (cancel_network) inputs->in3 &= static_cast<u8>(~kCancelNetwork);
+
+        // The shoulders are the cancels here, not the generic buttons 3 and 4,
+        // so P2 Entry/Call follow only X/Y and C/V.
+        if (!p2_entry) inputs->in1 |= kP2Entry;
+        if (!p2_call)  inputs->in1 |= kP2Call;
     }
 
     // Virtual On twin-stick layout. port map puts the whole cabinet on player one,

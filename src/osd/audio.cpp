@@ -29,6 +29,10 @@ namespace {
 
 constexpr u32 kChannels = 2;
 
+/// Corner of the output DC blocker. Low enough to leave the bass alone, high
+/// enough to settle within a few tenths of a second.
+constexpr float kDcCornerHz = 5.0f;
+
 }  // namespace
 
 Audio::~Audio()
@@ -68,6 +72,7 @@ bool Audio::init(u32 sample_rate)
     }
 
     m_sample_rate = sample_rate;
+    m_dc_pole = 1.0f - 2.0f * 3.14159265f * kDcCornerHz / static_cast<float>(sample_rate);
     SDL_ResumeAudioStreamDevice(m_stream);
 
     // Prime the queue with silence so it starts near the target depth instead of
@@ -132,9 +137,26 @@ void Audio::submit(std::span<const s16> samples)
         }
     }
 
-    if (!SDL_PutAudioStreamData(m_stream, samples.data(),
-                                static_cast<int>(samples.size_bytes()))) {
+    block_dc(samples);
+    if (!SDL_PutAudioStreamData(m_stream, m_filtered.data(),
+                                static_cast<int>(m_filtered.size() * sizeof(s16)))) {
         SM2_WARN("audio: SDL_PutAudioStreamData failed: %s", SDL_GetError());
+    }
+}
+
+void Audio::block_dc(std::span<const s16> samples)
+{
+    // Sound chips such as the SCSP can leave a DC offset in their digital
+    // output (its effects DSP truncates towards negative); the cabinet never
+    // passes it to the speakers. One-pole high-pass, per channel.
+    m_filtered.resize(samples.size());
+    for (usize i = 0; i < samples.size(); ++i) {
+        const usize ch  = i % kChannels;
+        const float in  = static_cast<float>(samples[i]);
+        const float out = in - m_dc_in[ch] + m_dc_pole * m_dc_out[ch];
+        m_dc_in[ch]  = in;
+        m_dc_out[ch] = out;
+        m_filtered[i] = static_cast<s16>(std::clamp(out, -32768.0f, 32767.0f));
     }
 }
 

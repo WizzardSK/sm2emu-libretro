@@ -63,7 +63,7 @@ void Dsb2::reset()
     m_mp_vol   = 0x7f;
     m_mp_start = m_mp_end = m_mp_pan = 0;
     m_mp_pos   = 0;
-    m_playing  = false;
+    m_mp_state = 0;
     m_command  = Command::Idle;
     m_cycle_debt    = 0;
     m_timer_debt    = 0;
@@ -108,7 +108,13 @@ void Dsb2::serialize(Archive& ar)
     ar.raw(m_mp_pos);
     ar.raw(m_audio_pos);
     ar.raw(m_audio_avail);
-    ar.raw(m_playing);
+    if (ar.format_version() >= 6) {
+        ar.raw(m_mp_state);
+    } else {
+        bool playing = m_mp_state != 0;
+        ar.raw(playing);
+        if (ar.loading()) m_mp_state = playing ? 1 : 0;
+    }
     ar.raw(m_command);
     ar.raw(m_cycle_debt);
     ar.raw(m_timer_debt);
@@ -268,9 +274,14 @@ void Dsb2::fifo_w(u8 data)
             m_command = Command::StartLo;
             break;
         case Command::StartLo:
+            // Written while playing, it is where the stream loops to at its end.
             m_start = (m_start & 0xffff00) | data;
-            m_mp_start = m_start;
-            m_command  = Command::Idle;
+            if (m_mp_state == 0) {
+                m_mp_start = m_start;
+            } else {
+                m_mp_state = 2;
+            }
+            m_command = Command::Idle;
             break;
         case Command::EndHi:
             m_end = (m_end & 0x00ffff) | (static_cast<u32>(data) << 16);
@@ -282,7 +293,9 @@ void Dsb2::fifo_w(u8 data)
             break;
         case Command::EndLo:
             m_end = (m_end & 0xffff00) | data;
-            m_mp_end  = m_end;
+            if (m_mp_state == 0) {
+                m_mp_end = m_end;
+            }
             m_command = Command::Idle;
             break;
         case Command::Idle:
@@ -292,30 +305,9 @@ void Dsb2::fifo_w(u8 data)
             } else if ((data & 0xfe) == kCmdEnd) {
                 m_command = Command::EndHi;
             } else if ((data & 0xfe) == kCmdPlay) {
-                const u32 rom_bytes = static_cast<u32>(m_mpeg_rom.size());
-                u32 start = m_mp_start & 0xffffff;
-                u32 end   = m_mp_end & 0xffffff;
-                if (rom_bytes > 0x1000000 && m_rom_bank != 0) {
-                    start |= 0x1000000;
-                    end |= 0x1000000;
-                }
-                // Guard against an out-of-range window: the decoder's bit reader
-                // would otherwise run off the end of the ROM buffer.
-                if (start >= rom_bytes || end > rom_bytes || end <= start) {
-                    SM2_WARN("dsb2: refusing play window start=%07x end=%07x "
-                             "(romsz=%07x)",
-                             start, end, rom_bytes);
-                    m_playing     = false;
-                    m_audio_pos   = 0;
-                    m_audio_avail = 0;
-                } else {
-                    m_mp_start = start;
-                    m_mp_end   = end;
-                    m_mp_pos   = static_cast<s32>(m_mp_start) * 8;
-                    m_playing  = true;
-                }
+                m_mp_state = open_window(m_mp_start, m_mp_end) ? 1 : 0;
             } else if ((data & 0xfe) == kCmdStop) {
-                m_playing     = false;
+                m_mp_state    = 0;
                 m_audio_pos   = 0;
                 m_audio_avail = 0;
             }
@@ -323,9 +315,33 @@ void Dsb2::fifo_w(u8 data)
     }
 }
 
+bool Dsb2::open_window(u32 start, u32 end)
+{
+    const u32 rom_bytes = static_cast<u32>(m_mpeg_rom.size());
+    start &= 0xffffff;
+    end &= 0xffffff;
+    if (rom_bytes > 0x1000000 && m_rom_bank != 0) {
+        start |= 0x1000000;
+        end |= 0x1000000;
+    }
+    // Guard against an out-of-range window: the decoder's bit reader would
+    // otherwise run off the end of the ROM buffer.
+    if (start >= rom_bytes || end > rom_bytes || end <= start) {
+        SM2_WARN("dsb2: refusing play window start=%07x end=%07x (romsz=%07x)",
+                 start, end, rom_bytes);
+        m_audio_pos   = 0;
+        m_audio_avail = 0;
+        return false;
+    }
+    m_mp_start = start;
+    m_mp_end   = end;
+    m_mp_pos   = static_cast<s32>(start) * 8;
+    return true;
+}
+
 void Dsb2::decode_next()
 {
-    if (!m_playing || !m_decoder) {
+    if (m_mp_state == 0 || !m_decoder) {
         m_audio_avail = 0;
         return;
     }
@@ -333,15 +349,20 @@ void Dsb2::decode_next()
     int sample_rate    = 0;
     int channel_count  = 0;
     int output_samples = 0;
-    const bool ok = m_decoder->decode_buffer(m_mp_pos, static_cast<int>(m_mp_end) * 8,
-                                             m_audio_buf, output_samples,
-                                             sample_rate, channel_count);
+    bool ok = m_decoder->decode_buffer(m_mp_pos, static_cast<int>(m_mp_end) * 8,
+                                       m_audio_buf, output_samples, sample_rate,
+                                       channel_count);
+    if (!ok && m_mp_state == 2 && open_window(m_start, m_end)) {
+        ok = m_decoder->decode_buffer(m_mp_pos, static_cast<int>(m_mp_end) * 8,
+                                      m_audio_buf, output_samples, sample_rate,
+                                      channel_count);
+    }
     if (ok) {
         m_audio_pos   = 0;
         m_audio_avail = output_samples;
         ++m_counters.mpeg_frames;
     } else {
-        m_playing     = false;  // DSB2 does not loop (MAME leaves it stopped)
+        m_mp_state    = 0;
         m_audio_avail = 0;
     }
 }
@@ -377,8 +398,8 @@ void Dsb2::mix(s16* dst, u32 frames, u32 out_rate, unsigned volume_percent)
                 r = static_cast<s32>(rraw) * static_cast<s32>(m_mp_vol);
                 break;
         }
-        l = (l >> 7) * static_cast<s32>(volume_percent) / 100;
-        r = (r >> 7) * static_cast<s32>(volume_percent) / 100;
+        l = ((l >> 7) * m_gain >> 8) * static_cast<s32>(volume_percent) / 100;
+        r = ((r >> 7) * m_gain >> 8) * static_cast<s32>(volume_percent) / 100;
 
         const s32 ol = static_cast<s32>(dst[i * 2]) + l;
         const s32 orr = static_cast<s32>(dst[i * 2 + 1]) + r;

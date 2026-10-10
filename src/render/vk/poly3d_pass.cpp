@@ -145,6 +145,7 @@ void Poly3DPass::shutdown()
     for (Frame& target : m_frames) {
         destroy_host_buffer(&target.vertices);
         destroy_host_buffer(&target.polygons);
+        destroy_host_buffer(&target.geometry);
         destroy_host_buffer(&target.sheets);
         destroy_host_buffer(&target.luma);
         destroy_host_buffer(&target.tone_staging);
@@ -289,6 +290,9 @@ bool Poly3DPass::create_frames()
             || !create_host_buffer(
                 static_cast<VkDeviceSize>(kMaxPolygons) * sizeof(PolyParams),
                 VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, &target.polygons)
+            || !create_host_buffer(
+                static_cast<VkDeviceSize>(kMaxPolygons) * sizeof(PolyGeom),
+                VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, &target.geometry)
             || !create_host_buffer(static_cast<VkDeviceSize>(kSheetWords) * 2 * sizeof(u32),
                                    VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, &target.sheets)
             || !create_host_buffer(kLumaBytes, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
@@ -370,19 +374,21 @@ bool Poly3DPass::create_descriptors()
     // the tone curve and the per-polygon parameters. Binding 0 used to be the
     // packed sheets as a storage buffer; the decode pass now does the unpacking,
     // so the fragment shader instead samples the image it produces.
-    VkDescriptorSetLayoutBinding polygon_bindings[4]{};
-    for (u32 index = 0; index < 4; ++index) {
+    VkDescriptorSetLayoutBinding polygon_bindings[5]{};
+    for (u32 index = 0; index < 5; ++index) {
         polygon_bindings[index].binding         = index;
         polygon_bindings[index].descriptorCount = 1;
         polygon_bindings[index].stageFlags      = VK_SHADER_STAGE_FRAGMENT_BIT;
         polygon_bindings[index].descriptorType  = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     }
+    // Keep upstream geometry binding 5; replacement-texture binding 4 is absent.
+    polygon_bindings[4].binding = 5;
     polygon_bindings[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     polygon_bindings[2].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
 
     VkDescriptorSetLayoutCreateInfo layout{};
     layout.sType        = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    layout.bindingCount = 4;
+    layout.bindingCount = 5;
     layout.pBindings    = polygon_bindings;
     SM2_VK_TRY(vkCreateDescriptorSetLayout(device, &layout, nullptr, &m_polygon_set_layout));
 
@@ -411,8 +417,8 @@ bool Poly3DPass::create_descriptors()
     // set for it.
     VkDescriptorPoolSize sizes[3]{};
     sizes[0].type            = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    // Per frame: luma + polygons (polygon set) + sheets (decode set).
-    sizes[0].descriptorCount = frames * 3;
+    // Per frame: luma + polygons + geometry (polygon set) + sheets (decode set).
+    sizes[0].descriptorCount = frames * 4;
     sizes[1].type            = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     // Per frame: decoded sheets + tone curve (polygon set).
     sizes[1].descriptorCount = frames * 2;
@@ -440,9 +446,10 @@ bool Poly3DPass::create_descriptors()
         allocate.pSetLayouts = &m_decode_set_layout;
         SM2_VK_TRY(vkAllocateDescriptorSets(device, &allocate, &target.decode_set));
 
-        const VkDescriptorBufferInfo buffers[2] = {
+        const VkDescriptorBufferInfo buffers[3] = {
             {target.luma.handle, 0, target.luma.size},
             {target.polygons.handle, 0, target.polygons.size},
+            {target.geometry.handle, 0, target.geometry.size},
         };
         VkDescriptorImageInfo decoded{};
         decoded.sampler     = m_decoded_sampler;
@@ -460,7 +467,7 @@ bool Poly3DPass::create_descriptors()
         decode_target.imageView   = target.decoded_view;
         decode_target.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
 
-        VkWriteDescriptorSet writes[6]{};
+        VkWriteDescriptorSet writes[7]{};
         for (VkWriteDescriptorSet& write : writes) {
             write.sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
             write.descriptorCount = 1;
@@ -495,7 +502,12 @@ bool Poly3DPass::create_descriptors()
         writes[5].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
         writes[5].pImageInfo     = &decode_target;
 
-        vkUpdateDescriptorSets(device, 6, writes, 0, nullptr);
+        writes[6].dstSet         = target.polygon_set;
+        writes[6].dstBinding     = 5;
+        writes[6].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        writes[6].pBufferInfo    = &buffers[2];
+
+        vkUpdateDescriptorSets(device, 7, writes, 0, nullptr);
     }
     return true;
 }
@@ -857,6 +869,8 @@ void Poly3DPass::build(const hw::Model2MachineBase* machine, const hw::Model2Vid
                     static_cast<usize>(m_vertex_count) * sizeof(Vertex));
         std::memcpy(target.polygons.mapped, m_frame_geometry.polygons.data(),
                     m_frame_geometry.polygons.size() * sizeof(PolyParams));
+        std::memcpy(target.geometry.mapped, m_frame_geometry.geometry.data(),
+                    m_frame_geometry.geometry.size() * sizeof(PolyGeom));
     }
 }
 

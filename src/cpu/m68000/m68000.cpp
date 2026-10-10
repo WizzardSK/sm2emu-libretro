@@ -27,6 +27,9 @@
 
 extern "C" {
 #include <m68k.h>
+// Defined in m68kcpu.c but missing from m68k.h.
+void m68k_set_cmpild_instr_callback(void (*callback)(unsigned int, int));
+void m68k_set_rte_instr_callback(void (*callback)(void));
 }
 
 namespace sm2::cpu::m68000 {
@@ -40,6 +43,9 @@ namespace {
 sm2::cpu::Bus* g_bus = nullptr;
 const sm2::cpu::m68000::M68000* g_current = nullptr;
 bool g_musashi_inited = false;
+
+/// Point the live context's cycle tables and callbacks at this process's copies.
+void rebind_host_pointers();
 
 }  // namespace
 
@@ -106,9 +112,25 @@ s32 M68000::run(s32 cycles)
     // that is still being held has to be put back. See set_irq_line.
     apply_irq();
 
-    const s32 used = m68k_execute(cycles);
+    m_running = true;
+    m_stalled = 0;
+    // Separate statement: stall() updates m_stalled during the call.
+    const s32 executed = m68k_execute(cycles);
+    const s32 used     = executed + m_stalled;
+    m_running = false;
     m_total_cycles += static_cast<u64>(used < 0 ? 0 : used);
     return used;
+}
+
+void M68000::stall(s32 cycles)
+{
+    if (!m_running) {
+        return;
+    }
+    // Shrinking the timeslice ends it that much sooner without counting towards
+    // what Musashi reports as used, so run() adds the stalls back itself.
+    m68k_modify_timeslice(-cycles);
+    m_stalled += cycles;
 }
 
 void M68000::set_irq_line(int level, bool asserted)
@@ -204,6 +226,9 @@ void M68000::serialize(Archive& ar)
         // save/swap correctly. Never zero-fill (documented to segfault).
         g_current = nullptr;  // force make_current to actually set the context
         make_current();
+        // The blob holds host pointers from whichever process saved it.
+        rebind_host_pointers();
+        m68k_get_context(m_context.data());
         apply_irq();
     }
 }
@@ -279,6 +304,24 @@ void m68k_write_memory_32(unsigned int address, unsigned int value)
 namespace {
 int g_trace_remaining = 0;
 FILE* g_trace_file = nullptr;
+
+void trace_hook(unsigned int pc);
+
+void rebind_host_pointers()
+{
+    m68k_set_cpu_type(M68K_CPU_TYPE_68000);
+    m68k_set_int_ack_callback(nullptr);
+    m68k_set_bkpt_ack_callback(nullptr);
+    m68k_set_reset_instr_callback(nullptr);
+    m68k_set_cmpild_instr_callback(nullptr);
+    m68k_set_rte_instr_callback(nullptr);
+    m68k_set_tas_instr_callback(nullptr);
+    m68k_set_illg_instr_callback(nullptr);
+    m68k_set_trap_instr_callback(nullptr);
+    m68k_set_pc_changed_callback(nullptr);
+    m68k_set_fc_callback(nullptr);
+    m68k_set_instr_hook_callback(g_trace_remaining > 0 ? trace_hook : nullptr);
+}
 
 void trace_hook(unsigned int pc)
 {

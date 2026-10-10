@@ -75,6 +75,11 @@ public:
     /// interruptible.
     s32 run(s32 cycles);
 
+    /// Charge `cycles` of bus wait state to the instruction being executed.
+    /// Only meaningful from inside run(), i.e. from a Bus callback; ignored
+    /// otherwise.
+    void stall(s32 cycles);
+
     /// Assert or release one of the seven interrupt levels.
     ///
     /// Level-triggered: the state is held here and re-applied before every
@@ -135,6 +140,8 @@ private:
     mutable std::vector<u8> m_context;  ///< Saved Musashi state when not current.
 
     u8  m_irq_mask     = 0;  ///< Bit n set means level n is asserted.
+    bool m_running     = false;
+    s32  m_stalled     = 0;  ///< Wait-state cycles charged during this run().
     u64 m_total_cycles = 0;
 };
 

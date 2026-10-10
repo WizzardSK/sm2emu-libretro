@@ -173,8 +173,14 @@ void MultiPcm::serialize(Archive& ar)
     }
     if (ar.loading() && !ar.failed()) {
         for (Slot& slot : m_slots) {
+            const u32 pitch_step = slot.pitch_lfo.phase_step;
+            const u32 amplitude_step = slot.amplitude_lfo.phase_step;
             lfo_compute_step(slot.pitch_lfo, slot.lfo_frequency, slot.vibrato, false);
             lfo_compute_step(slot.amplitude_lfo, slot.lfo_frequency, slot.tremolo, true);
+            // Restore pointers without replacing the saved steps. A zero LFO
+            // register write keeps the previous step in write_slot().
+            slot.pitch_lfo.phase_step = pitch_step;
+            slot.amplitude_lfo.phase_step = amplitude_step;
         }
     }
 }
@@ -600,9 +606,8 @@ void MultiPcm::generate(s32* accum, u32 frames, s32 gain_percent)
                                       >> kTlShift);
         }
 
-        // MAME: stream.put_int_clamp(0, i, smpl, 32768).
-        left  = std::clamp(left, -32768, 32767);
-        right = std::clamp(right, -32768, 32767);
+        // Unclamped: the voices sum well past 16 bits, and the board scales the
+        // mix down before its one clamp.
 
         accum[frame * 2 + 0] += left * gain_percent / 100;
         accum[frame * 2 + 1] += right * gain_percent / 100;

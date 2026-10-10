@@ -118,6 +118,7 @@ void Geometrizer::reset()
 
     m_geo->mode = 0;
     std::fill(std::begin(m_geo->matrix), std::end(m_geo->matrix), 0.0F);
+    std::fill(std::begin(m_geo->matrix2), std::end(m_geo->matrix2), 0.0F);
     std::fill(std::begin(m_geo->coef_table), std::end(m_geo->coef_table), 0.0F);
     for (TextureParameter& parameter : m_geo->texture_parameters) {
         parameter = TextureParameter{};
@@ -143,8 +144,37 @@ void Geometrizer::serialize(Archive& ar)
     ar.raw(m_geo_read_start_address);
     ar.raw(m_crtc_xoffset);
     ar.raw(m_crtc_yoffset);
-    ar.raw(m_double_sided_lo);
-    ar.raw(m_double_sided_hi);
+    // Two words that held a since-removed Top Skater culling range, kept so
+    // existing save states still load.
+    u32 unused = 0;
+    ar.raw(unused);
+    ar.raw(unused);
+    if (ar.format_version() >= 7) {
+        // Texture coordinates/headers can persist across display lists. They
+        // are not reconstructible from the machine's current buffer RAM.
+        ar.bytes(m_raster->texture_ram.data(), m_raster->texture_ram.size());
+        ar.bytes(m_raster->log_ram.data(), m_raster->log_ram.size());
+        ar.raw(m_raster->viewport);
+        ar.raw(m_raster->center);
+        ar.raw(m_raster->center_sel);
+        ar.raw(m_raster->reverse);
+        ar.raw(m_raster->z_adjust);
+        ar.raw(m_raster->master_z_clip);
+        ar.raw(m_raster->cur_command);
+        ar.raw(m_raster->command_buffer);
+        ar.raw(m_raster->command_index);
+        ar.raw(m_raster->clip_plane);
+        ar.raw(m_geo->mode);
+        ar.raw(m_geo->matrix);
+        ar.raw(m_geo->matrix2);
+        ar.raw(m_geo->focus);
+        ar.raw(m_geo->light);
+        ar.raw(m_geo->lod);
+        ar.raw(m_geo->coef_table);
+        ar.raw(m_geo->texture_parameters);
+        ar.bytes(m_geo->polygon_ram0.data(), m_geo->polygon_ram0.size());
+        ar.bytes(m_geo->polygon_ram1.data(), m_geo->polygon_ram1.size());
+    }
 }
 
 void Geometrizer::set_z_clip(u8 value)
@@ -292,6 +322,13 @@ static inline void transform_point(PolyVertex *point, float *matrix)
 	point->pz = tz;
 }
 
+// In 0x11 objects a vertex whose x has its low bit set belongs to the next
+// joint and follows the second matrix, which closes the seam between parts.
+static inline float *vertex_matrix(float *matrix, float *matrix2, u32 raw_x, bool compact)
+{
+	return (compact && (raw_x & 1)) ? matrix2 : matrix;
+}
+
 static inline void transform_vector(PolyVertex *vector, float *matrix)
 {
 	float tx = (vector->x * matrix[0]) + (vector->y * matrix[3]) + (vector->pz * matrix[6]);
@@ -431,21 +468,10 @@ static s32 clip_polygon(PolyVertex *v, s32 num_vertices, PolyVertex *vout, ClipP
 	return outcount;
 }
 
-// True when the current object lies in the double-sided ROM range.
-inline bool Geometrizer::two_sided_lit() const
-{
-	return m_double_sided_hi > m_double_sided_lo
-		&& m_current_object_addr >= m_double_sided_lo
-		&& m_current_object_addr < m_double_sided_hi;
-}
-
 inline bool Geometrizer::check_culling(RasterState *raster, u32 attr, float min_z, float max_z)
 {
-	// Objects in the double-sided ROM range skip the backface cull.
-	const bool force_double_sided = two_sided_lit();
-
 	/* if doubleside is disabled */
-	if (((attr >> 17) & 1) == 0 && !force_double_sided)
+	if (((attr >> 17) & 1) == 0)
 	{
 		/* if it's the backface, cull it */
 		if (raster->command_buffer[9] & 0x00800000)
@@ -1080,7 +1106,7 @@ void Geometrizer::geo_parse_np_ns(GeoState *geo, u32 *input, u32 count)
 			texparam = &geo->texture_parameters[(attr>>18) & 0x1f];
 
 			/* calculate luminance */
-			if ((dotl * dotp) < 0 && !two_sided_lit()) luminance = 0;
+			if ((dotl * dotp) < 0) luminance = 0;
 			else luminance = fabs(dotl);
 
 			luminance = (luminance * texparam->diffuse) + texparam->ambient;
@@ -1227,7 +1253,7 @@ void Geometrizer::geo_parse_np_s(GeoState *geo, u32 *input, u32 count)
 			texparam = &geo->texture_parameters[(attr>>18) & 0x1f];
 
 			/* calculate luminance and specular */
-			if ((dotl * dotp) < 0 && !two_sided_lit()) luminance = 0;
+			if ((dotl * dotp) < 0) luminance = 0;
 			else luminance = fabs(dotl);
 
 			specular = ((2*dotl) * normal.pz) - geo->light.pz;
@@ -1308,7 +1334,7 @@ void Geometrizer::geo_parse_nn_ns(GeoState *geo, u32 *input, u32 count, bool com
 	point.pz = u2f(*input++);
 
 	/* transform with the current matrix */
-	transform_point(&point, geo->matrix);
+	transform_point(&point, vertex_matrix(geo->matrix, geo->matrix2, input[-3], compact));
 
 	/* save for normal calculation */
 	p0.x = point.x; p0.y = point.y; p0.pz = point.pz;
@@ -1327,7 +1353,7 @@ void Geometrizer::geo_parse_nn_ns(GeoState *geo, u32 *input, u32 count, bool com
 	point.pz = u2f(*input++);
 
 	/* transform with the current matrix */
-	transform_point(&point, geo->matrix);
+	transform_point(&point, vertex_matrix(geo->matrix, geo->matrix2, input[-3], compact));
 
 	/* save for normal calculation */
 	p1.x = point.x; p1.y = point.y; p1.pz = point.pz;
@@ -1366,7 +1392,7 @@ void Geometrizer::geo_parse_nn_ns(GeoState *geo, u32 *input, u32 count, bool com
 			point.pz = u2f(*input++);
 
 			/* transform with the current matrix */
-			transform_point(&point, geo->matrix);
+			transform_point(&point, vertex_matrix(geo->matrix, geo->matrix2, input[-3], compact));
 
 			/* save for normal calculation */
 			p2.x = point.x; p2.y = point.y; p2.pz = point.pz;
@@ -1394,7 +1420,7 @@ void Geometrizer::geo_parse_nn_ns(GeoState *geo, u32 *input, u32 count, bool com
 			texparam = &geo->texture_parameters[(attr>>18) & 0x1f];
 
 			/* calculate luminance */
-			if ((dotl * dotp) < 0 && !two_sided_lit()) luminance = 0;
+			if ((dotl * dotp) < 0) luminance = 0;
 			else luminance = fabs(dotl);
 
 			luminance = (luminance * texparam->diffuse) + texparam->ambient;
@@ -1427,7 +1453,7 @@ void Geometrizer::geo_parse_nn_ns(GeoState *geo, u32 *input, u32 count, bool com
 				point.pz = u2f(*input++);
 
 				/* transform with the current matrix */
-				transform_point(&point, geo->matrix);
+				transform_point(&point, vertex_matrix(geo->matrix, geo->matrix2, input[-3], compact));
 
 				/* save for normal calculation */
 				p3.x = point.x; p3.y = point.y; p3.pz = point.pz;
@@ -1500,7 +1526,7 @@ void Geometrizer::geo_parse_nn_s(GeoState *geo, u32 *input, u32 count, bool comp
 	point.pz = u2f(*input++);
 
 	/* transform with the current matrix */
-	transform_point(&point, geo->matrix);
+	transform_point(&point, vertex_matrix(geo->matrix, geo->matrix2, input[-3], compact));
 
 	/* save for normal calculation */
 	p0.x = point.x; p0.y = point.y; p0.pz = point.pz;
@@ -1519,7 +1545,7 @@ void Geometrizer::geo_parse_nn_s(GeoState *geo, u32 *input, u32 count, bool comp
 	point.pz = u2f(*input++);
 
 	/* transform with the current matrix */
-	transform_point(&point, geo->matrix);
+	transform_point(&point, vertex_matrix(geo->matrix, geo->matrix2, input[-3], compact));
 
 	/* save for normal calculation */
 	p1.x = point.x; p1.y = point.y; p1.pz = point.pz;
@@ -1558,7 +1584,7 @@ void Geometrizer::geo_parse_nn_s(GeoState *geo, u32 *input, u32 count, bool comp
 			point.pz = u2f(*input++);
 
 			/* transform with the current matrix */
-			transform_point(&point, geo->matrix);
+			transform_point(&point, vertex_matrix(geo->matrix, geo->matrix2, input[-3], compact));
 
 			/* save for normal calculation */
 			p2.x = point.x; p2.y = point.y; p2.pz = point.pz;
@@ -1586,7 +1612,7 @@ void Geometrizer::geo_parse_nn_s(GeoState *geo, u32 *input, u32 count, bool comp
 			texparam = &geo->texture_parameters[(attr>>18) & 0x1f];
 
 			/* calculate luminance and specular */
-			if ((dotl * dotp) < 0 && !two_sided_lit()) luminance = 0;
+			if ((dotl * dotp) < 0) luminance = 0;
 			else luminance = fabs(dotl);
 
 			specular = ((2*dotl) * normal.pz) - geo->light.pz;
@@ -1628,7 +1654,7 @@ void Geometrizer::geo_parse_nn_s(GeoState *geo, u32 *input, u32 count, bool comp
 				point.pz = u2f(*input++);
 
 				/* transform with the current matrix */
-				transform_point(&point, geo->matrix);
+				transform_point(&point, vertex_matrix(geo->matrix, geo->matrix2, input[-3], compact));
 
 				/* save for normal calculation */
 				p3.x = point.x; p3.y = point.y; p3.pz = point.pz;
@@ -1729,19 +1755,16 @@ u32 *Geometrizer::geo_object_data(GeoState *geo, u32 opcode, u32 *input)
 	{
 		/* Fast polygon RAM */
 		obp = &geo->polygon_ram1[oba & 0x7fff];
-		m_current_object_addr = 0xffffffffu;  // RAM: never in the ROM range
 	}
 	else if (oba & 0x00800000)
 	{
 		/* Polygon ROM */
 		obp = &geo->polygon_rom[oba & geo->polygon_rom_mask];
-		m_current_object_addr = oba & geo->polygon_rom_mask;
 	}
 	else
 	{
 		/* Slow Polygon RAM */
 		obp = &geo->polygon_ram0[oba & 0x7fff];
-		m_current_object_addr = 0xffffffffu;
 	}
 
 	// if count == 0 then rolls over to max size
@@ -2013,11 +2036,12 @@ u32 *Geometrizer::geo_matrix_write(GeoState *geo, u32 opcode, u32 *input)
 {
 	u32  i;
 
-	(void)opcode;
+	// 0x1b loads the second matrix that skinned vertices use; see vertex_matrix.
+	float *matrix = (((opcode >> 23) & 0x1f) == 0x1b) ? geo->matrix2 : geo->matrix;
 
 	/* read in the transformation matrix */
 	for (i = 0; i < 12; i++)
-		geo->matrix[i] = u2f(*input++);
+		matrix[i] = u2f(*input++);
 
 	return input;
 }

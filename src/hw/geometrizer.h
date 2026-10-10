@@ -242,16 +242,6 @@ public:
         m_crtc_yoffset = y;
     }
 
-    /// Treat polygons in [lo, hi) of the polygon ROM (word offset) as
-    /// double-sided, exempting them from backface culling. Scopes the exemption
-    /// to a single-sided model (Top Skater's character) without affecting the
-    /// rest of the scene. lo==hi disables it.
-    void set_double_sided_rom_range(u32 lo, u32 hi)
-    {
-        m_double_sided_lo = lo;
-        m_double_sided_hi = hi;
-    }
-
     /// 0x10400000. Sky Target reads this; nothing is known about why.
     [[nodiscard]] u32 polygon_count() const;
 
@@ -260,10 +250,9 @@ public:
     /// instruction time (run_frame() interleaves the two).
     [[nodiscard]] u64 last_run_nanoseconds() const { return m_last_run_ns; }
 
-    /// Save/restore only the durable scalars (read-start address, CRTC offsets,
-    /// double-sided ROM range). The per-frame working set (m_raster / m_geo and
-    /// their intrusive poly pools) is excluded and re-derived from the
-    /// display-list buffer next vblank.
+    /// Save durable geometry/raster registers and RAM from format 7.
+    /// Generated polygons and intrusive depth buckets are rebuilt next vblank.
+    /// Older formats have no snapshot of this persistent working state.
     void serialize(Archive& ar);
 
 private:
@@ -306,6 +295,7 @@ private:
         u32*         polygon_rom      = nullptr;
         u32          polygon_rom_mask = 0;
         float        matrix[12]{};
+        float        matrix2[12]{};  ///< command 0x1b, for skinned vertices
         PolyVertex   focus;
         PolyVertex   light;
         float        lod = 0.0F;
@@ -321,9 +311,6 @@ private:
 
     [[nodiscard]] u16 float_to_zval(float floatval, s32 z_adjust);
     [[nodiscard]] bool check_culling(RasterState* raster, u32 attr, float min_z, float max_z);
-
-    /// True when the current object is in the double-sided ROM range.
-    [[nodiscard]] bool two_sided_lit() const;
 
     template <unsigned NumVerts>
     void model2_3d_process_polygon(RasterState* raster, u32 attr);
@@ -382,14 +369,6 @@ private:
 
     s16 m_crtc_xoffset = 0;
     s16 m_crtc_yoffset = 0;
-
-    /// Polygon-ROM word-offset range treated as double-sided. Empty by default.
-    u32 m_double_sided_lo = 0;
-    u32 m_double_sided_hi = 0;
-
-    /// Current record's object address (ROM offset), 0xffffffff for RAM. Set by
-    /// geo_object_data, tested in check_culling.
-    u32 m_current_object_addr = 0;
 
     /// Counters for the frame being built, so build_render_list can report what
     /// the earlier stages discarded.

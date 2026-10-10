@@ -31,6 +31,7 @@
 #include "core/types.h"
 
 #include <span>
+#include <vector>
 
 struct SDL_AudioStream;
 
@@ -78,9 +79,17 @@ public:
     static constexpr u32 kMaxQueuedMilliseconds    = 200;
 
 private:
+    /// Remove DC the way the cabinet's AC-coupled output stage does.
+    void block_dc(std::span<const s16> samples);
+
     SDL_AudioStream* m_stream = nullptr;
     u32              m_sample_rate = 0;
     bool             m_warned_overflow = false;
+
+    float            m_dc_pole = 0.0f;
+    float            m_dc_in[2]  = {};  ///< Previous input, per channel.
+    float            m_dc_out[2] = {};  ///< Previous output, per channel.
+    std::vector<s16> m_filtered;
 };
 
 }  // namespace sm2::osd

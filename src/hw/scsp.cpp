@@ -294,11 +294,25 @@ void Scsp::serialize(Archive& ar)
 	ar.raw(m_midi_transmit_byte);
 	ar.raw(m_random_state);
 
+	for (OutputLpf& f : m_out_lpf)
+	{
+		if (ar.format_version() >= 6) {
+			ar.raw(f.z1);
+			ar.raw(f.z2);
+			if (ar.loading() && (!std::isfinite(f.z1) || !std::isfinite(f.z2)))
+				ar.invalidate();
+		} else if (ar.loading()) {
+			f.z1 = f.z2 = 0.0f;
+		}
+	}
+
 	if (ar.loading() && !ar.failed()) {
 		// Re-bind each slot's LFO table/scale pointers from its (restored)
 		// registers, exactly as a register write to LFO control would.
+		m_active_slots = 0;
 		for (SCSP_SLOT& slot : m_Slots) {
 			Compute_LFO(&slot);
+			m_active_slots += slot.active ? 1 : 0;
 		}
 	}
 }
@@ -650,6 +664,8 @@ void Scsp::Compute_LFO(SCSP_SLOT *slot)
 void Scsp::StartSlot(SCSP_SLOT *slot)
 {
 	++m_stats.slot_starts;
+	if (!slot->active)
+		++m_active_slots;
 	slot->active = 1;
 	slot->cur_addr = 0;
 	slot->nxt_addr = 1 << SHIFT;
@@ -671,6 +687,8 @@ void Scsp::StopSlot(SCSP_SLOT *slot,int keyoff)
 	}
 	else
 	{
+		if (slot->active)
+			--m_active_slots;
 		slot->active = 0;
 	}
 	slot->udata.data[0] &= ~0x800;
@@ -777,8 +795,27 @@ void Scsp::init()
 		m_Slots[i].active = 0;
 		m_Slots[i].EG.state = SCSP_RELEASE;
 	}
+	m_active_slots = 0;
 
 	LFO_Init();
+	// 2-pole Butterworth low-pass approximating the board's analogue output stage.
+	// Tuned against a hardware recording: 8 kHz matched the 4-11 kHz balance.
+	constexpr float kOutputLpfHz = 8000.0f;
+	{
+		const float w0 = 2.0f * 3.14159265f * kOutputLpfHz / float(sample_rate());
+		const float cw = std::cos(w0);
+		const float alpha = std::sin(w0) / (2.0f * 0.70710678f);
+		const float a0 = 1.0f + alpha;
+		for (OutputLpf& f : m_out_lpf)
+		{
+			f.b0 = ((1.0f - cw) * 0.5f) / a0;
+			f.b1 = (1.0f - cw) / a0;
+			f.b2 = f.b0;
+			f.a1 = (-2.0f * cw) / a0;
+			f.a2 = (1.0f - alpha) / a0;
+			f.z1 = f.z2 = 0.0f;
+		}
+	}
 	// no "pend"
 	m_udata.data[0x20/2] = 0;
 	m_TimCnt[0] = 0xffff;
@@ -1095,8 +1132,8 @@ void Scsp::w16(u32 addr, u16 val)
 			*((u16 *) (m_DSP.COEF + (addr - 0x700) / 2)) = val;
 		else if (addr < 0x7c0)
 			*((u16 *) (m_DSP.MADRS + (addr - 0x780) / 2)) = val;
-		else if (addr < 0x800) // MADRS is mirrored twice
-			*((u16 *) (m_DSP.MADRS + (addr - 0x7c0) / 2)) = val;
+		else if (addr < 0x800) // unmapped; doa clears it after loading MADRS
+			;
 		else if (addr < 0xC00)
 		{
 			*((u16 *) (m_DSP.MPRO + (addr - 0x800) / 2)) = val;
@@ -1138,7 +1175,7 @@ u16 Scsp::r16(u32 addr)
 		else if (addr < 0x7c0)
 			v= *((u16 *) (m_DSP.MADRS + (addr - 0x780) / 2));
 		else if (addr < 0x800)
-			v= *((u16 *) (m_DSP.MADRS + (addr - 0x7c0) / 2));
+			v = 0;
 		else if (addr < 0xC00)
 			v= *((u16 *) (m_DSP.MPRO + (addr - 0x800) / 2));
 		else if (addr < 0xE00)
@@ -1213,7 +1250,7 @@ u16 Scsp::r16(u32 addr)
 }
 
 
-inline s32 Scsp::UpdateSlot(SCSP_SLOT *slot)
+inline s32 Scsp::UpdateSlot(SCSP_SLOT* slot)
 {
 	if (SSCTL(slot) == 3) // manual says cannot be used
 	{
@@ -1230,35 +1267,73 @@ inline s32 Scsp::UpdateSlot(SCSP_SLOT *slot)
 	s32 sample = 0; // NB: Shouldn't be necessary, but GCC 8.2.1 claims otherwise.
 	int step = slot->step;
 	u32 addr1, addr2, addr_select;                                   // current and next sample addresses
-	u32 *addr[2]      = {&addr1, &addr2};                          // used for linear interpolation
-	u32 *slot_addr[2] = {&(slot->cur_addr), &(slot->nxt_addr)};    //
+	u32* addr[2] = { &addr1, &addr2 };                          // used for linear interpolation
+	u32* slot_addr[2] = { &(slot->cur_addr), &(slot->nxt_addr) };    //
+
+	// SCSP pitch‑LFO sensitivity → depth scaling table
+	// Based on Table 4.17 (± cents displacement)
+	// Values tuned to match real hardware vibrato strength
+	static const int PLFO_DEPTH_TABLE[8] =
+	{
+		0,   // PLFOS = 0 → no pitch modulation
+		2,   // PLFOS = 1 → ±7 cents
+		4,   // PLFOS = 2 → ±13.5 cents
+		8,   // PLFOS = 3 → ±27 cents
+		10,  // PLFOS = 4 → ±55 cents
+		18,  // PLFOS = 5 → ±112 cents
+		30,  // PLFOS = 6 → ±230 cents
+		50   // PLFOS = 7 → ±494 cents
+	};
 
 	if (PLFOS(slot) != 0)
 	{
-		step = step * PLFO_Step(&(slot->PLFO));
-		step >>= SHIFT;
+		s32 lfo = PLFO_Step(&(slot->PLFO));
+
+		// Lookup hardware‑accurate depth
+		const s32 depth = PLFO_DEPTH_TABLE[PLFOS(slot)];
+
+		// Apply SCSP‑style pitch modulation
+		const s32 scaled = ((lfo - (1 << SHIFT)) * depth >> 4) + (1 << SHIFT);
+
+		step = (step * scaled) >> SHIFT;
+	}
+
+	s32 base1 = s32(slot->cur_addr >> SHIFT);
+	s32 base2 = s32(slot->nxt_addr >> SHIFT);
+	s32 fpart = slot->cur_addr & ((1 << SHIFT) - 1);
+
+	// SCSP manual table 4.10: the X/Y average moves the read address by up to
+	// 2^MDL words at full scale, wrapped to 11 signed bits.
+	if (MDL(slot) > 4)
+	{
+		const s32 sum = m_RINGBUF[(m_BUFPTR + MDXSL(slot)) & 63] + m_RINGBUF[(m_BUFPTR + MDYSL(slot)) & 63];
+		const s32 pos = sign_extend((sum << (MDL(slot) - 4)) + fpart, 11 + SHIFT);
+		const s32 one = 1 << SHIFT;
+		const s32 mask = one - 1;
+
+		base1 += pos >> SHIFT;
+		base2 += pos >> SHIFT;
+
+		// fraction of the FM fractional offset applied to the interpolation weight, in 1/16ths
+		// 0 = no buzz, 4 = original 1/4 (slightly too strong)
+		constexpr s32 FM_FRAC_BLEND = 1;
+
+		s32 delta = ((pos & mask) - fpart) & mask;
+		if (delta >= (one >> 1))
+			delta -= one;
+
+		fpart = (fpart + ((delta * FM_FRAC_BLEND) >> 4)) & mask;
 	}
 
 	if (PCM8B(slot))
 	{
-		addr1 = slot->cur_addr >> SHIFT;
-		addr2 = slot->nxt_addr >> SHIFT;
+		addr1 = u32(base1);
+		addr2 = u32(base2);
 	}
 	else
 	{
-		addr1 = (slot->cur_addr >> (SHIFT - 1)) & ~1;
-		addr2 = (slot->nxt_addr >> (SHIFT - 1)) & ~1;
-	}
-
-	if (MDL(slot) != 0 || MDXSL(slot) != 0 || MDYSL(slot) != 0)
-	{
-		s32 smp = (m_RINGBUF[(m_BUFPTR + MDXSL(slot)) & 63] + m_RINGBUF[(m_BUFPTR + MDYSL(slot)) & 63]) / 2;
-
-		smp <<= 0xA; // associate cycle with 1024
-		smp >>= 0x1A - MDL(slot); // ex. for MDL=0xF, sample range corresponds to +/- 64 pi (32=2^5 cycles) so shift by 11 (16-5 == 0x1A-0xF)
-		if (!PCM8B(slot)) smp <<= 1;
-
-		addr1 += smp; addr2 += smp;
+		addr1 = u32(base1) << 1;
+		addr2 = u32(base2) << 1;
 	}
 
 	if (SSCTL(slot) == 0) // External DRAM data
@@ -1268,7 +1343,6 @@ inline s32 Scsp::UpdateSlot(SCSP_SLOT *slot)
 			s8 p1 = read_byte(SA(slot) + addr1);
 			s8 p2 = read_byte(SA(slot) + addr2);
 			s32 s;
-			s32 fpart=slot->cur_addr & ((1 << SHIFT) - 1);
 			s = (int) (p1 << 8) * ((1 << SHIFT) - fpart) + (int) (p2 << 8) * fpart;
 			sample = (s >> SHIFT);
 		}
@@ -1277,7 +1351,6 @@ inline s32 Scsp::UpdateSlot(SCSP_SLOT *slot)
 			s16 p1 = read_word(SA(slot) + addr1);
 			s16 p2 = read_word(SA(slot) + addr2);
 			s32 s;
-			s32 fpart = slot->cur_addr & ((1 << SHIFT) - 1);
 			s = (int)(p1) * ((1 << SHIFT) - fpart) + (int)(p2) * fpart;
 			sample = (s >> SHIFT);
 		}
@@ -1412,8 +1485,8 @@ void Scsp::DoMasterSamples(s16 *output, u32 frames)
 
 				s32 sample = UpdateSlot(slot);
 
-				// Apply the optional per-slot balancer once, before both the DSP
-				// effect feed and direct output. Unity remains bit-exact.
+				// Balancer gain, applied once so it scales both the DSP-effect
+				// feed and the direct-out mix. Bypassed (bit-exact) at unity.
 				if (m_slot_gain_active && m_slot_gain[sl] != 256)
 					sample = (sample * m_slot_gain[sl]) >> 8;
 
@@ -1489,6 +1562,14 @@ void Scsp::DoMasterSamples(s16 *output, u32 frames)
 		// MAME applies MVOL as a stream output gain, downstream of this function.
 		output[s * 2 + 0] = s16(float(output[s * 2 + 0]) * m_master_gain);
 		output[s * 2 + 1] = s16(float(output[s * 2 + 1]) * m_master_gain);
+
+		if (m_output_lpf_enabled)
+		{
+			for (unsigned channel = 0; channel < 2; ++channel)
+				output[s * 2 + channel] = s16(std::clamp(
+					m_out_lpf[channel].process(float(output[s * 2 + channel])),
+					-32768.0f, 32767.0f));
+		}
 
 		const s32 peak = std::max(std::abs(int(output[s * 2 + 0])),
 								  std::abs(int(output[s * 2 + 1])));
@@ -1623,6 +1704,13 @@ void Scsp::write(u32 offset, u16 data, u16 mem_mask)
 	w16(offset * 2, tmp);
 }
 
+void Scsp::set_output_low_pass_enabled(bool enabled)
+{
+    if (m_output_lpf_enabled == enabled) return;
+    m_output_lpf_enabled = enabled;
+    for (auto& filter : m_out_lpf) filter.z1 = filter.z2 = 0;
+}
+
 void Scsp::generate(s16 *output, u32 frames)
 {
 	if (frames == 0)
@@ -1645,17 +1733,6 @@ void Scsp::generate(s16 *output, u32 frames)
 	// NOTE: according to the manual MSLC is write only, CA, SGC and EG read only.
 	// saturn:toughtrk will hang on Human logo otherwise
 	m_latched_MSLC_data = /*(MSLC << 11) |*/ (CA << 7) | (SGC << 5) | EG;
-}
-
-u32 Scsp::active_slots() const
-{
-	u32 count = 0;
-	for (const SCSP_SLOT &slot : m_Slots)
-	{
-		if (slot.active)
-			++count;
-	}
-	return count;
 }
 
 //LFO handling

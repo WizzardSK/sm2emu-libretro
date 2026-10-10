@@ -56,6 +56,7 @@ public:
     /// (added to what is there). The decoder runs at 32000 Hz; a linear
     /// resampler bridges the difference.
     void mix(s16* dst, u32 frames, u32 out_rate, unsigned volume_percent);
+    void set_gain(u16 gain) { m_gain = gain; }
 
     // -- cpu::Bus (68000, big-endian) ---------------------------------------
 
@@ -94,6 +95,8 @@ private:
     void system_control_w(u8 data);  ///< 0xd00001: MPEG ROM bank (A24)
     void fifo_w(u8 data);            ///< 0xe00003: command / address FIFO
 
+    s32 m_gain = 256; // Profile derived from metadata and frontend preference.
+    bool open_window(u32 start, u32 end);
     void decode_next();
 
     cpu::m68000::M68000 m_cpu;
@@ -109,7 +112,7 @@ private:
     u32 m_mp_start = 0, m_mp_end = 0, m_mp_vol = 0x7f, m_mp_pan = 0;
     u32 m_start = 0, m_end = 0, m_rom_bank = 0;
     s32 m_mp_pos = 0, m_audio_pos = 0, m_audio_avail = 0;
-    bool    m_playing = false;
+    u8      m_mp_state = 0;  ///< 0 stopped, 1 playing, 2 looping to m_start/m_end
     Command m_command = Command::Idle;
 
     u64 m_cycle_debt     = 0;  ///< host->68000 clock remainder.

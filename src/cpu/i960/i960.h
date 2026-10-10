@@ -99,6 +99,9 @@ public:
     /// Change the state of an external interrupt line.
     void set_irq_line(int line, int state);
 
+    /// Charge wait states for a slow bus access, from a bus handler.
+    void add_wait_cycles(s32 cycles) { m_icount -= cycles; }
+
     /// Stall the current instruction and re-execute it.
     ///
     /// Called from a bus handler when the geometry coprocessor's output FIFO is
@@ -114,6 +117,18 @@ public:
     /// Stop and resume execution, for the HALT line the copro FIFO drives.
     void set_halted(bool halted) { m_halted = halted; }
     [[nodiscard]] bool halted() const { return m_halted; }
+
+    /// Fetch straight from host memory inside this window (0: main ROM,
+    /// 1: work RAM, same bounds as hot_read); elsewhere fetch uses the Bus.
+    void bind_fetch_window(unsigned index, u32 start, const u8* base, usize bytes, u32 window)
+    {
+        u32 limit = 0;
+        if (base != nullptr && bytes >= 4) {
+            const usize last = bytes - 3;
+            limit = last < window ? static_cast<u32>(last) : window;
+        }
+        m_fetch[index & 1] = FetchWindow{start, limit, base};
+    }
 
     /// Select Intel's documented ties-to-even result for rounding mode 00.
     /// Disabled preserves the current upstream SM2-Emu/MAME behaviour.
@@ -178,6 +193,25 @@ private:
     std::string m_fault_message;
 
     Bus* m_bus = nullptr;
+
+    struct FetchWindow {
+        u32       start = 0;
+        u32       limit = 0;
+        const u8* base  = nullptr;
+    };
+    FetchWindow m_fetch[2]{};
+
+    u32 fetch_word(u32 address)
+    {
+        for (const FetchWindow& w : m_fetch) {
+            if (const u32 offset = address - w.start; offset < w.limit) {
+                u32 v;
+                __builtin_memcpy(&v, w.base + offset, sizeof(v));
+                return v;
+            }
+        }
+        return m_bus->fetch32(address);
+    }
 
     u32 m_r[0x20]{};
     u32 m_rcache[I960_RCACHE_SIZE][0x10]{};

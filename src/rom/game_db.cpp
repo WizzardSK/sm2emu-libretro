@@ -164,6 +164,8 @@ namespace {
         {"elevation", AnalogControl::Elevation},
         {"bat1",      AnalogControl::Bat1},
         {"bat2",      AnalogControl::Bat2},
+        {"handlebar2_right", AnalogControl::Handlebar2Right},
+        {"handlebar2_left",  AnalogControl::Handlebar2Left},
     };
     for (const Entry& entry : kEntries) {
         if (text == entry.name) {
@@ -177,6 +179,7 @@ namespace {
 [[nodiscard]] bool parse_drive_protocol(std::string_view text, DriveProtocol* out)
 {
     if (text == "daytona") { *out = DriveProtocol::Daytona; return true; }
+    if (text == "indy")    { *out = DriveProtocol::Indy; return true; }
     if (text == "stcc")    { *out = DriveProtocol::Stcc;    return true; }
     if (text == "rally")   { *out = DriveProtocol::Rally;   return true; }
     return false;
@@ -388,6 +391,8 @@ bool GameDatabase::load(const std::string& path)
             || !attribute_bool(game_node, "gun_missile", false, &game.gun_missile,
                                context.c_str())
             || !attribute_integer(game_node, "start_gear", 1, &game.start_gear,
+                                  context.c_str())
+            || !attribute_integer(game_node, "texture_wait", 0, &game.texture_wait,
                                   context.c_str())) {
             return false;
         }
@@ -466,7 +471,9 @@ bool GameDatabase::load(const std::string& path)
             const bool pedal = channel.control == AnalogControl::Accel
                             || channel.control == AnalogControl::Brake
                             || channel.control == AnalogControl::Bat1
-                            || channel.control == AnalogControl::Bat2;
+                            || channel.control == AnalogControl::Bat2
+                            || channel.control == AnalogControl::Handlebar2Right
+                            || channel.control == AnalogControl::Handlebar2Left;
             u32 minimum = 0;
             u32 maximum = 0;
             u32 rest    = 0;
@@ -739,6 +746,7 @@ bool GameDatabase::merge_clones(const std::set<std::string>& board_inherited)
         if (!game.lightgun.present)    { game.lightgun = parent.lightgun; }
         if (!game.gearbox)             { game.gearbox = parent.gearbox; }
         if (game.start_gear == 1)      { game.start_gear = parent.start_gear; }
+        if (game.texture_wait == 0)    { game.texture_wait = parent.texture_wait; }
         if (!game.shift_buttons)       { game.shift_buttons = parent.shift_buttons; }
         if (!game.drive_board)         { game.drive_board = parent.drive_board; }
         if (game.drive_protocol == DriveProtocol::Daytona) {
