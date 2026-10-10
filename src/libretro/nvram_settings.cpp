@@ -192,6 +192,19 @@ bool layout_ready(std::string_view game, std::span<const u8> backup,
                   std::span<const u8> eeprom)
 {
     if (backup.size() != kBackupRamSize || eeprom.size() != kEepromSize) return false;
+    if (game == "powsled" || game == "powsledm" || game == "powsledr") {
+        // Native recovery operates on whole 28-byte settings blocks. Wait for
+        // the game to repair disagreements; do not overwrite one user's copy.
+        if (!std::equal(backup.begin(), backup.begin() + 28, backup.begin() + 0x100)
+            || !std::equal(backup.begin(), backup.begin() + 28, backup.begin() + 0x200))
+            return false;
+        for (size_t offset = 10; offset <= 18; offset += 2) {
+            const u16 seconds = load_u16(backup, offset);
+            if (seconds < 5 || seconds > 99) return false;
+        }
+        const u16 angle = load_u16(backup, 26);
+        return angle >= 100 && angle <= 450 && angle % 5 == 0;
+    }
     if (game == "daytona" || game == "daytona93" || game == "daytonas")
         return std::equal(backup.begin(), backup.begin() + 0x80, backup.begin() + 0x80) &&
                crc_bank_valid(backup, 0) && crc_bank_valid(backup, 0x80);
@@ -434,6 +447,8 @@ std::vector<std::string> initial_values(std::string_view game)
         {"daytona93", "cabinet"},
         {"daytonas", "cabinet"},
         {"manxtt", "cabinet_type"},
+        {"motoraiddx", "cabinet_type"},
+        {"overrev", "hardware_type"},
         {"sgt24h", "io_type"},
     };
     for (size_t i = 0; i < options.size(); ++i) {
@@ -447,6 +462,12 @@ std::vector<std::string> initial_values(std::string_view game)
             selected[i] = options[i].default_value;
     }
     return selected;
+}
+
+bool valid_layout(std::string_view game, std::span<const u8> backup,
+                  std::span<const u8> eeprom)
+{
+    return layout_ready(game, backup, eeprom);
 }
 
 ApplyResult apply(std::string_view game, std::span<u8> backup,

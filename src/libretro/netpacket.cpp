@@ -5,6 +5,7 @@
 #include <array>
 #include <deque>
 #include <mutex>
+#include <map>
 #include <set>
 #include <string>
 #include <vector>
@@ -13,11 +14,14 @@ namespace sm2::libretro {
 namespace {
 
 constexpr std::array<u8, 4> kMagic{'S', 'M', '2', 'N'};
-constexpr u8 kWireVersion = 2;
+constexpr u8 kWireVersion = 3;
 constexpr u8 kPacketHello = 1;
 constexpr u8 kPacketFrame = 2;
+constexpr u8 kPacketHelloRequest = 3;
 constexpr std::size_t kHeaderSize = 14;
 constexpr std::size_t kMaximumFrame = 0x1000;
+constexpr std::size_t kMaximumPendingPackets = 1024;
+constexpr std::size_t kMaximumQueuedFrames = 64;
 
 struct ReceivedPacket {
     std::vector<u8> bytes;
@@ -30,12 +34,15 @@ struct Session {
     bool active = false;
     bool incompatible = false;
     bool roster_logged = false;
+    bool transport_configured = false;
     u16 local_id = 0;
     retro_netpacket_send_t send = nullptr;
     retro_netpacket_poll_receive_t poll_receive = nullptr;
     retro_log_printf_t log = nullptr;
     unsigned expected_cabinets = 2;
     u32 game_hash = 0;
+    unsigned program_role = 0;
+    std::map<u16, unsigned> program_roles;
     std::set<u16> clients;
     std::set<u16> peers;
     std::vector<u16> roster;
@@ -124,9 +131,18 @@ bool send_packet(const std::vector<u8>& packet, u16 peer)
     return true;
 }
 
-void send_hello()
+void send_hello(bool request = false)
 {
-    send_packet(build_packet(kPacketHello, {}), RETRO_NETPACKET_BROADCAST);
+    unsigned role;
+    {
+        std::lock_guard lock(session.mutex);
+        role = session.program_role;
+    }
+    const std::array<u8, 1> payload{static_cast<u8>(role)};
+    send_packet(build_packet(request ? kPacketHelloRequest : kPacketHello,
+                            role ? std::span<const u8>(payload)
+                                              : std::span<const u8>{}),
+                RETRO_NETPACKET_BROADCAST);
 }
 
 void poll_packets()
@@ -145,6 +161,14 @@ void rebuild_roster_locked()
         session.roster.clear();
         return;
     }
+    if (session.program_role) {
+        std::set<unsigned> roles{session.program_role};
+        for (const auto& [peer, role] : session.program_roles) roles.insert(role);
+        if (session.expected_cabinets != 3 || roles != std::set<unsigned>{1, 2, 3}) {
+            session.roster.clear();
+            return;
+        }
+    }
     session.roster.assign(session.peers.begin(), session.peers.end());
     session.roster.push_back(session.local_id);
     std::sort(session.roster.begin(), session.roster.end());
@@ -160,7 +184,12 @@ void drain_packets()
     std::deque<ReceivedPacket> pending;
     {
         std::lock_guard lock(session.mutex);
-        pending.swap(session.packets);
+        const std::size_t room = kMaximumQueuedFrames - session.frames.size();
+        const std::size_t count = std::min(room, session.packets.size());
+        for (std::size_t index = 0; index < count; ++index) {
+            pending.push_back(std::move(session.packets.front()));
+            session.packets.pop_front();
+        }
     }
 
     bool reply = false;
@@ -181,15 +210,27 @@ void drain_packets()
 
         std::lock_guard lock(session.mutex);
         if (!session.active) continue;
-        if (cabinets != session.expected_cabinets || game_hash != session.game_hash) {
+        // Peers may resume from Core Options at different times. A temporary
+        // count mismatch is pending setup; a different game is incompatible.
+        if (game_hash != session.game_hash) {
             mismatch = !session.incompatible;
             session.incompatible = true;
             session.roster.clear();
             continue;
         }
-        if (type == kPacketHello && payload_size == 0) {
+        if (cabinets != session.expected_cabinets) continue;
+        if ((type == kPacketHello || type == kPacketHelloRequest)
+            && payload_size == (session.program_role ? 1u : 0u)) {
+            if (session.program_role) {
+                const unsigned role = bytes[kHeaderSize];
+                if (role < 1 || role > 3) continue;
+                session.program_roles[received.sender] = role;
+            }
             const bool inserted = session.peers.insert(received.sender).second;
-            reply |= inserted;
+            // A cabinet may reset its local roster while its peers remain ready.
+            // Answer explicit requests even from known peers; ordinary replies
+            // must not trigger another reply and create a broadcast echo loop.
+            reply |= inserted || type == kPacketHelloRequest;
             const bool was_ready = !session.roster.empty();
             rebuild_roster_locked();
             became_ready |= !was_ready && !session.roster.empty();
@@ -205,8 +246,7 @@ void drain_packets()
     }
 
     if (mismatch)
-        log(RETRO_LOG_ERROR,
-            "Linked cabinets use different games or Linked Cabinets settings");
+        log(RETRO_LOG_ERROR, "Linked cabinets use different games");
     if (reply) send_hello();
     if (became_ready) {
         unsigned cabinets = 0;
@@ -236,7 +276,7 @@ void pump()
         waiting = session.active && session.send && !session.incompatible
                && session.roster.empty();
     }
-    if (waiting) send_hello();
+    if (waiting) send_hello(true);
 }
 
 void RETRO_CALLCONV start(u16 client_id, retro_netpacket_send_t send,
@@ -252,6 +292,7 @@ void RETRO_CALLCONV start(u16 client_id, retro_netpacket_send_t send,
         session.poll_receive = poll_receive;
         session.clients.clear();
         session.peers.clear();
+        session.program_roles.clear();
         session.roster.clear();
         session.packets.clear();
         session.frames.clear();
@@ -266,13 +307,43 @@ void RETRO_CALLCONV receive(const void* data, std::size_t size, u16 client_id)
     if (data == nullptr || size < kHeaderSize || size > kHeaderSize + kMaximumFrame)
         return;
     const auto* bytes = static_cast<const u8*>(data);
-    std::lock_guard lock(session.mutex);
-    if (!session.active || client_id == session.local_id) return;
-    if (session.local_id == 0 && session.clients.count(client_id) == 0) return;
-    ReceivedPacket packet;
-    packet.sender = client_id;
-    packet.bytes.assign(bytes, bytes + size);
-    session.packets.push_back(std::move(packet));
+    bool overflow = false;
+    {
+        std::lock_guard lock(session.mutex);
+        if (!session.active || !session.transport_configured
+            || client_id == session.local_id) return;
+        if (session.local_id == 0 && session.clients.count(client_id) == 0) return;
+        // A peer can complete its roster before this cabinet receives all
+        // hellos. Its early frames cannot be used until the local ring exists;
+        // keeping them would fill the pending queue and block those hellos.
+        if (session.roster.empty() && bytes[4] == kWireVersion
+            && std::equal(kMagic.begin(), kMagic.end(), bytes)
+            && bytes[5] == kPacketFrame) return;
+        // Until the local core pumps the frontend, fast peers can send the
+        // same hello many times. One pending copy per sender and configuration
+        // is sufficient to build the roster.
+        if (bytes[4] == kWireVersion
+            && (bytes[5] == kPacketHello || bytes[5] == kPacketHelloRequest)
+            && std::equal(kMagic.begin(), kMagic.end(), bytes)
+            && std::any_of(session.packets.begin(), session.packets.end(),
+                           [&](const ReceivedPacket& packet) {
+                               return packet.sender == client_id
+                                   && packet.bytes.size() == size
+                                   && std::equal(packet.bytes.begin(),
+                                                 packet.bytes.end(), bytes);
+                           })) return;
+        if (session.packets.size() >= kMaximumPendingPackets) {
+            overflow = !session.incompatible;
+            session.incompatible = true;
+            session.roster.clear();
+        } else {
+            ReceivedPacket packet;
+            packet.sender = client_id;
+            packet.bytes.assign(bytes, bytes + size);
+            session.packets.push_back(std::move(packet));
+        }
+    }
+    if (overflow) log(RETRO_LOG_ERROR, "Netpacket receive queue overflow; linked session stopped");
 }
 
 void RETRO_CALLCONV stop()
@@ -284,6 +355,7 @@ void RETRO_CALLCONV stop()
         session.poll_receive = nullptr;
         session.clients.clear();
         session.peers.clear();
+        session.program_roles.clear();
         session.roster.clear();
         session.packets.clear();
         session.frames.clear();
@@ -318,6 +390,7 @@ void RETRO_CALLCONV disconnected(u16 client_id)
         std::lock_guard lock(session.mutex);
         session.clients.erase(client_id);
         session.peers.erase(client_id);
+        session.program_roles.erase(client_id);
         session.roster.clear();
         session.frames.clear();
         session.roster_logged = false;
@@ -327,19 +400,22 @@ void RETRO_CALLCONV disconnected(u16 client_id)
 
 constexpr retro_netpacket_callback callbacks{
     start, receive, stop, nullptr, connected, disconnected,
-    "SM2-Emu Model 2 NetBoard v2"
+    "SM2-Emu Model 2 NetBoard v3"
 };
 
 }  // namespace
 
-void NetpacketTransport::configure(std::string_view game, unsigned cabinets)
+void NetpacketTransport::configure(std::string_view game, unsigned cabinets, unsigned program_role)
 {
     std::lock_guard lock(session.mutex);
+    session.transport_configured = true;
     session.game_hash = hash_name(game);
+    session.program_role = program_role;
     session.expected_cabinets = std::clamp(cabinets, 2u, 9u);
     session.incompatible = false;
     session.roster_logged = false;
     session.peers.clear();
+    session.program_roles.clear();
     session.roster.clear();
     session.packets.clear();
     session.frames.clear();
@@ -414,6 +490,19 @@ bool netpacket_interface_supported()
     return session.interface_supported;
 }
 
+void set_netpacket_offline()
+{
+    std::lock_guard lock(session.mutex);
+    session.transport_configured = false;
+    session.incompatible = false;
+    session.roster_logged = false;
+    session.peers.clear();
+    session.program_roles.clear();
+    session.roster.clear();
+    session.packets.clear();
+    session.frames.clear();
+}
+
 void shutdown_netpacket_interface()
 {
     std::lock_guard lock(session.mutex);
@@ -421,12 +510,14 @@ void shutdown_netpacket_interface()
     session.active = false;
     session.incompatible = false;
     session.roster_logged = false;
+    session.transport_configured = false;
     session.local_id = 0;
     session.send = nullptr;
     session.poll_receive = nullptr;
     session.log = nullptr;
     session.clients.clear();
     session.peers.clear();
+    session.program_roles.clear();
     session.roster.clear();
     session.packets.clear();
     session.frames.clear();

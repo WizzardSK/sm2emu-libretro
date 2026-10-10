@@ -3,8 +3,10 @@
 #include "libretro.h"
 #include "core_options.h"
 #include "crosshair.h"
+#include "audio_output.h"
 #include "timing_overlay.h"
 #include "initial_nvram.h"
+#include "manxtt_audio.h"
 #include "input.h"
 #include "netpacket.h"
 #include "rumble.h"
@@ -19,6 +21,7 @@
 #include "hw/model2b.h"
 #include "hw/model2c.h"
 #include "hw/model2_softrender.h"
+#include "hw/model2_video.h"
 #include "hw/model2_softrender_async.h"
 #include "hw/sound_board.h"
 #include "rom/game_db.h"
@@ -34,10 +37,27 @@
 #include <memory>
 #include <stdexcept>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace {
 using namespace sm2;
+constexpr std::array<hw::AudioSource, 5> kAudioSources{{
+    hw::AudioSource::Scsp, hw::AudioSource::Dsb,
+    hw::AudioSource::MultiPcm1, hw::AudioSource::MultiPcm2,
+    hw::AudioSource::Ym3438}};
+
+void configure_audio_sources(hw::SoundBoard& sound)
+{
+    std::array<bool, kAudioSources.size()> present{};
+    for (size_t i = 0; i < kAudioSources.size(); ++i) {
+        present[i] = sound.has_audio_source(kAudioSources[i]);
+        if (present[i]) sound.set_audio_source_gain(
+            kAudioSources[i], libretro::audio_source_gain(i),
+            libretro::audio_source_gain_automatic(i));
+    }
+    libretro::set_audio_sources(present);
+}
 retro_environment_t environment = nullptr;
 retro_video_refresh_t video_cb = nullptr;
 retro_audio_sample_t audio_cb = nullptr;
@@ -64,12 +84,14 @@ struct Content {
     rom::GameSpec game;
     libretro::ControllerConfiguration controllers;
     libretro::InputRuntime input_runtime;
+    libretro::ManxTtAudio manxtt_audio;  // ROM storage must outlive the machine.
     std::unique_ptr<hw::Model2MachineBase> machine;
     hw::SoftRenderer renderer;
     std::unique_ptr<hw::AsyncSoftRenderer> async_renderer;
     std::vector<u32> frame = std::vector<u32>(width * height);
     std::vector<u32> async_frame = std::vector<u32>(width * height);
     std::vector<s16> audio;
+    libretro::OutputDcBlocker output_dc;
     std::vector<retro_input_descriptor> input_descriptors;
     libretro::GamepadRumble rumble;
     double native_fps = 0;
@@ -77,27 +99,30 @@ struct Content {
     u32 rate = 0;
     bool failed = false;
     RendererApi renderer_api = RendererApi::Software;
-    bool hardware_frame_valid = false;
     bool async_frame_ready = false;
     libretro::CrosshairState async_crosshairs{};
     libretro::TimingOverlayData async_timing_overlay_data{};
     double async_fps = 0;
     unsigned scale = 1;
+    unsigned requested_scale = 1;
     bool save_ram_initialized = false;
     bool native_nvram_available = false;
     bool option_pending = false;
     unsigned option_wait_frames = 0;
     std::string nvram_game;
     std::vector<std::string> nvram_values;
+    std::vector<std::pair<std::string, std::string>> network_option_updates;
     libretro::AVTimingMode timing = libretro::AVTimingMode::Native;
+    // Retained in frontend Save States created by the earlier 60 Hz cadence.
     double cadence_accumulator = 0;
     u64 audio_frame_remainder = 0;
     size_t audio_frames_due = 0;
-    bool can_dupe = false;
     bool timing_overlay = false;
     unsigned timing_overlay_font_pixels = 0;
     libretro::TimingOverlayData timing_overlay_data{};
     bool external_link_active = false;
+    u64 logged_comm_state = ~u64{0};
+    unsigned linked_cabinets = 1;
     float aspect_ratio = 4.0f / 3.0f;
     std::chrono::steady_clock::time_point previous_run_start{};
     bool have_previous_run_start = false;
@@ -166,11 +191,19 @@ void save_frontend_state(u8* destination, const Content& c)
     state_write<double>(cursor, c.cadence_accumulator);
     state_write<u64>(cursor, c.audio_frame_remainder);
     state_write<u64>(cursor, static_cast<u64>(c.audio_frames_due));
+    const auto flash = c.machine->video().gun_flash_state();
+    state_write<u32>(cursor, 0x47460000u | flash.triggers_held
+        | (flash.trigger_pressed ? 1u << 2 : 0u)
+        | (flash.window_mask_full ? 1u << 3 : 0u)
+        | (flash.hidden ? 1u << 4 : 0u) | (1u << 5));
+    for (float value : c.output_dc.previous_input) state_write<float>(cursor, value);
+    for (float value : c.output_dc.previous_output) state_write<float>(cursor, value);
 }
 
 bool load_frontend_state(const u8* source, libretro::InputRuntime& input_runtime,
                          double& cadence_accumulator, u64& audio_frame_remainder,
-                         size_t& audio_frames_due)
+                         size_t& audio_frames_due, hw::Model2Video::GunFlashState& flash,
+                         libretro::OutputDcBlocker& output_dc)
 {
     if (std::memcmp(source, frontend_state_magic.data(), frontend_state_magic.size()) != 0)
         return false;
@@ -198,6 +231,18 @@ bool load_frontend_state(const u8* source, libretro::InputRuntime& input_runtime
     cadence_accumulator = state_read<double>(cursor);
     audio_frame_remainder = state_read<u64>(cursor);
     audio_frames_due = static_cast<size_t>(state_read<u64>(cursor));
+    const u32 flash_flags = state_read<u32>(cursor);
+    if ((flash_flags & 0xffff0000u) == 0x47460000u) {
+        flash.triggers_held = static_cast<u8>(flash_flags & 0x03u);
+        flash.trigger_pressed = flash_flags & (1u << 2);
+        flash.window_mask_full = flash_flags & (1u << 3);
+        flash.hidden = flash_flags & (1u << 4);
+        if (flash_flags & (1u << 5)) {
+            for (float& value : output_dc.previous_input) value = state_read<float>(cursor);
+            for (float& value : output_dc.previous_output) value = state_read<float>(cursor);
+            if (!output_dc.valid()) output_dc.reset();
+        }
+    }
     return true;
 }
 
@@ -232,7 +277,7 @@ void update_aspect_ratio(Content& c)
     if (aspect_ratio == c.aspect_ratio) return;
     c.aspect_ratio = aspect_ratio;
     retro_game_geometry geometry{
-        width * c.scale, height * c.scale, width * c.scale, height * c.scale,
+        width * c.scale, height * c.scale, width * c.requested_scale, height * c.requested_scale,
         c.aspect_ratio};
     if (environment)
         environment(RETRO_ENVIRONMENT_SET_GEOMETRY, &geometry);
@@ -262,11 +307,13 @@ void reset_frontend_after_state_load(Content& c)
     c.machine->sound_board().clear_pending_samples();
     c.machine->sound_board().set_audio_balance_enabled(
         libretro::audio_balance_enabled());
+    c.machine->sound_board().set_output_low_pass_enabled(
+        libretro::scsp_output_low_pass_enabled());
     c.machine->sound_board().set_music_volume_percent(
         libretro::music_volume_percent());
     c.audio.clear();
+    c.output_dc.reset();
     c.have_previous_run_start = false;
-    c.hardware_frame_valid = false;
     reset_timing_measurements(c);
     update_aspect_ratio(c);
 }
@@ -412,6 +459,45 @@ void apply_pending_option(Content& c)
         export_frontend_save(c);
         message(RETRO_LOG_INFO, "Applied NVRAM core options");
     }
+    if (environment) {
+        for (const auto& [key, value] : c.network_option_updates) {
+            retro_variable variable{key.c_str(), value.c_str()};
+            environment(RETRO_ENVIRONMENT_SET_VARIABLE, &variable);
+        }
+    }
+    c.network_option_updates.clear();
+}
+
+void refresh_nvram_options(Content& c)
+{
+    auto selected = libretro::selected_nvram_values(c.nvram_game);
+    c.network_option_updates.clear();
+    if (libretro::nvram_settings_enabled()) {
+        const auto managed = libretro::network::managed_values(
+            c.nvram_game, c.linked_cabinets,
+            libretro::automatic_network_preset(c.game.name));
+        const auto options = libretro::nvram::options_for_game(c.nvram_game);
+        for (const auto& target : managed) {
+            for (size_t index = 0; index < options.size(); ++index) {
+                if (target.suffix != options[index].suffix) continue;
+                const auto* begin = options[index].values;
+                const auto* end = begin + options[index].value_count;
+                if (std::find_if(begin, end, [&](const auto& value) {
+                    return target.key == value.key;
+                }) == end) break;
+                if (selected[index] != target.key) {
+                    c.network_option_updates.emplace_back(
+                        "sm2_nvram_" + c.nvram_game + "_" + options[index].suffix,
+                        target.key);
+                }
+                selected[index] = target.key;
+                break;
+            }
+        }
+    }
+    c.nvram_values = std::move(selected);
+    c.option_pending = libretro::nvram_settings_enabled() && !c.nvram_values.empty();
+    c.option_wait_frames = 0;
 }
 
 void message(enum retro_log_level level, const char* text)
@@ -419,6 +505,15 @@ void message(enum retro_log_level level, const char* text)
     if (log_cb) log_cb(level, "[SM2] %s\n", text);
     else std::fprintf(stderr, "[SM2] %s\n", text);
     if (level >= RETRO_LOG_WARN && environment) {
+        unsigned version = 0;
+        if (environment(RETRO_ENVIRONMENT_GET_MESSAGE_INTERFACE_VERSION, &version)
+            && version >= 1) {
+            retro_message_ext msg{text, 5000,
+                                  level == RETRO_LOG_ERROR ? 2U : 1U,
+                                  level, RETRO_MESSAGE_TARGET_OSD,
+                                  RETRO_MESSAGE_TYPE_NOTIFICATION, -1};
+            if (environment(RETRO_ENVIRONMENT_SET_MESSAGE_EXT, &msg)) return;
+        }
         retro_message msg{text, 300};
         environment(RETRO_ENVIRONMENT_SET_MESSAGE, &msg);
     }
@@ -465,7 +560,6 @@ void context_destroy()
 #ifdef SM2_LIBRETRO_VULKAN
         content->gpu.reset();
 #endif
-        content->hardware_frame_valid = false;
     }
     message(RETRO_LOG_INFO, "GPU context resources released");
 }
@@ -473,6 +567,7 @@ void context_reset()
 {
     if (!content || content->renderer_api == RendererApi::Software) return;
     try {
+        const unsigned previous_scale = content->scale;
 #ifdef SM2_LIBRETRO_OPENGL
         // With GL, reset may follow an unannounced context loss. Resource
         // names from that dead context must be forgotten, not deleted.
@@ -485,7 +580,7 @@ void context_reset()
         if (content->renderer_api == RendererApi::Vulkan) {
 #ifdef SM2_LIBRETRO_VULKAN
             auto gpu = std::make_unique<libretro::VulkanRenderer>();
-            gpu->init(environment, content->scale, log_cb);
+            content->scale = gpu->init(environment, content->requested_scale, log_cb);
             content->gpu = std::move(gpu);
 #else
             throw std::runtime_error("This core was built without Vulkan support");
@@ -493,15 +588,21 @@ void context_reset()
         } else {
 #ifdef SM2_LIBRETRO_OPENGL
             auto gl = std::make_unique<libretro::OpenGlRenderer>();
-            gl->init(content->scale, content->renderer_api == RendererApi::OpenGLES, log_cb);
+            content->scale = gl->init(content->requested_scale, content->renderer_api == RendererApi::OpenGLES, log_cb);
             content->gl = std::move(gl);
 #else
             throw std::runtime_error("This core was built without OpenGL support");
 #endif
         }
+        if (content->scale != previous_scale && environment) {
+            retro_game_geometry geometry{
+                width * content->scale, height * content->scale,
+                width * content->requested_scale, height * content->requested_scale,
+                content->aspect_ratio};
+            environment(RETRO_ENVIRONMENT_SET_GEOMETRY, &geometry);
+        }
         // A recreated frontend device has no image to duplicate yet. The next
         // callback must submit one even when 60 Hz pacing repeats the machine frame.
-        content->hardware_frame_valid = false;
     } catch (const std::exception& e) { failure(e.what()); }
     catch (...) { failure("Unexpected GPU context failure"); }
 }
@@ -544,8 +645,9 @@ void select_renderer(Content& c)
     if (c.renderer_api == RendererApi::Software) return;
     retro_variable resolution{"sm2_internal_resolution", nullptr};
     if (environment(RETRO_ENVIRONMENT_GET_VARIABLE, &resolution) && resolution.value &&
-        resolution.value[0] >= '1' && resolution.value[0] <= '4' && resolution.value[1] == '\0')
+        resolution.value[0] >= '1' && resolution.value[0] <= '8' && resolution.value[1] == '\0')
         c.scale = static_cast<unsigned>(resolution.value[0] - '0');
+    c.requested_scale = c.scale;
     bool requested = false;
     if (c.renderer_api == RendererApi::Vulkan) {
 #ifdef SM2_LIBRETRO_VULKAN
@@ -583,8 +685,10 @@ void unload()
         catch (const std::exception& error) { message(RETRO_LOG_ERROR, error.what()); }
         content.reset();
     }
+    libretro::set_netpacket_offline();
     libretro::timing_overlay_shutdown();
     libretro::set_option_game({});
+    libretro::set_audio_sources({});
     if (environment) {
         static const retro_input_descriptor empty[] = {{}};
         environment(RETRO_ENVIRONMENT_SET_INPUT_DESCRIPTORS, const_cast<retro_input_descriptor*>(empty));
@@ -603,6 +707,24 @@ void publish_controls()
     environment(RETRO_ENVIRONMENT_SET_CONTROLLER_INFO, content->controllers.ports.data());
     environment(RETRO_ENVIRONMENT_SET_INPUT_DESCRIPTORS, content->input_descriptors.data());
 }
+
+void configure_linked_cabinets(Content& c, unsigned cabinets)
+{
+    if (cabinets > 1) {
+        auto network = std::make_unique<libretro::NetpacketTransport>();
+        network->configure(libretro::linked_cabinet_network_family(c.game.name), cabinets,
+                           libretro::power_sled_program_role(c.game.name));
+        c.machine->comm().set_transport(std::move(network));
+        c.external_link_active = true;
+    } else {
+        c.machine->comm().set_transport(nullptr);
+        libretro::set_netpacket_offline();
+        c.external_link_active = false;
+    }
+    c.linked_cabinets = cabinets;
+    c.logged_comm_state = ~u64{0};
+}
+
 size_t send_audio(Content& c, size_t requested_frames = static_cast<size_t>(-1))
 {
     auto& sound = c.machine->sound_board();
@@ -613,7 +735,9 @@ size_t send_audio(Content& c, size_t requested_frames = static_cast<size_t>(-1))
     // cause unbounded allocation or silently corrupt the emulated audio stream.
     if (samples.size() + c.audio.size() > static_cast<size_t>(c.rate) * 2)
         throw std::runtime_error("Frontend audio stalled for more than one second");
+    const size_t appended = c.audio.size();
     c.audio.insert(c.audio.end(), samples.begin(), samples.end());
+    c.output_dc.process(std::span<s16>(c.audio).subspan(appended), c.rate);
     sound.clear_pending_samples();
     size_t accepted = 0;
     const size_t frames = std::min(c.audio.size() / 2, requested_frames);
@@ -628,6 +752,38 @@ size_t send_audio(Content& c, size_t requested_frames = static_cast<size_t>(-1))
     }
     c.audio.erase(c.audio.begin(), c.audio.begin() + static_cast<std::ptrdiff_t>(accepted * 2));
     return accepted;
+}
+
+void collect_fast_audio(Content& c, size_t output_frames)
+{
+    auto& sound = c.machine->sound_board();
+    const auto input = sound.pending_samples();
+    if (input.size() % 2 || sound.sample_rate() != c.rate)
+        throw std::runtime_error("Invalid stereo audio or unexpected sample-rate change");
+    if (c.audio.size() + output_frames * 2 > static_cast<size_t>(c.rate) * 2)
+        throw std::runtime_error("Frontend audio stalled for more than one second");
+
+    const size_t source_frames = input.size() / 2;
+    const size_t offset = c.audio.size();
+    c.audio.resize(offset + output_frames * 2, 0);
+    if (source_frames != 0) {
+        const size_t denominator = std::max<size_t>(output_frames, 2) - 1;
+        for (size_t frame = 0; frame < output_frames; ++frame) {
+            const size_t position = frame * (source_frames - 1);
+            const size_t left = position / denominator;
+            const size_t right = std::min(left + 1, source_frames - 1);
+            const auto fraction = static_cast<s64>(position % denominator);
+            for (size_t channel = 0; channel < 2; ++channel) {
+                const auto a = static_cast<s64>(input[left * 2 + channel]);
+                const auto b = static_cast<s64>(input[right * 2 + channel]);
+                c.audio[offset + frame * 2 + channel] = static_cast<s16>(
+                    (a * (static_cast<s64>(denominator) - fraction) + b * fraction)
+                    / static_cast<s64>(denominator));
+            }
+        }
+    }
+    c.output_dc.process(std::span<s16>(c.audio).subspan(offset), c.rate);
+    sound.clear_pending_samples();
 }
 }
 
@@ -652,8 +808,7 @@ void retro_init()
     log_cb = nullptr;
     retro_log_callback logger{};
     if (environment && environment(RETRO_ENVIRONMENT_GET_LOG_INTERFACE, &logger)) log_cb = logger.log;
-    if (!libretro::register_netpacket_interface(environment, log_cb))
-        message(RETRO_LOG_WARN, "Libretro Netpacket is unavailable; linked cabinets are disabled");
+    (void)libretro::register_netpacket_interface(environment, log_cb);
     if (environment) {
         uint64_t quirks = RETRO_SERIALIZATION_QUIRK_ENDIAN_DEPENDENT
                         | RETRO_SERIALIZATION_QUIRK_PLATFORM_DEPENDENT;
@@ -674,8 +829,9 @@ void retro_get_system_info(retro_system_info* info)
 void retro_get_system_av_info(retro_system_av_info* info)
 {
     const unsigned scale = content ? content->scale : 1;
+    const unsigned maximum_scale = content ? content->requested_scale : 1;
     const float aspect_ratio = content ? content->aspect_ratio : 4.0f / 3.0f;
-    if (info) *info = {{width * scale, height * scale, width * scale, height * scale, aspect_ratio},
+    if (info) *info = {{width * scale, height * scale, width * maximum_scale, height * maximum_scale, aspect_ratio},
                       {content ? content->fps : board_fps<hw::Model2>(),
                        content ? static_cast<double>(content->rate) : 44100.0}};
 }
@@ -696,7 +852,8 @@ bool retro_load_game(const retro_game_info* game)
         enum retro_pixel_format format = RETRO_PIXEL_FORMAT_XRGB8888;
         if (!environment || !environment(RETRO_ENVIRONMENT_SET_PIXEL_FORMAT, &format))
             throw std::runtime_error("Frontend does not support XRGB8888 video");
-        const auto db_path = directory(RETRO_ENVIRONMENT_GET_SYSTEM_DIRECTORY) / "sm2-emu" / "games.xml";
+        const auto system_path = directory(RETRO_ENVIRONMENT_GET_SYSTEM_DIRECTORY) / "sm2-emu";
+        const auto db_path = system_path / "games.xml";
         // RetroArch may already return a core- or content-specific save path.
         // Use it directly, as the frontend owns the .srm location. Optional
         // standalone .nv/.eeprom files are imported from the same directory.
@@ -707,7 +864,8 @@ bool retro_load_game(const retro_game_info* game)
                 "Missing or invalid sm2-emu/games.xml. Download 'SM2-Emu' from "
                 "Online Updater > Core System Files Downloader.");
         auto loaded = rom::RomLoader::load(
-            database, game->path, {}, libretro::rom_crc_verification_enabled());
+            database, game->path, {}, libretro::rom_crc_verification_enabled(),
+            system_path.string());
         if (!loaded) throw std::runtime_error("ROM loading failed; see missing-file/CRC details in log");
         // The database name becomes a native-save filename and save-container ID,
         // never an arbitrary path.
@@ -716,32 +874,29 @@ bool retro_load_game(const retro_game_info* game)
             throw std::runtime_error("Invalid ROM set name in database");
         auto next = std::make_unique<Content>();
         next->game = loaded->game;
+        if (next->game.name == "powsledm")
+            message(RETRO_LOG_INFO, "Power Sled Master program: Relay-derived");
         next->machine = hw::create_machine(next->game, std::move(loaded->roms));
         if (!next->machine) throw std::runtime_error("Machine initialization failed");
+        next->manxtt_audio.prepare(database, game->path, next->game.name, *next->machine);
         next->machine->set_i960_round_nearest_even(
             libretro::i960_round_nearest_even_enabled());
         next->machine->sound_board().set_audio_balance_enabled(
             libretro::audio_balance_enabled());
+        next->machine->sound_board().set_output_low_pass_enabled(
+            libretro::scsp_output_low_pass_enabled());
         next->machine->sound_board().set_music_volume_percent(
             libretro::music_volume_percent());
+        configure_audio_sources(next->machine->sound_board());
         next->nvram_game = libretro::nvram::catalog_for_game(
             next->game.name, next->game.parent);
         libretro::set_option_game(next->nvram_game, next->game.name);
         const unsigned linked_cabinets = libretro::linked_cabinets(next->game.name);
         if (linked_cabinets > 1) {
-            auto network = std::make_unique<libretro::NetpacketTransport>();
-            network->configure(libretro::linked_cabinet_network_family(next->game.name),
-                               linked_cabinets);
-            next->machine->comm().set_transport(std::move(network));
-            next->external_link_active = true;
-            if (!libretro::netpacket_interface_supported())
-                message(RETRO_LOG_WARN,
-                        "Linked Cabinets is enabled but the frontend has no Netpacket support");
-            else {
-                const std::string link_message = "Linked-cabinet communication enabled for "
-                    + next->game.name + " through RetroArch Netplay";
-                message(RETRO_LOG_INFO, link_message.c_str());
-            }
+            configure_linked_cabinets(*next, linked_cabinets);
+            const std::string link_message = "Linked-cabinet communication selected for "
+                + next->game.name + "; awaiting a RetroArch Netplay session";
+            message(RETRO_LOG_INFO, link_message.c_str());
         }
         next->native_nvram_available = native_nvram_available(save_path, next->game.name);
         next->machine->set_nvram_directory(save_path.string());
@@ -758,14 +913,12 @@ bool retro_load_game(const retro_game_info* game)
         if (!next->rate) throw std::runtime_error("Sound board reported zero sample rate");
         next->native_fps = game_fps(next->game.board);
         next->timing = libretro::av_timing_mode();
-        next->fps = next->timing == libretro::AVTimingMode::Compatibility60Hz
+        next->fps = next->timing != libretro::AVTimingMode::Native
             ? 60.0 : next->native_fps;
         next->cadence_accumulator = 60.0 - next->native_fps;
         next->timing_overlay_font_pixels = libretro::timing_overlay_font_pixels();
         next->timing_overlay = next->timing_overlay_font_pixels != 0;
-        environment(RETRO_ENVIRONMENT_GET_CAN_DUPE, &next->can_dupe);
-        next->nvram_values = libretro::selected_nvram_values(next->nvram_game);
-        next->option_pending = !next->nvram_values.empty() && libretro::nvram_settings_enabled();
+        refresh_nvram_options(*next);
         next->audio.reserve(static_cast<size_t>(next->rate) * 2);
         const bool rumble_ready = next->rumble.init(environment);
         content = std::move(next);
@@ -813,6 +966,7 @@ bool retro_load_game(const retro_game_info* game)
     content.reset();
     libretro::timing_overlay_shutdown();
     libretro::set_option_game({});
+    libretro::set_audio_sources({});
     return false;
 }
 void retro_unload_game() { unload(); }
@@ -822,9 +976,14 @@ void retro_reset()
     try {
         reset_async_software_renderer(*content);
         content->rumble.stop();
+        const unsigned linked_cabinets = libretro::linked_cabinets(content->game.name);
+        if (linked_cabinets != content->linked_cabinets || linked_cabinets > 1)
+            configure_linked_cabinets(*content, linked_cabinets);
         content->machine->reset();
+        refresh_nvram_options(*content);
         content->machine->sound_board().clear_pending_samples();
         content->audio.clear();
+        content->output_dc.reset();
         content->cadence_accumulator = 60.0 - content->native_fps;
         content->input_runtime = {};
         content->audio_frame_remainder = 0;
@@ -856,6 +1015,11 @@ void retro_run()
         bool variables_updated = false;
         if (environment && environment(RETRO_ENVIRONMENT_GET_VARIABLE_UPDATE, &variables_updated)
             && variables_updated) {
+            if (libretro::linked_cabinets(content->game.name) != content->linked_cabinets)
+                retro_reset();
+            else
+                refresh_nvram_options(*content);
+            libretro::update_option_visibility();
             const unsigned overlay_font_pixels = libretro::timing_overlay_font_pixels();
             const bool overlay = overlay_font_pixels != 0;
             if (!overlay) clear_timing_overlay(*content);
@@ -867,143 +1031,161 @@ void retro_run()
             if (!libretro::gamepad_rumble_enabled()) content->rumble.stop();
             content->machine->sound_board().set_audio_balance_enabled(
                 libretro::audio_balance_enabled());
+            content->machine->sound_board().set_output_low_pass_enabled(
+                libretro::scsp_output_low_pass_enabled());
             content->machine->sound_board().set_music_volume_percent(
                 libretro::music_volume_percent());
+            configure_audio_sources(content->machine->sound_board());
             publish_controls();
         }
         if (!content->save_ram_initialized) initialize_frontend_save(*content);
         apply_pending_option(*content);
+        const auto cabinet_audio = content->manxtt_audio.update(
+            *content->machine, libretro::manxtt_cabinet_audio_enabled());
+        if (!cabinet_audio.notice.empty()) message(RETRO_LOG_INFO, cabinet_audio.notice.c_str());
+        if (cabinet_audio.changed) {
+            content->audio.clear();
+            content->output_dc.reset();
+            configure_audio_sources(content->machine->sound_board());
+        }
         update_aspect_ratio(*content);
         if (input_poll_cb) input_poll_cb();
         s16 rumble_steering = 0;
         if (input_state_cb && devices[0] != RETRO_DEVICE_NONE)
             rumble_steering = input_state_cb(0, RETRO_DEVICE_ANALOG,
                 RETRO_DEVICE_INDEX_ANALOG_LEFT, RETRO_DEVICE_ID_ANALOG_X);
-        bool advance_machine = true;
-        if (content->timing == libretro::AVTimingMode::Compatibility60Hz) {
-            content->cadence_accumulator += content->native_fps;
-            advance_machine = content->cadence_accumulator >= 60.0;
-            if (advance_machine) content->cadence_accumulator -= 60.0;
+        libretro::poll_input(content->machine->inputs(), content->game, devices,
+                             content->input_runtime, libretro::four_speed_h_gate(),
+                             input_state_cb, libretro::gun_input_mode(),
+                             libretro::offscreen_reload_shortcut_enabled(),
+                             libretro::driving_analog_options(),
+                             libretro::desert_elevation_options(),
+                             libretro::automatic_start_gear_enabled(),
+                             libretro::mouse_edge_offscreen_reload_enabled(),
+                             libretro::special_analog_options());
+        if (content->game.name == "skisuprg"
+            && content->machine->frames() == ski_super_g_drive_board_test_frame
+            && libretro::ski_super_g_drive_board_bypass_enabled()) {
+            content->machine->inputs().in0 &= static_cast<u8>(~0x04);
+            message(RETRO_LOG_INFO,
+                    "Sega Ski Super G Drive Board error bypass: pressed Test");
         }
-        if (advance_machine) {
-            libretro::poll_input(content->machine->inputs(), content->game, devices,
-                                 content->input_runtime, libretro::four_speed_h_gate(),
-                                 input_state_cb, libretro::gun_input_mode(),
-                                 libretro::offscreen_reload_shortcut_enabled(),
-                                 libretro::driving_analog_options(),
-                                 libretro::desert_elevation_options(),
-                                 libretro::automatic_start_gear_enabled(),
-                                 libretro::mouse_edge_offscreen_reload_enabled());
-            if (content->game.name == "skisuprg"
-                && content->machine->frames() == ski_super_g_drive_board_test_frame
-                && libretro::ski_super_g_drive_board_bypass_enabled()) {
-                content->machine->inputs().in0 &= static_cast<u8>(~0x04);
-                message(RETRO_LOG_INFO,
-                        "Sega Ski Super G Drive Board error bypass: pressed Test");
+        const auto machine_start = std::chrono::steady_clock::now();
+        content->machine->run_frame();
+        if (content->external_link_active) {
+            const auto& comm = content->machine->comm();
+            const auto role = comm.role_inputs();
+            const u64 state = (u64(role[0]) << 32) | (u64(role[1]) << 40)
+                | (unsigned(comm.enabled()) << 24)
+                | (unsigned(comm.link_alive()) << 16)
+                | (unsigned(comm.link_id()) << 8) | unsigned(comm.link_count());
+            if (state != content->logged_comm_state) {
+                content->logged_comm_state = state;
+                if (log_cb) log_cb(RETRO_LOG_INFO,
+                    "[SM2-Emu] [NetBoard] Native board %s: enabled=%u alive=%u id=%u count=%u fg=%u role=%u\n",
+                    content->game.name.c_str(), unsigned(comm.enabled()),
+                    unsigned(comm.link_alive()), unsigned(comm.link_id()),
+                    unsigned(comm.link_count()), unsigned(role[0]), unsigned(role[1]));
             }
-            const auto machine_start = std::chrono::steady_clock::now();
-            content->machine->run_frame();
-            update_aspect_ratio(*content);
-            const auto drive_writes = content->machine->take_drive_board_writes();
-            content->rumble.update(content->game, drive_writes.view(), rumble_steering,
-                                   libretro::gamepad_rumble_enabled());
-            const auto machine_end = std::chrono::steady_clock::now();
-            content->timing_machine_ms += elapsed_ms(machine_start, machine_end);
-            ++content->timing_machine_frames;
-            if (content->option_pending) {
-                apply_pending_option(*content);
-                if (content->option_pending && ++content->option_wait_frames == 600) {
-                    content->option_pending = false;
-                    message(RETRO_LOG_WARN, "NVRAM layout did not become ready; core options were not applied");
-                }
-            }
-            const auto status = content->machine->main_cpu_status();
-            if (status.faulted) throw std::runtime_error(status.fault_message);
         }
+        if (content->game.lightgun.present) {
+            content->machine->video().filter_gun_flash(
+                libretro::hide_shot_flash_enabled(), content->machine->inputs().in1);
+        }
+        update_aspect_ratio(*content);
+        const auto drive_writes = content->machine->take_drive_board_writes();
+        content->rumble.update(content->game, drive_writes.view(), rumble_steering,
+                               libretro::gamepad_rumble_enabled());
+        const auto machine_end = std::chrono::steady_clock::now();
+        content->timing_machine_ms += elapsed_ms(machine_start, machine_end);
+        ++content->timing_machine_frames;
+        if (content->option_pending) {
+            apply_pending_option(*content);
+            if (content->option_pending && ++content->option_wait_frames == 600) {
+                content->option_pending = false;
+                message(RETRO_LOG_WARN, "NVRAM layout did not become ready; core options were not applied");
+            }
+        }
+        const auto status = content->machine->main_cpu_status();
+        if (status.faulted) throw std::runtime_error(status.fault_message);
         const auto video_start = std::chrono::steady_clock::now();
 #if defined(SM2_LIBRETRO_VULKAN) || defined(SM2_LIBRETRO_OPENGL)
         if (content->renderer_api != RendererApi::Software) {
-            if (advance_machine || !content->can_dupe || !content->hardware_frame_valid) {
-                if (content->renderer_api == RendererApi::Vulkan) {
+            if (content->renderer_api == RendererApi::Vulkan) {
 #ifdef SM2_LIBRETRO_VULKAN
-                    if (!content->gpu) throw std::runtime_error("Frontend Vulkan context is not ready");
-                    content->gpu->render(*content->machine, video_cb,
-                        libretro::crosshair_state(content->game, content->input_runtime,
-                                                  libretro::crosshair_mask(content->game),
-                                                  libretro::crosshair_style()),
-                        content->timing_overlay_data, content->fps,
-                        libretro::texture_filter_quality(), libretro::upscale_2d_mode());
+                if (!content->gpu) throw std::runtime_error("Frontend Vulkan context is not ready");
+                content->gpu->render(*content->machine, video_cb,
+                    libretro::crosshair_state(content->game, content->input_runtime,
+                                              libretro::crosshair_mask(content->game),
+                                              libretro::crosshair_style()),
+                    content->timing_overlay_data, content->fps,
+                    libretro::texture_filter_quality(), libretro::upscale_2d_mode());
 #else
-                    throw std::runtime_error("This core was built without Vulkan support");
+                throw std::runtime_error("This core was built without Vulkan support");
 #endif
-                } else {
+            } else {
 #ifdef SM2_LIBRETRO_OPENGL
-                    if (!content->gl) throw std::runtime_error("Frontend OpenGL context is not ready");
-                    content->gl->render(*content->machine, video_cb,
-                        libretro::crosshair_state(content->game, content->input_runtime,
-                                                  libretro::crosshair_mask(content->game),
-                                                  libretro::crosshair_style()),
-                        content->timing_overlay_data, content->fps,
-                        libretro::texture_filter_quality(), libretro::upscale_2d_mode());
+                if (!content->gl) throw std::runtime_error("Frontend OpenGL context is not ready");
+                content->gl->render(*content->machine, video_cb,
+                    libretro::crosshair_state(content->game, content->input_runtime,
+                                              libretro::crosshair_mask(content->game),
+                                              libretro::crosshair_style()),
+                    content->timing_overlay_data, content->fps,
+                    libretro::texture_filter_quality(), libretro::upscale_2d_mode());
 #else
-                    throw std::runtime_error("This core was built without OpenGL support");
+                throw std::runtime_error("This core was built without OpenGL support");
 #endif
-                }
-                content->hardware_frame_valid = true;
             }
-            else if (video_cb) video_cb(nullptr, width * content->scale, height * content->scale, 0);
         } else
 #endif
         {
-            if (advance_machine) {
-                content->machine->compose_video();
-                const auto crosshairs = libretro::crosshair_state(
-                    content->game, content->input_runtime,
-                    libretro::crosshair_mask(content->game),
-                    libretro::crosshair_style());
-                if (content->async_renderer && !content->machine->render_test_mode()) {
-                    content->async_renderer->wait();
-                    if (content->async_frame_ready) {
-                        content->frame.swap(content->async_frame);
-                        finish_software_frame(*content, content->async_crosshairs,
-                                              content->async_timing_overlay_data,
-                                              content->async_fps);
-                    }
-                    content->async_crosshairs = crosshairs;
-                    content->async_timing_overlay_data = content->timing_overlay_data;
-                    content->async_fps = content->fps;
-                    content->async_renderer->begin(*content->machine, content->async_frame);
-                    content->async_frame_ready = true;
-                } else {
-                    // Render-test mode must display the current framebuffer bank,
-                    // so it temporarily uses the synchronous path.
-                    if (content->async_renderer) content->async_renderer->wait();
-                    content->async_frame_ready = false;
-                    content->renderer.render(*content->machine,
-                                             content->machine->render_list(),
-                                             content->frame);
-                    finish_software_frame(*content, crosshairs,
-                                          content->timing_overlay_data, content->fps);
+            content->machine->compose_video();
+            const auto crosshairs = libretro::crosshair_state(
+                content->game, content->input_runtime,
+                libretro::crosshair_mask(content->game),
+                libretro::crosshair_style());
+            if (content->async_renderer && !content->machine->render_test_mode()) {
+                content->async_renderer->wait();
+                if (content->async_frame_ready) {
+                    content->frame.swap(content->async_frame);
+                    finish_software_frame(*content, content->async_crosshairs,
+                                          content->async_timing_overlay_data,
+                                          content->async_fps);
                 }
+                content->async_crosshairs = crosshairs;
+                content->async_timing_overlay_data = content->timing_overlay_data;
+                content->async_fps = content->fps;
+                content->async_renderer->begin(*content->machine, content->async_frame);
+                content->async_frame_ready = true;
+            } else {
+                // Render-test mode must display the current framebuffer bank,
+                // so it temporarily uses the synchronous path.
+                if (content->async_renderer) content->async_renderer->wait();
+                content->async_frame_ready = false;
+                content->renderer.render(*content->machine,
+                                         content->machine->render_list(),
+                                         content->frame);
+                finish_software_frame(*content, crosshairs,
+                                      content->timing_overlay_data, content->fps);
             }
             if (video_cb) {
-                if (!advance_machine && content->can_dupe) video_cb(nullptr, width, height, 0);
-                else video_cb(content->frame.data(), width, height, width * sizeof(u32));
+                video_cb(content->frame.data(), width, height, width * sizeof(u32));
             }
         }
         const auto video_end = std::chrono::steady_clock::now();
         content->timing_video_ms += elapsed_ms(video_start, video_end);
         const auto audio_start = video_end;
         size_t requested_audio = static_cast<size_t>(-1);
-        if (content->timing == libretro::AVTimingMode::Compatibility60Hz) {
+        if (content->timing != libretro::AVTimingMode::Native) {
             content->audio_frame_remainder += content->rate;
             requested_audio = static_cast<size_t>(content->audio_frame_remainder / 60);
             content->audio_frame_remainder %= 60;
+            collect_fast_audio(*content, requested_audio);
             content->audio_frames_due += requested_audio;
             requested_audio = content->audio_frames_due;
         }
         const size_t accepted_audio = send_audio(*content, requested_audio);
-        if (content->timing == libretro::AVTimingMode::Compatibility60Hz)
+        if (content->timing != libretro::AVTimingMode::Native)
             content->audio_frames_due -= std::min(content->audio_frames_due, accepted_audio);
         const auto run_end = std::chrono::steady_clock::now();
         content->timing_audio_ms += elapsed_ms(audio_start, run_end);
@@ -1062,21 +1244,42 @@ bool retro_unserialize(const void* data, size_t size)
     }
     if (!content || !data || size == 0)
         return false;
+    if (content->game.name == "powsledm") {
+        // Retain rejection of development states made with the removed Slave
+        // donor. Their program addresses differ; reject before any mutation.
+        // Untagged legacy and Relay-derived states remain compatible.
+        bool slave = false;
+        if (size >= frontend_state_size) {
+            const u8* trailer = static_cast<const u8*>(data) + size - frontend_state_size;
+            if (std::memcmp(trailer, frontend_state_magic.data(), frontend_state_magic.size()) == 0) {
+                const u8* cursor = trailer + 76;  // Existing gun-flash flags.
+                slave = (state_read<u32>(cursor) & (1u << 6)) != 0;
+            }
+        }
+        if (slave) {
+            message(RETRO_LOG_ERROR, "Power Sled: Slave-derived Master Save State is unsupported");
+            return false;
+        }
+    }
     try {
         reset_async_software_renderer(*content);
         libretro::InputRuntime input_runtime{};
         double cadence_accumulator = 60.0 - content->native_fps;
         u64 audio_frame_remainder = 0;
         size_t audio_frames_due = 0;
+        hw::Model2Video::GunFlashState flash{};
+        libretro::OutputDcBlocker output_dc{};
         if (size >= frontend_state_size) {
             load_frontend_state(
                 static_cast<const u8*>(data) + size - frontend_state_size,
                 input_runtime, cadence_accumulator, audio_frame_remainder,
-                audio_frames_due);
+                audio_frames_due, flash, output_dc);
         }
         if (!content->machine->load_state(static_cast<const u8*>(data), size))
             return false;
         reset_frontend_after_state_load(*content);
+        content->machine->video().set_gun_flash_state(flash);
+        content->output_dc = output_dc;
         content->input_runtime = input_runtime;
         content->cadence_accumulator = cadence_accumulator;
         content->audio_frame_remainder = audio_frame_remainder;

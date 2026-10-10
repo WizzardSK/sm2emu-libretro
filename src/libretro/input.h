@@ -29,6 +29,7 @@ enum class InputProfile {
     JoystickAnalogSkyTarget,
     BaseballDynamite,
     SpecialWaterSki,
+    SpecialPowerSled,
     SpecialSkiSuperG,
     SpecialTopSkater,
     SpecialWaveRunner,
@@ -70,6 +71,10 @@ struct DrivingAnalogOptions {
     int steering_output_range = 100;
     int accelerator_output_range_per_mille = 1000;
     int brake_output_range_per_mille = 1000;
+};
+
+struct SpecialAnalogOptions {
+    bool top_skater_progressive = true;
 };
 
 struct InputRuntime {
@@ -114,5 +119,6 @@ void poll_input(hw::Inputs& inputs, const rom::GameSpec& game,
                 DrivingAnalogOptions driving_options = {},
                 DesertElevationOptions desert_elevation_options = {},
                 bool automatic_start_gear = true,
-                bool mouse_edge_offscreen_reload = false);
+                bool mouse_edge_offscreen_reload = false,
+                SpecialAnalogOptions special_options = {});
 }

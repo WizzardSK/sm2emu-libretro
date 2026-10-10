@@ -13,7 +13,7 @@ class VulkanRenderer {
 public:
     VulkanRenderer();
     ~VulkanRenderer();
-    void init(retro_environment_t env, unsigned scale, retro_log_printf_t log);
+    unsigned init(retro_environment_t env, unsigned scale, retro_log_printf_t log);
     void render(hw::Model2MachineBase& machine, retro_video_refresh_t video,
                 const CrosshairState& crosshairs, const TimingOverlayData& timing,
                 double frames_per_second, unsigned texture_quality,
@@ -30,7 +30,7 @@ class OpenGlRenderer {
 public:
     OpenGlRenderer();
     ~OpenGlRenderer();
-    void init(unsigned scale, bool es, retro_log_printf_t log);
+    unsigned init(unsigned scale, bool es, retro_log_printf_t log);
     void abandon_context();
     void render(hw::Model2MachineBase& machine, retro_video_refresh_t video,
                 const CrosshairState& crosshairs, const TimingOverlayData& timing,

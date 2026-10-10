@@ -121,7 +121,79 @@ int main()
             if (key == definition->key) return definition;
         return static_cast<const retro_core_option_v2_definition*>(nullptr);
     };
+    const auto* top_response = find_definition("sm2_top_skater_curving_response");
+    expect(top_response && std::string_view(top_response->default_value) == "progressive"
+        && std::string_view(top_response->values[0].label) == "Linear"
+        && std::string_view(top_response->values[1].label) == "Progressive (Fine Center)",
+        "Top Skater defaults to approved Progressive with the shared response labels");
+    expect(libretro::special_analog_options().top_skater_progressive,
+           "Top Skater Progressive is effective without a saved preference");
+    option_values["sm2_top_skater_curving_response"] = "linear";
+    expect(!libretro::special_analog_options().top_skater_progressive,
+           "Top Skater Linear is read from frontend settings");
+    option_values.erase("sm2_top_skater_curving_response");
+    const auto* flash = find_definition("sm2_hide_shot_flash");
+    expect(flash && std::string_view(flash->desc) == "Hide Shot Flash"
+        && std::string_view(flash->default_value) == "disabled"
+        && std::string_view(flash->values[0].label) == "Disabled"
+        && std::string_view(flash->values[1].label) == "Enabled",
+        "Hide Shot Flash uses the shared label and disabled default");
+    for (const char* game : {"vf2", "vcop", "vcop2", "hotd", "von", ""}) {
+        libretro::set_option_game(game);
+        expect(option_visibility["sm2_hide_shot_flash"],
+               "Hide Shot Flash stays visible for every game and without content");
+    }
+    option_values["sm2_hide_shot_flash"] = "enabled";
+    expect(libretro::hide_shot_flash_enabled(), "flash option enabled takes effect");
+    option_values["sm2_hide_shot_flash"] = "disabled";
+    expect(!libretro::hide_shot_flash_enabled(), "flash option disabled takes effect");
+    option_values.erase("sm2_hide_shot_flash");
     const auto* difficulty = find_definition("sm2_nvram_daytona_difficulty");
+    for (size_t source = 0; source < libretro::audio_source_keys.size(); ++source) {
+        const auto* gain = find_definition(libretro::audio_source_keys[source]);
+        expect(gain && std::string_view(gain->default_value) == "auto"
+                   && std::string_view(gain->values[0].value) == "auto"
+                   && std::string_view(gain->values[0].label) == "Auto"
+                   && std::string_view(gain->values[1].value) == "0"
+                   && std::string_view(gain->values[1].label) == "Mute"
+                   && !gain->values[12].value,
+               "every source Gain defaults to Auto, then Mute and ten numeric steps");
+        for (unsigned step = 1; gain && step <= 10; ++step) {
+            const std::string raw = std::to_string(step * 10);
+            expect(gain->values[step + 1].value
+                       && std::string_view(gain->values[step + 1].value) == raw
+                       && std::string_view(gain->values[step + 1].label) == raw + "%",
+                   "source Gain choices match TGPulse in order and saved values");
+        }
+        for (const auto& [raw, expected] : std::vector<std::pair<std::string, unsigned>>{
+                 {"auto",100}, {"0",0}, {"Mute",0}, {"mute",0}, {"10",10},
+                 {"100",100}, {"150",150}, {"200",200}, {"invalid",100}}) {
+            option_values[libretro::audio_source_keys[source]] = raw;
+            expect(libretro::audio_source_gain(source) == expected,
+                   "Gain Auto and saved legacy values preserve the reference mix");
+            if (raw != "invalid")
+                expect(libretro::audio_source_gain_automatic(source) == (raw == "auto"),
+                       "Gain Auto remains distinct from manual 100 percent and Mute");
+        }
+        option_values.erase(libretro::audio_source_keys[source]);
+    }
+    expect(option_labels["sm2_multipcm1_gain"] == "MultiPCM 1 Gain"
+               && option_labels["sm2_multipcm2_gain"] == "MultiPCM 2 Gain"
+               && option_labels["sm2_dsb_gain"] == "DSB (MPEG) Gain"
+               && option_labels["sm2_ym3438_gain"] == "FM (YM3438) Gain",
+           "source Gain labels use the shared convention without an Absolute suffix");
+    option_values["sm2_multipcm1_gain"] = "150";
+    libretro::register_core_options(option_environment);
+    const auto selected_gain = std::find_if(libretro::compatible_definitions.begin(),
+        libretro::compatible_definitions.end(), [](const auto& gain) {
+            return gain.key && std::string_view(gain.key) == "sm2_multipcm1_gain";
+        });
+    expect(selected_gain != libretro::compatible_definitions.end()
+               && std::string_view(selected_gain->values[12].value) == "150"
+               && !selected_gain->values[13].value,
+           "only an active saved legacy Gain is retained by registration");
+    option_values.erase("sm2_multipcm1_gain");
+    libretro::register_core_options(option_environment);
     const auto* cabinet = find_definition("sm2_nvram_daytona_cabinet");
     const auto* manxtt_cabinet = find_definition("sm2_nvram_manxtt_cabinet_type");
     const auto* sfight_automatic = find_definition("sm2_nvram_sfight_automatic");
@@ -153,6 +225,11 @@ int main()
     const auto* ski_drive_board_bypass =
         find_definition("sm2_skisuprg_drive_board_bypass");
     const auto* nvram_settings = find_definition("sm2_nvram_settings");
+    const auto* overrev_hardware = find_definition("sm2_nvram_overrev_hardware_type");
+    expect(overrev_hardware
+               && std::string_view(overrev_hardware->default_value) == "sega_stcc"
+               && std::string_view(overrev_hardware->values[3].label) == "Sega Stcc (Default)",
+           "Over Rev registered Hardware Type defaults to SEGA STCC");
     expect(difficulty && std::string_view(difficulty->values[0].label) == "Normal (Default)"
                && std::string_view(difficulty->values[1].label) == "Hard",
            "registered NVRAM values use RetroArch title case without changing keys");
@@ -214,11 +291,24 @@ int main()
                && std::string_view(automatic_start_gear->values[0].label) == "Enabled"
                && std::string_view(automatic_start_gear->values[1].label) == "Disabled",
            "Automatic Start Gear exposes the upstream rolling-start behaviour");
+    expect(libretro::audio_balance_enabled(), "Enhanced Audio Balance is enabled by default");
     expect(audio_balance
                && std::string_view(audio_balance->desc) == "Enhanced Audio Balance"
                && std::string_view(audio_balance->default_value) == "enabled"
                && std::string_view(audio_balance->category_key) == "audio",
            "upstream audio balance is enabled globally by default in Audio");
+    const auto* low_pass = find_definition("sm2_scsp_output_low_pass_filter");
+    expect(low_pass && std::string_view(low_pass->desc) == "SCSP Output Low-Pass Filter"
+               && std::string_view(low_pass->category_key) == "audio"
+               && std::string_view(low_pass->default_value) == "disabled"
+               && std::string_view(low_pass->values[0].label) == "Disabled"
+               && std::string_view(low_pass->values[1].label) == "Enabled"
+               && !low_pass->values[2].value,
+           "SCSP low-pass has exactly two choices and defaults to disabled");
+    expect(!libretro::scsp_output_low_pass_enabled(), "SCSP filter defaults to bypass");
+    option_values["sm2_scsp_output_low_pass_filter"] = "enabled";
+    expect(libretro::scsp_output_low_pass_enabled(), "SCSP filter reads enabled");
+    option_values.erase("sm2_scsp_output_low_pass_filter");
     expect(music_volume
                && std::string_view(music_volume->desc) == "Music Volume"
                && std::string_view(music_volume->default_value) == "100"
@@ -429,6 +519,68 @@ int main()
            "registered option descriptions use frontend-facing text");
     option_visibility.clear();
     libretro::set_option_game("daytona");
+    for (const char* game : {"powsled", "powsledm", "powsledr"}) {
+        const auto options = libretro::nvram::options_for_game(game);
+        const bool relay = std::string_view(game) == "powsledr";
+        expect(options.size() == (relay ? 6u : 7u), "Power Sled exposes only reviewed fields");
+        expect(libretro::nvram::catalog_for_game(game, "powsled") == game,
+               "Power Sled variants use their own option catalog");
+        std::array<u8, libretro::kBackupRamSize> backup{};
+        std::array<u8, libretro::kEepromSize> eeprom{};
+        expect(libretro::initial_nvram::seed(game, backup, eeprom) ==
+               libretro::initial_nvram::SeedResult::Loaded, "Power Sled independent template decodes");
+        const auto original = backup;
+        const auto original_eeprom = eeprom;
+        for (const auto& option : options) {
+            expect(option.value_count < RETRO_NUM_CORE_OPTION_VALUES_MAX,
+                   "Power Sled numeric list fits the Libretro option limit");
+            const std::string key = "sm2_nvram_" + std::string(game) + "_" + option.suffix;
+            const auto* definition = find_definition(key);
+            expect(definition && std::string_view(definition->desc) ==
+                   libretro::retroarch_option_label(option.label), "Power Sled uses shared frontend labels");
+            expect(definition && definition->values[option.value_count - 1].value
+                   && !definition->values[option.value_count].value,
+                   "Power Sled frontend numeric ranges are not truncated");
+        }
+        for (size_t index = 0; index < options.size(); ++index) {
+            for (size_t value = 0; value < options[index].value_count; ++value) {
+                backup = original; eeprom = original_eeprom;
+                std::vector<std::string> selected(options.size());
+                selected[index] = options[index].values[value].key;
+                const auto result = libretro::nvram::apply(game, backup, eeprom, selected);
+                expect(result == libretro::nvram::ApplyResult::Changed ||
+                       result == libretro::nvram::ApplyResult::Unchanged, "Every Power Sled value applies");
+                for (size_t byte = 0; byte < backup.size(); ++byte) {
+                    const auto& option = options[index];
+                    const auto patch = std::find_if(option.patches, option.patches + option.patch_count,
+                        [byte](const auto& p) { return p.offset == byte; });
+                    const u8 wanted = patch == option.patches + option.patch_count ? original[byte]
+                        : option.values[value].desired[patch - option.patches];
+                    expect(backup[byte] == wanted, "Power Sled writes only the selected field in three copies");
+                }
+                expect(eeprom == original_eeprom, "Power Sled preserves EEPROM and calibration bytes");
+                expect(libretro::nvram::apply(game, backup, eeprom, selected) ==
+                       libretro::nvram::ApplyResult::Unchanged, "Power Sled writes are idempotent");
+            }
+        }
+        std::vector<std::string> selected(options.size());
+        selected.back() = "45.0";
+        for (unsigned invalid = 0; invalid < 3; ++invalid) {
+            backup = original;
+            if (invalid == 0) backup[0x100] ^= 1;
+            else backup.fill(invalid == 1 ? 0xff : 0);
+            const auto before = backup;
+            expect(libretro::nvram::apply(game, backup, eeprom, selected) ==
+                   libretro::nvram::ApplyResult::LayoutNotReady && backup == before,
+                   "Power Sled leaves discordant or blank layouts to native recovery");
+        }
+        libretro::set_option_game(game, game);
+        expect(option_visibility["sm2_nvram_" + std::string(game) + "_checkpoint_0"],
+               "Power Sled NVRAM options are visible for the loaded program");
+        expect(!option_visibility["sm2_nvram_daytona_link_id"],
+               "Power Sled retains per-game NVRAM visibility");
+    }
+    libretro::set_option_game("daytona");
     size_t visible_daytona = 0;
     size_t visible_other_games = 0;
     for (const auto& [key, visible] : option_visibility) {
@@ -442,12 +594,39 @@ int main()
         const std::string_view key = definition->key;
         if (key != "sm2_nvram_settings" && !key.starts_with("sm2_nvram_")
             && !key.starts_with("sm2_linked_cabinets_")
+            && !key.starts_with("sm2_automatic_network_")
+            && std::find_if(libretro::audio_source_keys.begin(),
+                libretro::audio_source_keys.end(), [&](const char* source) {
+                    return key == source;
+                }) == libretro::audio_source_keys.end()
             && key != "sm2_skisuprg_drive_board_bypass")
             expect(option_visibility[definition->key],
                    "all non-NVRAM options remain visible for Daytona");
     }
+    libretro::set_audio_sources({false, false, true, true, true});
+    expect(!option_visibility["sm2_scsp_gain"] && !option_visibility["sm2_dsb_gain"]
+               && option_visibility["sm2_multipcm1_gain"]
+               && option_visibility["sm2_multipcm2_gain"]
+               && option_visibility["sm2_ym3438_gain"],
+           "Model 1 board exposes only its three sound chips");
+    libretro::set_audio_sources({true, true, false, false, false});
+    expect(option_visibility["sm2_scsp_gain"] && option_visibility["sm2_dsb_gain"]
+               && !option_visibility["sm2_multipcm1_gain"]
+               && !option_visibility["sm2_multipcm2_gain"]
+               && !option_visibility["sm2_ym3438_gain"],
+           "Model 2 with DSB exposes only the two present sources");
     expect(option_visibility["sm2_linked_cabinets_daytona"],
            "Linked Cabinets is visible for the supported Daytona family");
+    option_values["sm2_nvram_settings"] = "disabled";
+    libretro::update_option_visibility();
+    expect(!option_visibility["sm2_automatic_network_daytona"],
+           "Automatic Network Settings is hidden while NVRAM Settings is disabled");
+    option_values["sm2_nvram_settings"] = "enabled";
+    libretro::update_option_visibility();
+    expect(option_visibility["sm2_automatic_network_daytona"]
+               && !option_visibility["sm2_automatic_network_stcc"],
+           "Automatic Network Settings is visible only for the loaded set");
+    option_values.erase("sm2_nvram_settings");
     expect(!option_visibility["sm2_skisuprg_drive_board_bypass"],
            "Sega Ski Super G Drive Board bypass is hidden for Daytona");
     option_visibility.clear();
@@ -468,6 +647,10 @@ int main()
                 expect_game(!option_visibility[definition->key], game,
                             "NVRAM child option is hidden when NVRAM Settings is disabled");
         }
+        expect_game(option_visibility["sm2_scsp_output_low_pass_filter"], game,
+                    "SCSP output filter stays visible for every game");
+        expect_game(option_visibility["sm2_manxtt_cabinet_audio"], game,
+                    "Manx TT Cabinet Audio stays visible for every game");
         for (const auto& linked_game : libretro::linked_cabinet_games) {
             const std::string key = "sm2_linked_cabinets_" + std::string(linked_game.name);
             expect_game(option_visibility[key] == (game == linked_game.name), game,
@@ -497,7 +680,7 @@ int main()
     {
         const auto options = libretro::nvram::all_options();
         std::set<std::string> keys;
-        expect(options.size() == 311, "reviewed NVRAM option catalog has 311 entries");
+        expect(options.size() == 331, "reviewed NVRAM option catalog has 331 entries");
         for (const auto& option : options) {
             const std::string key = std::string(option.game) + ":" + option.suffix;
             expect(keys.insert(key).second, "NVRAM option keys are unique");
@@ -584,7 +767,7 @@ int main()
 
         std::set<std::string> games;
         for (const auto& option : options) games.insert(option.game);
-        expect(games.size() == 52, "initial NVRAM catalog covers 52 reviewed sets");
+        expect(games.size() == 55, "initial NVRAM catalog covers 55 reviewed sets");
         const std::set<std::pair<std::string, std::string>> offline = {
             {"daytona", "link_id"}, {"daytonas", "link_id"},
             {"manxtt", "link_type"}, {"motoraiddx", "network_type"}, {"indy500d", "network_type"},
@@ -598,6 +781,8 @@ int main()
             {"daytona", "cabinet"}, {"daytona93", "cabinet"},
             {"daytonas", "cabinet"},
             {"manxtt", "cabinet_type"},
+            {"motoraiddx", "cabinet_type"},
+            {"overrev", "hardware_type"},
             {"sgt24h", "io_type"},
         };
         const std::set<std::pair<std::string, std::string>> compound_defaults = {
@@ -654,6 +839,41 @@ int main()
             } else if (game == "manxtt") {
                 expect(initial_eeprom[0x0a] == 1,
                        "Manx TT initial NVRAM applies TWIN cabinet type");
+            } else if (game == "motoraiddx") {
+                expect((initial_eeprom[0x0c] & 0x03) == 0x02
+                           && initial_eeprom[0x17] == 0x00
+                           && (initial_eeprom[0x30] & 0x03) == 0x02
+                           && initial_eeprom[0x3b] == 0x00,
+                       "Motor Raid Deluxe automatic setup applies TWIN to both compound fields and mirrors");
+            } else if (game == "overrev") {
+                expect(initial_eeprom[0x27] == 4 && initial_eeprom[0x5b] == 4,
+                       "Over Rev automatic setup applies SEGA STCC to both EEPROM banks");
+                std::vector<std::string> manual_selection(game_options.size());
+                for (size_t i = 0; i < game_options.size(); ++i) {
+                    if (std::string_view(game_options[i].suffix) == "hardware_type") {
+                        expect(std::string_view(game_options[i].default_value) == "sega_stcc",
+                               "Over Rev selector default matches automatic setup");
+                        option_values.erase("sm2_nvram_overrev_hardware_type");
+                        expect(libretro::selected_nvram_values(game)[i] == "sega_stcc",
+                               "Over Rev missing-variable fallback uses SEGA STCC");
+                        option_values["sm2_nvram_overrev_hardware_type"] = "normal_2in1";
+                        expect(libretro::selected_nvram_values(game)[i] == "normal_2in1",
+                               "Over Rev preserves an explicit saved NORMAL Core Option");
+                        option_values.erase("sm2_nvram_overrev_hardware_type");
+                        manual_selection[i] = "normal_2in1";
+                    }
+                }
+                auto manual_backup = initial_backup;
+                auto manual_eeprom = initial_eeprom;
+                expect(libretro::nvram::apply(game, manual_backup, manual_eeprom,
+                                             manual_selection) ==
+                           libretro::nvram::ApplyResult::Changed
+                           && manual_eeprom[0x27] == 0 && manual_eeprom[0x5b] == 0,
+                       "Over Rev explicit NORMAL selection remains available");
+                expect(libretro::nvram::apply(game, manual_backup, manual_eeprom,
+                                             manual_selection) ==
+                           libretro::nvram::ApplyResult::Unchanged,
+                       "Over Rev manual override produces valid idempotent settings");
             }
             libretro::SaveRam initial_save{};
             libretro::export_save_ram(game, initial_backup, initial_eeprom, initial_save);
@@ -886,9 +1106,21 @@ int main()
                 });
             expect_game(cabinet_option != motor_options.end(), "motoraiddx",
                         "Cabinet Type is exposed");
-            if (cabinet_option != motor_options.end())
-                selections[static_cast<size_t>(
-                    cabinet_option - motor_options.begin())] = "twin";
+            if (cabinet_option != motor_options.end()) {
+                const size_t cabinet_index = cabinet_option - motor_options.begin();
+                const auto* definition = find_definition("sm2_nvram_motoraiddx_cabinet_type");
+                expect(definition && std::string_view(definition->default_value) == "twin"
+                           && std::string_view(definition->values[1].label) == "Twin (Default)",
+                       "Motor Raid Deluxe selector marks Twin as the core default");
+                option_values.erase("sm2_nvram_motoraiddx_cabinet_type");
+                expect(libretro::selected_nvram_values("motoraiddx")[cabinet_index] == "twin",
+                       "Motor Raid Deluxe missing-variable fallback follows the automatic default");
+                option_values["sm2_nvram_motoraiddx_cabinet_type"] = "deluxe";
+                expect(libretro::selected_nvram_values("motoraiddx")[cabinet_index] == "deluxe",
+                       "Motor Raid Deluxe preserves an explicit Deluxe Core Option");
+                option_values.erase("sm2_nvram_motoraiddx_cabinet_type");
+                selections[cabinet_index] = cabinet_option->default_value;
+            }
             expect_game(libretro::nvram::apply(
                             "motoraiddx", clone_backup, clone_eeprom, selections) ==
                             libretro::nvram::ApplyResult::Changed,
@@ -1311,6 +1543,81 @@ int main()
         expect(libretro::nvram::apply("pltkids", settings_backup, invalid_pltkids, selections) ==
                    libretro::nvram::ApplyResult::LayoutNotReady,
                "invalid Pilot Kids signature is not modified");
+    }
+
+    for (const auto& linked : libretro::linked_cabinet_games) {
+        const std::string key = "sm2_automatic_network_" + std::string(linked.name);
+        const auto* definition = find_definition(key.c_str());
+        const bool relay_program = linked.name == "vonr" || linked.name == "powsledr";
+        const auto choices = libretro::network::choices(
+            relay_program ? linked.name : linked.nvram_game, linked.max_cabinets);
+        const bool sled = libretro::power_sled_program_role(linked.name) != 0;
+        expect(definition && std::string_view(definition->default_value) ==
+                   (relay_program ? "relay" : sled ? "0" : "1")
+                   && definition->category_key == std::string_view("system"),
+               "automatic network option is registered for each linked set");
+        const auto options = libretro::nvram::options_for_game(linked.nvram_game);
+        if (relay_program) {
+            expect(choices.size() == 1 && choices[0].key == "relay",
+                   "dedicated Relay programs offer only relay");
+        } else if (sled) {
+            expect(choices.size() == 4 && choices[0].key == "1"
+                       && choices[1].key == "2" && choices[2].key == "3"
+                       && choices[3].key == "0",
+                   "Power Sled automatic network offers reviewed colors only");
+            expect(libretro::network::managed_values(linked.nvram_game, 3, "master").empty(),
+                   "Power Sled ROM role cannot be changed by automatic color settings");
+        }
+        for (const auto& choice : choices) {
+            option_values[key] = choice.key;
+            expect(libretro::automatic_network_preset(linked.name) == choice.key,
+                   "frontend ANS values follow the canonical convention");
+            if (choice.key == "0") continue;
+            for (unsigned total : {1u, linked.max_cabinets}) {
+                const auto managed = libretro::network::managed_values(
+                    linked.nvram_game, total, choice.key);
+                expect(linked.name == "powsledr" ? managed.empty() : !managed.empty(),
+                       "Relay Power Sled preserves native fields; other presets manage reviewed fields");
+                for (const auto& field : managed) {
+                    const auto option = std::find_if(options.begin(), options.end(),
+                        [&](const auto& item) { return field.suffix == item.suffix; });
+                    expect(option != options.end(),
+                           "automatic network field exists in reviewed NVRAM catalogue");
+                    if (option == options.end()) continue;
+                    expect(std::any_of(option->values, option->values + option->value_count,
+                        [&](const auto& value) { return field.key == value.key; }),
+                           "automatic network value exists in reviewed NVRAM catalogue");
+                }
+            }
+        }
+        for (const auto* old : {"master", "slave_2", "disabled", "silver", "red", "black"}) {
+            option_values[key] = old;
+            expect(libretro::automatic_network_preset(linked.name) == "0",
+                   "ANS does not interpret old development values");
+        }
+        option_values.erase(key);
+    }
+    auto managed_key = [](std::string_view game, unsigned total, std::string_view preset,
+                          std::string_view suffix) {
+        const auto values = libretro::network::managed_values(game, total, preset);
+        const auto found = std::find_if(values.begin(), values.end(), [&](const auto& value) {
+            return value.suffix == suffix;
+        });
+        return found == values.end() ? std::string{} : found->key;
+    };
+    expect(managed_key("daytona", 2, "1", "link_id") == "master"
+               && managed_key("daytona", 2, "2", "link_id") == "slave"
+               && managed_key("daytona", 2, "2", "car_number") == "2",
+           "numeric ANS preserves Daytona native roles and car numbers");
+    expect(managed_key("stcc", 3, "relay", "link_type") == "relay"
+               && managed_key("von", 3, "relay", "network_link_attribute") == "no_link",
+           "relay preserves native generic and dedicated-program settings");
+    for (const auto game : {"powsledm", "powsled"}) {
+        expect(managed_key(game, 3, "1", "ride_id") == "silver"
+                   && managed_key(game, 3, "2", "ride_id") == "red"
+                   && managed_key(game, 3, "3", "ride_id") == "black"
+                   && libretro::network::managed_values(game, 3, "0").empty(),
+               "Power Sled numeric ANS maps ordered colors and disabled");
     }
 
     if (failures) return 1;

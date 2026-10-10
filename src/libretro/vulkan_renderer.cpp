@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: BSD-3-Clause
 #include "gpu.h"
+#include "render/backend.h"
 #include "libretro_vulkan.h"
 #include "timing_overlay.h"
 #include "render/vk/pass_context.h"
@@ -125,11 +126,15 @@ struct VulkanRenderer::Impl final : render::vk::PassContext {
         vk = iface;
         VkPhysicalDeviceProperties props{};
         vkGetPhysicalDeviceProperties(vk->gpu, &props);
-        if (requested_scale < 1 || requested_scale > 4 ||
-            496 * requested_scale > props.limits.maxImageDimension2D ||
-            384 * requested_scale > props.limits.maxImageDimension2D)
-            throw std::runtime_error("Requested GPU resolution exceeds device limits");
-        scale = requested_scale;
+        if (requested_scale < 1 || requested_scale > render::kMaxRenderScale)
+            throw std::runtime_error("Invalid GPU render scale");
+        const auto maximum = props.limits.maxImageDimension2D;
+        scale = render::clamp_scale_to_max_dimension(requested_scale, maximum);
+        if (render::scaled_width(scale) > maximum || render::scaled_height(scale) > maximum)
+            throw std::runtime_error("GPU cannot render at native resolution");
+        if (scale != requested_scale && log)
+            log(RETRO_LOG_WARN, "Render scale reduced from %ux to %ux (GPU dimension limit %u)\n",
+                requested_scale, scale, maximum);
         for (auto format : {VK_FORMAT_S8_UINT, VK_FORMAT_D32_SFLOAT_S8_UINT,
                             VK_FORMAT_D24_UNORM_S8_UINT, VK_FORMAT_D16_UNORM_S8_UINT}) {
             VkFormatProperties supported{};
@@ -315,7 +320,11 @@ struct VulkanRenderer::Impl final : render::vk::PassContext {
 };
 VulkanRenderer::VulkanRenderer() : impl(std::make_unique<Impl>()) {}
 VulkanRenderer::~VulkanRenderer() = default;
-void VulkanRenderer::init(retro_environment_t env, unsigned scale, retro_log_printf_t log) { impl->init(env, scale, log); }
+unsigned VulkanRenderer::init(retro_environment_t env, unsigned scale, retro_log_printf_t log)
+{
+    impl->init(env, scale, log);
+    return impl->scale;
+}
 void VulkanRenderer::render(hw::Model2MachineBase& machine, retro_video_refresh_t video,
                             const CrosshairState& crosshairs, const TimingOverlayData& timing,
                             double frames_per_second, unsigned texture_quality,

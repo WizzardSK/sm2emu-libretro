@@ -43,6 +43,8 @@ enum class ApplyResult { Unsupported, LayoutNotReady, Unchanged, Changed };
 [[nodiscard]] std::string_view catalog_for_game(std::string_view game,
                                                 std::string_view parent);
 [[nodiscard]] std::vector<std::string> initial_values(std::string_view game);
+[[nodiscard]] bool valid_layout(std::string_view game, std::span<const u8> backup,
+                                std::span<const u8> eeprom);
 [[nodiscard]] ApplyResult apply(std::string_view game, std::span<u8> backup,
                                 std::span<u8> eeprom,
                                 std::span<const std::string> selections);

@@ -194,9 +194,17 @@ int main()
         {"hotd", libretro::InputProfile::Gun},
         {"hotdo", libretro::InputProfile::Gun},
         {"hotdp", libretro::InputProfile::Gun},
+        {"powsled", libretro::InputProfile::SpecialPowerSled},
+        {"powsledm", libretro::InputProfile::SpecialPowerSled},
+        {"powsledr", libretro::InputProfile::SpecialPowerSled},
+
     };
     rom::GameDatabase database;
     check(database.load(SM2_GAMES_XML_PATH), "Load catalog games.xml");
+    check(database.find("von") && database.find("vonr")
+              && database.find("von")->texture_wait == 37
+              && database.find("vonr")->texture_wait == 37,
+          "Virtual-On texture waits are inherited by its clone");
     for (const auto& entry : catalog) {
         const auto* catalog_game = database.find(entry.name);
         check(catalog_game != nullptr, "Cataloged digital set exists");
@@ -308,6 +316,121 @@ int main()
 
     hw::Inputs inputs;
     libretro::InputRuntime runtime;
+    // MAME wires independent rider handlebars to mux channels 1/3 and 5/7.
+    for (const auto* name : {"powsled", "powsledm", "powsledr"}) {
+        const auto* sled = database.find(name);
+        check(sled && sled->preliminary, "Power Sled variants remain preliminary");
+        devices = {RETRO_DEVICE_JOYPAD, RETRO_DEVICE_JOYPAD};
+        const auto sled_desc = libretro::descriptors(*sled, devices);
+        check(has_descriptor(sled_desc, 0, RETRO_DEVICE_JOYPAD, 0,
+                  RETRO_DEVICE_ID_JOYPAD_R, "Cancel Network Check"),
+              "Power Sled exposes upstream network-wait cancel");
+        check(has_descriptor(sled_desc, 0, RETRO_DEVICE_ANALOG,
+                  RETRO_DEVICE_INDEX_ANALOG_BUTTON, RETRO_DEVICE_ID_JOYPAD_R2,
+                  "P1 Right Handlebar"), "Power Sled handlebar descriptor");
+        check(has_descriptor(sled_desc, 1, RETRO_DEVICE_ANALOG,
+                  RETRO_DEVICE_INDEX_ANALOG_BUTTON, RETRO_DEVICE_ID_JOYPAD_R2,
+                  "P2 Right Handlebar"), "Power Sled second-rider descriptor");
+        check(has_descriptor(sled_desc, 0, RETRO_DEVICE_JOYPAD, 0,
+                  RETRO_DEVICE_ID_JOYPAD_L3, "Service B / Select"),
+              "Power Sled exposes extra Service 2 selection");
+        check(has_descriptor(sled_desc, 0, RETRO_DEVICE_JOYPAD, 0,
+                  RETRO_DEVICE_ID_JOYPAD_DOWN, "Service A"),
+              "Power Sled exposes Service 1 on D-Pad Down");
+        pressed = {1u << RETRO_DEVICE_ID_JOYPAD_L3, 0};
+        libretro::poll_input(inputs, *sled, devices, runtime, true, state);
+        check(inputs.in0 == 0xbf && inputs.in1 == 0xff && inputs.in3 == 0xff,
+              "Power Sled Service 2 only clears IN0 bit 0x40");
+        devices[0] = libretro::kNoServiceDevice;
+        libretro::poll_input(inputs, *sled, devices, runtime, true, state);
+        check(inputs.in0 == 0xff && !has_descriptor_id(
+                  libretro::descriptors(*sled, devices), 0, RETRO_DEVICE_JOYPAD,
+                  0, RETRO_DEVICE_ID_JOYPAD_L3),
+              "Power Sled reduced profile disables extra Service 2");
+        devices[0] = RETRO_DEVICE_JOYPAD;
+        pressed = {0, 1u << RETRO_DEVICE_ID_JOYPAD_L3};
+        libretro::poll_input(inputs, *sled, devices, runtime, true, state);
+        check(inputs.in0 == 0xbf, "Power Sled port 2 aliases extra Service 2");
+        for (unsigned port = 0; port < 2; ++port) {
+            pressed = {};
+            pressed[port] = 1u << RETRO_DEVICE_ID_JOYPAD_DOWN;
+            libretro::poll_input(inputs, *sled, devices, runtime, true, state);
+            check(inputs.in0 == 0xf7 && inputs.in1 == 0xff && inputs.in3 == 0xff,
+                  "Power Sled Service 1 only clears IN0 bit 0x08 on either port");
+            devices[port] = libretro::kNoServiceDevice;
+            libretro::poll_input(inputs, *sled, devices, runtime, true, state);
+            check(inputs.in0 == 0xff && !has_descriptor_id(
+                      libretro::descriptors(*sled, devices), port, RETRO_DEVICE_JOYPAD,
+                      0, RETRO_DEVICE_ID_JOYPAD_DOWN),
+                  "Power Sled reduced profile disables Service 1");
+            devices[port] = RETRO_DEVICE_JOYPAD;
+        }
+        // Native operator command is available on Main/Relay Port 1 only.
+        for (unsigned port = 0; port < 2; ++port) {
+            pressed = {};
+            pressed[port] = 1u << RETRO_DEVICE_ID_JOYPAD_START;
+            const bool operator_start = port == 0 && sled->name != "powsled";
+            libretro::poll_input(inputs, *sled, devices, runtime, true, state);
+            check(inputs.in1 == (operator_start ? 0xef : 0xff)
+                      && inputs.in0 == (port == 0 ? 0xef : 0xdf)
+                      && inputs.in3 == 0xff,
+                  "Power Sled Start preserves its old line and isolates native operator input");
+            devices[port] = libretro::kNoServiceDevice;
+            libretro::poll_input(inputs, *sled, devices, runtime, true, state);
+            check(inputs.in1 == (operator_start ? 0xef : 0xff),
+                  "Power Sled operator Start remains a gameplay action without Service");
+            devices[port] = RETRO_DEVICE_NONE;
+            libretro::poll_input(inputs, *sled, devices, runtime, true, state);
+            check(inputs.in0 == 0xff && inputs.in1 == 0xff,
+                  "Power Sled disabled port cannot send operator Start");
+            devices[port] = RETRO_DEVICE_JOYPAD;
+        }
+        pressed = {};
+        analog_buttons = {};
+        pressed[0] = 1u << RETRO_DEVICE_ID_JOYPAD_B;
+        libretro::poll_input(inputs, *sled, devices, runtime, true, state);
+        check(inputs.in1 == static_cast<u8>(0xff & ~0x01), "Power Sled P1 Entry wiring");
+        pressed[0] = 1u << RETRO_DEVICE_ID_JOYPAD_A;
+        libretro::poll_input(inputs, *sled, devices, runtime, true, state);
+        check(inputs.in1 == static_cast<u8>(0xff & ~0x02), "Power Sled P1 Call wiring");
+        pressed[0] = 1u << RETRO_DEVICE_ID_JOYPAD_Y;
+        libretro::poll_input(inputs, *sled, devices, runtime, true, state);
+        check(inputs.in1 == static_cast<u8>(0xff & ~0x04), "Power Sled P2 Entry wiring");
+        pressed[0] = 1u << RETRO_DEVICE_ID_JOYPAD_X;
+        libretro::poll_input(inputs, *sled, devices, runtime, true, state);
+        check(inputs.in1 == static_cast<u8>(0xff & ~0x08), "Power Sled P2 Call wiring");
+        pressed[0] = 1u << RETRO_DEVICE_ID_JOYPAD_L;
+        libretro::poll_input(inputs, *sled, devices, runtime, true, state);
+        check(inputs.in0 == static_cast<u8>(0xff & ~0x80), "Power Sled Cancel Error wiring");
+        pressed[0] = 1u << RETRO_DEVICE_ID_JOYPAD_R;
+        libretro::poll_input(inputs, *sled, devices, runtime, true, state);
+        check(inputs.in3 == static_cast<u8>(0xff & ~0x02), "Power Sled Cancel Network Check wiring");
+        pressed = {};
+        analog_buttons[0][RETRO_DEVICE_ID_JOYPAD_R2] = 32767;
+        analog_buttons[0][RETRO_DEVICE_ID_JOYPAD_L2] = 16384;
+        libretro::poll_input(inputs, *sled, devices, runtime, true, state);
+        check(inputs.analog[1] == 0xff && inputs.analog[3] == 0x80,
+              "Power Sled handles use mux channels 1 and 3");
+        pressed[1] = (1u << RETRO_DEVICE_ID_JOYPAD_B) | (1u << RETRO_DEVICE_ID_JOYPAD_A);
+        analog_buttons[1][RETRO_DEVICE_ID_JOYPAD_R2] = 8192;
+        analog_buttons[1][RETRO_DEVICE_ID_JOYPAD_L2] = 32767;
+        libretro::poll_input(inputs, *sled, devices, runtime, true, state);
+        check(inputs.in1 == 0xf3 && inputs.analog[5] == 0x40 && inputs.analog[7] == 0xff
+                  && inputs.analog[1] == 0xff && inputs.analog[3] == 0x80,
+              "Power Sled second rider is independent and preserves P1");
+        devices[1] = RETRO_DEVICE_NONE;
+        libretro::poll_input(inputs, *sled, devices, runtime, true, state);
+        check(inputs.in1 == 0xff && inputs.analog[5] == 0 && inputs.analog[7] == 0,
+              "Power Sled disabled second port contributes no rider inputs");
+        devices[1] = RETRO_DEVICE_JOYPAD;
+        pressed = {};
+        analog_buttons = {};
+        libretro::poll_input(inputs, *sled, devices, runtime, true, state);
+        check(inputs.in0 == 0xff && inputs.in1 == 0xff && inputs.in3 == 0xff
+                  && inputs.analog[1] == 0 && inputs.analog[3] == 0
+                  && inputs.analog[5] == 0 && inputs.analog[7] == 0,
+              "Power Sled releases all buttons and handles");
+    }
     inputs.analog[0] = 0x77;
     inputs.gun_p1x = 0x123;
     auto poll = [&](const rom::GameSpec& selected) {
@@ -438,8 +561,13 @@ int main()
               && stcc_metadata->drive_board
               && stcc_metadata->drive_protocol == rom::DriveProtocol::Stcc,
           "Sega Rally and STCC retain their upstream drive-board protocols");
-    check(!sgt24h_metadata->drive_board && !overrevb->drive_board,
-          "Unsupported Super GT and Over Rev drive boards remain disabled");
+    check(!sgt24h_metadata->drive_board,
+          "Super GT drive-board metadata remains unchanged");
+    for (const char* name : {"indy500", "indy500d", "indy500to", "overrev", "overrevb", "overrevba"}) {
+        const auto* set = database.find(name);
+        check(set && set->drive_board && set->drive_protocol == rom::DriveProtocol::Indy,
+              "Indy 500 and Over Rev parent/clones select the later drive-board protocol");
+    }
     check(std::string_view(libretro::profile_name(libretro::recognize_profile(*daytona)))
               == "Driving: 4-Speed + VR4",
           "Daytona profile name must match the approved workbook");
@@ -1152,6 +1280,59 @@ int main()
     libretro::poll_input(inputs, *topskatr, devices, runtime, true, state);
     check(inputs.analog[0] == 0xff,
           "Top Skater maps Left X- to the opposite inverted Curving endpoint");
+    check(has_descriptor(top_skater_desc, 0, RETRO_DEVICE_JOYPAD, 0,
+                         RETRO_DEVICE_ID_JOYPAD_L2, "Slide Left")
+          && has_descriptor(top_skater_desc, 0, RETRO_DEVICE_JOYPAD, 0,
+                            RETRO_DEVICE_ID_JOYPAD_R2, "Slide Right"),
+          "Top Skater exposes upstream trigger aliases in frontend remapping");
+    axes = {};
+    analog_buttons = {};
+    analog_buttons[0][RETRO_DEVICE_ID_JOYPAD_L2] = 32767;
+    libretro::poll_input(inputs, *topskatr, devices, runtime, true, state);
+    check(inputs.analog[0] == 0x80 && inputs.analog[1] == 0x00,
+          "Top Skater left trigger slides left without curving");
+    analog_buttons[0][RETRO_DEVICE_ID_JOYPAD_R2] = 32767;
+    libretro::poll_input(inputs, *topskatr, devices, runtime, true, state);
+    check(inputs.analog[1] == 0x80, "Top Skater equal triggers cancel at center");
+    analog_buttons[0][RETRO_DEVICE_ID_JOYPAD_L2] = 16384;
+    libretro::poll_input(inputs, *topskatr, devices, runtime, true, state);
+    check(inputs.analog[1] == 0xbf, "Top Skater subtracts analog trigger travel");
+    axes[0][RETRO_DEVICE_INDEX_ANALOG_RIGHT][RETRO_DEVICE_ID_ANALOG_X] = -32768;
+    libretro::poll_input(inputs, *topskatr, devices, runtime, true, state);
+    check(inputs.analog[1] == 0x00, "Top Skater preserves stronger right-stick slide");
+    axes = {};
+    analog_buttons = {};
+    pressed = {1u << RETRO_DEVICE_ID_JOYPAD_R2, 0};
+    libretro::poll_input(inputs, *topskatr, devices, runtime, true, state);
+    check(inputs.analog[1] == 0xff, "Top Skater supports digital-only trigger fallback");
+    pressed = {};
+    for (const char* name : {"topskatr", "topskatrj", "topskatru", "topskatruo"}) {
+        const auto* revision = database.find(name);
+        pressed = {1u << RETRO_DEVICE_ID_JOYPAD_LEFT, 0};
+        libretro::poll_input(inputs, *revision, devices, runtime, true, state);
+        check(inputs.in0 == 0x7f && inputs.analog[0] == 0xff,
+              "Top Skater D-Pad left selects and steers left across all revisions");
+        pressed = {1u << RETRO_DEVICE_ID_JOYPAD_RIGHT, 0};
+        libretro::poll_input(inputs, *revision, devices, runtime, true, state);
+        check(inputs.in0 == 0xef && inputs.analog[0] == 0x00,
+              "Top Skater D-Pad right selects and steers right across all revisions");
+        pressed = {};
+        libretro::poll_input(inputs, *revision, devices, runtime, true, state);
+        check(inputs.analog[0] == 0x80 && inputs.analog[1] == 0x80,
+              "Top Skater released controls return to rest");
+    }
+    axes[0][RETRO_DEVICE_INDEX_ANALOG_LEFT][RETRO_DEVICE_ID_ANALOG_X] = 3000;
+    libretro::poll_input(inputs, *topskatr, devices, runtime, true, state);
+    check(inputs.analog[0] == 0x80, "Top Skater Progressive centers residual stick travel");
+    axes[0][RETRO_DEVICE_INDEX_ANALOG_LEFT][RETRO_DEVICE_ID_ANALOG_X] = 16384;
+    libretro::poll_input(inputs, *topskatr, devices, runtime, true, state);
+    check(inputs.analog[0] == 0x66,
+          "Top Skater Progressive matches upstream half-stick quadratic response");
+    libretro::poll_input(inputs, *topskatr, devices, runtime, true, state,
+                         libretro::GunInputMode::Hybrid, true, {}, {}, true, false, {false});
+    check(inputs.analog[0] == 0x40,
+          "Top Skater Linear preserves the previous half-stick response");
+    axes = {};
     auto changed_top_skater = *topskatr;
     changed_top_skater.analog[1].control = rom::AnalogControl::StickX;
     check(libretro::recognize_profile(changed_top_skater) == libretro::InputProfile::Unsupported,
@@ -1679,10 +1860,10 @@ int main()
                         1u << RETRO_DEVICE_ID_LIGHTGUN_TRIGGER};
     libretro::poll_input(inputs, *vcop, devices, runtime, true, state,
                          libretro::GunInputMode::Lightgun, false);
-    check(inputs.gun_p1x == vcop->lightgun.p1x.minimum
-              && inputs.gun_p1y == vcop->lightgun.p1y.maximum
-              && inputs.gun_p2x == vcop->lightgun.p2x.maximum
-              && inputs.gun_p2y == vcop->lightgun.p2y.minimum
+    check(inputs.gun_p1x == vcop->lightgun.p1x.minimum + 1
+              && inputs.gun_p1y == vcop->lightgun.p1y.maximum - 1
+              && inputs.gun_p2x == vcop->lightgun.p2x.maximum - 1
+              && inputs.gun_p2y == vcop->lightgun.p2y.minimum + 1
               && inputs.in1 == 0xfc && inputs.gun_offscreen == 0,
           "Virtua Cop keeps extreme coordinates separate from off-screen status");
     runtime = {};
@@ -1703,8 +1884,21 @@ int main()
                         1u << RETRO_DEVICE_ID_LIGHTGUN_TRIGGER};
     libretro::poll_input(inputs, *hotd, devices, runtime, true, state,
                          libretro::GunInputMode::Lightgun);
+    check(inputs.in1 == 0xfc && inputs.in2 == 0xff,
+          "House of the Dead routes both triggers to IN1 as corrected upstream");
+    for (const char* name : {"hotdo", "hotdp"}) {
+        const auto* clone = database.find(name);
+        libretro::poll_input(inputs, *clone, devices, runtime, true, state,
+                             libretro::GunInputMode::Lightgun);
+        check(inputs.in1 == 0xfc && inputs.in2 == 0xff,
+              "All House of the Dead revisions use the corrected trigger route");
+    }
+    auto legacy_hotd = *hotd;
+    legacy_hotd.lightgun.p2_trigger_on_in2 = true;
+    libretro::poll_input(inputs, legacy_hotd, devices, runtime, true, state,
+                         libretro::GunInputMode::Lightgun);
     check(inputs.in1 == 0xfe && inputs.in2 == 0xfe,
-          "House of the Dead routes player two trigger to its declared IN2 bit");
+          "Explicit legacy external metadata retains its declared P2 trigger route");
 
     runtime = {};
     lightgun_buttons = {};
@@ -1752,8 +1946,8 @@ int main()
     mouse_buttons = {1u << RETRO_DEVICE_ID_MOUSE_LEFT, 0};
     libretro::poll_input(inputs, *vcop2, devices, runtime, true, state,
                          libretro::GunInputMode::Mouse);
-    check(inputs.gun_p1x == vcop2->lightgun.p1x.minimum
-              && inputs.gun_p1y == vcop2->lightgun.p1y.minimum
+    check(inputs.gun_p1x == vcop2->lightgun.p1x.minimum + 1
+              && inputs.gun_p1y == vcop2->lightgun.p1y.minimum + 1
               && inputs.in1 == 0xfe && inputs.gun_offscreen == 0,
           "Mouse coordinates at the screen edge remain an on-screen shot");
     runtime = {};

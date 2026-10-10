@@ -49,7 +49,7 @@ int main()
     auto driving = driving_game();
 
     const std::array<u8, 1> daytona_push{0x57};
-    const std::array<u8, 1> daytona_release{0x50};
+    const std::array<u8, 1> daytona_release{0x10};
     rumble.update(driving, daytona_push, 0, true);
     expect(motors[RETRO_RUMBLE_STRONG] == 65535
                && motors[RETRO_RUMBLE_WEAK] == 32767,
@@ -92,7 +92,7 @@ int main()
            "Sega Rally streamed torque is not misread as a Daytona impact");
 
     rumble.stop();
-    driving.drive_protocol = rom::DriveProtocol::Daytona;
+    driving.drive_protocol = rom::DriveProtocol::Indy;
     const std::array<u8, 3> indy_sequence{0x57, 0xb0, 0xa0};
     rumble.update(driving, indy_sequence, 0, true);
     expect(motors[RETRO_RUMBLE_STRONG] == 65535
@@ -100,12 +100,55 @@ int main()
            "Indy 500 parameter bytes retain the preceding impact command");
 
     rumble.stop();
+    driving.drive_protocol = rom::DriveProtocol::Daytona;
     const std::array<u8, 1> vibration{0x47};
     rumble.update(driving, vibration, 0, true);
     expect(motors[RETRO_RUMBLE_STRONG] == 65535
                && motors[RETRO_RUMBLE_WEAK] == 32767,
-           "Daytona vibration command drives both gamepad motors");
+           "Daytona center-relative kick drives both gamepad motors");
 
+    // The later board uses step zero as a release; parameter bytes are no-ops.
+    rumble.stop();
+    driving.drive_protocol = rom::DriveProtocol::Indy;
+    const std::array<u8, 3> fading_push{0x54, 0xb0, 0xa0};
+    rumble.update(driving, fading_push, 0, true);
+    const auto initial_impact = motors[RETRO_RUMBLE_STRONG];
+    expect(initial_impact > 0, "Indy impact survives its following parameter bytes");
+    const std::array<u8, 1> weaker_push{0x53};
+    rumble.update(driving, weaker_push, 0, true);
+    expect(motors[RETRO_RUMBLE_STRONG] > 0
+        && motors[RETRO_RUMBLE_STRONG] < initial_impact,
+        "Indy falling force reduces the current gamepad impact");
+    const std::array<u8, 1> indy_off{0x50};
+    rumble.update(driving, indy_off, 0, true);
+    for (int frame = 0; frame < 12; ++frame) rumble.update(driving, {}, 0, true);
+    expect(motors[RETRO_RUMBLE_STRONG] == 0 && motors[RETRO_RUMBLE_WEAK] == 0,
+        "Indy step zero stops renewing impacts and lets the short rumble tail expire");
+    const std::array<u8, 3> same_frame_release{0x57, 0x10, 0xb0};
+    rumble.update(driving, same_frame_release, 0, true);
+    expect(motors[RETRO_RUMBLE_STRONG] == 0,
+        "Indy motor-off later in the same frame takes precedence over its push");
+    const std::array<u8, 1> no_indy_kick{0x47};
+    rumble.update(driving, no_indy_kick, 0, true);
+    expect(motors[RETRO_RUMBLE_STRONG] == 0,
+        "Later board does not interpret Daytona kick bytes as a vibration");
+    rumble.stop();
+    driving.drive_protocol = rom::DriveProtocol::Daytona;
+    const std::array<u8, 1> daytona_step_zero{0x50};
+    rumble.update(driving, daytona_step_zero, 0, true);
+    expect(motors[RETRO_RUMBLE_STRONG] > 0,
+        "Daytona step zero remains a real push rather than an Indy release");
+    rumble.stop();
+    const std::array<u8, 1> kick{0x40};
+    rumble.update(driving, kick, 0, true);
+    rumble.update(driving, {}, 0, true); // The one-time direction-flip boost expires.
+    const auto steady_kick = motors[RETRO_RUMBLE_STRONG];
+    rumble.update(driving, {}, 513, true);
+    expect(motors[RETRO_RUMBLE_STRONG] > steady_kick,
+        "Daytona kick changes direction after the board's center threshold");
+    rumble.update(driving, {}, 513, false);
+    expect(motors[RETRO_RUMBLE_STRONG] == 0 && motors[RETRO_RUMBLE_WEAK] == 0,
+        "Disabling after a decoded kick immediately silences both motors");
     rumble.stop();
     expect(motors[RETRO_RUMBLE_STRONG] == 0 && motors[RETRO_RUMBLE_WEAK] == 0,
            "explicit shutdown leaves both motors stopped");

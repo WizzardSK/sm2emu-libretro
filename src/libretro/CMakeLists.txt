@@ -11,6 +11,7 @@ if(NOT MSVC)
 endif()
 
 add_library(sm2_libretro SHARED core.cpp crosshair.cpp input.cpp initial_nvram.cpp
+    automatic_network.cpp manxtt_audio.cpp
     netpacket.cpp nvram_settings.cpp rumble.cpp save_ram.cpp timing_overlay.cpp
     ../osd/drive_command.cpp)
 target_include_directories(sm2_libretro PRIVATE include)
@@ -35,6 +36,15 @@ configure_file("${CMAKE_SOURCE_DIR}/data/games.xml"
 
 option(SM2_LIBRETRO_CHECKS "Build ROM-free Libretro input checks" OFF)
 if(SM2_LIBRETRO_CHECKS)
+    add_executable(sm2-libretro-manxtt-audio-checks checks/manxtt_audio.cpp
+        manxtt_audio.cpp nvram_settings.cpp save_ram.cpp)
+    target_include_directories(sm2-libretro-manxtt-audio-checks PRIVATE "${PROJECT_SOURCE_DIR}/src")
+    target_link_libraries(sm2-libretro-manxtt-audio-checks PRIVATE sm2_hw sm2_rom sm2_miniz sm2_warnings)
+    add_executable(sm2-libretro-device-bios-checks checks/device_bios.cpp)
+    target_include_directories(sm2-libretro-device-bios-checks PRIVATE
+        "${PROJECT_SOURCE_DIR}/src")
+    target_link_libraries(sm2-libretro-device-bios-checks PRIVATE
+        sm2_rom sm2_miniz sm2_warnings)
     add_executable(sm2-libretro-timing-overlay-checks
         checks/timing_overlay.cpp timing_overlay.cpp)
     target_include_directories(sm2-libretro-timing-overlay-checks PRIVATE
@@ -48,6 +58,7 @@ if(SM2_LIBRETRO_CHECKS)
         SM2_GAMES_XML_PATH="${PROJECT_SOURCE_DIR}/data/games.xml")
     target_link_libraries(sm2-libretro-input-checks PRIVATE sm2_rom sm2_warnings)
     add_executable(sm2-libretro-save-ram-checks checks/save_ram.cpp initial_nvram.cpp
+        automatic_network.cpp
         nvram_settings.cpp save_ram.cpp)
     target_include_directories(sm2-libretro-save-ram-checks PRIVATE
         . include "${PROJECT_SOURCE_DIR}/src")
@@ -58,6 +69,21 @@ if(SM2_LIBRETRO_CHECKS)
         target_compile_definitions(sm2-libretro-save-ram-checks PRIVATE SM2_LIBRETRO_OPENGL=1)
     endif()
     target_link_libraries(sm2-libretro-save-ram-checks PRIVATE sm2_warnings)
+    add_executable(sm2-libretro-i960-checks checks/i960.cpp)
+    target_include_directories(sm2-libretro-i960-checks PRIVATE "${PROJECT_SOURCE_DIR}/src")
+    target_link_libraries(sm2-libretro-i960-checks PRIVATE sm2_hw sm2_warnings)
+    add_executable(sm2-libretro-audio-balance-checks checks/audio_balance.cpp)
+    target_include_directories(sm2-libretro-audio-balance-checks PRIVATE "${PROJECT_SOURCE_DIR}/src")
+    target_link_libraries(sm2-libretro-audio-balance-checks PRIVATE sm2_hw sm2_warnings)
+    add_executable(sm2-libretro-audio-checks checks/audio.cpp)
+    target_include_directories(sm2-libretro-audio-checks PRIVATE "${PROJECT_SOURCE_DIR}/src" "${CMAKE_CURRENT_SOURCE_DIR}")
+    target_link_libraries(sm2-libretro-audio-checks PRIVATE sm2_hw sm2_warnings)
+    add_executable(sm2-libretro-sound-timing-checks checks/sound_timing.cpp)
+    target_include_directories(sm2-libretro-sound-timing-checks PRIVATE "${PROJECT_SOURCE_DIR}/src")
+    target_link_libraries(sm2-libretro-sound-timing-checks PRIVATE sm2_hw sm2_warnings)
+    add_executable(sm2-libretro-gun-flash-checks checks/gun_flash.cpp)
+    target_include_directories(sm2-libretro-gun-flash-checks PRIVATE "${PROJECT_SOURCE_DIR}/src")
+    target_link_libraries(sm2-libretro-gun-flash-checks PRIVATE sm2_hw sm2_warnings)
     add_executable(sm2-libretro-netpacket-checks checks/netpacket.cpp netpacket.cpp)
     target_include_directories(sm2-libretro-netpacket-checks PRIVATE
         . include "${PROJECT_SOURCE_DIR}/src")

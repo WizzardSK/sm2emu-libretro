@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause
 // Frontend-owned OpenGL 4.3 / OpenGL ES 3.1 renderer using upstream passes.
 #include "gpu.h"
+#include "render/backend.h"
 #include "timing_overlay.h"
 #include "hw/model2_machine_base.h"
 #include "hw/model2_video.h"
@@ -107,10 +108,14 @@ struct OpenGlRenderer::Impl {
         if (max_attribs < 4)
             throw std::runtime_error("OpenGL context exposes fewer than four vertex attributes");
         const auto maximum = static_cast<unsigned>(std::max(0, std::min(max_texture, max_renderbuffer)));
-        if (requested_scale < 1 || requested_scale > 4 ||
-            496u * requested_scale > maximum || 384u * requested_scale > maximum)
-            throw std::runtime_error("Requested OpenGL resolution exceeds device limits");
-        scale = requested_scale;
+        if (requested_scale < 1 || requested_scale > render::kMaxRenderScale)
+            throw std::runtime_error("Invalid OpenGL render scale");
+        scale = render::clamp_scale_to_max_dimension(requested_scale, maximum);
+        if (render::scaled_width(scale) > maximum || render::scaled_height(scale) > maximum)
+            throw std::runtime_error("OpenGL cannot render at native resolution");
+        if (scale != requested_scale && log)
+            log(RETRO_LOG_WARN, "Render scale reduced from %ux to %ux (GPU dimension limit %u)\n",
+                requested_scale, scale, maximum);
 
         if (!tilemaps.init()) throw std::runtime_error("Cannot initialize upstream OpenGL 2D pass");
         if (!polygons.init(scale)) throw std::runtime_error("Cannot initialize upstream OpenGL 3D pass");
@@ -191,9 +196,10 @@ struct OpenGlRenderer::Impl {
 
 OpenGlRenderer::OpenGlRenderer() : impl(std::make_unique<Impl>()) {}
 OpenGlRenderer::~OpenGlRenderer() = default;
-void OpenGlRenderer::init(unsigned scale, bool es, retro_log_printf_t log)
+unsigned OpenGlRenderer::init(unsigned scale, bool es, retro_log_printf_t log)
 {
     impl->init(scale, es, log ? log : gl_logger);
+    return impl->scale;
 }
 void OpenGlRenderer::abandon_context() { impl->abandon_context(); }
 void OpenGlRenderer::render(hw::Model2MachineBase& machine, retro_video_refresh_t video,

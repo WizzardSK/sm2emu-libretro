@@ -73,17 +73,18 @@ void GamepadRumble::update(const rom::GameSpec& game, std::span<const u8> drive_
         return;
     }
 
-    // Short directional pushes and vibration commands become gamepad jolts.
+    // Short directional pushes and center-relative kicks become gamepad jolts.
     int impact = 0;
     if (m_drive_command.strength > 0 && !m_drive_command.held
-        && (m_drive_command.is_push()
-            || m_drive_command.effect == osd::DriveCommand::Effect::Vibrate)) {
+        && m_drive_command.is_push()) {
         const int minimum_felt = ceiling / 4;
         impact = minimum_felt
                + (ceiling - minimum_felt) * m_drive_command.strength / osd::kDriveFull;
         if (m_drive_command.is_push()) {
             const int direction =
-                m_drive_command.effect == osd::DriveCommand::Effect::PushLeft ? 1 : -1;
+                m_drive_command.effect == osd::DriveCommand::Effect::Kick
+                    ? (steering > 2 * 256 ? -1 : 1)
+                    : (m_drive_command.effect == osd::DriveCommand::Effect::PushLeft ? 1 : -1);
             if (direction != m_direction) {
                 impact = std::min(impact * 3 / 2, 65535);
                 m_direction = direction;

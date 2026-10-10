@@ -14,7 +14,9 @@ namespace sm2::libretro {
 /// communication-board frames to the next frontend instance in the roster.
 class NetpacketTransport final : public hw::CommTransport {
 public:
-    void configure(std::string_view game, unsigned cabinets);
+    // Power Sled program tags 1/2/3 identify Main/Relay/Slave ROMs,
+    // independently of the emulated communication board role or link ID.
+    void configure(std::string_view game, unsigned cabinets, unsigned program_role = 0);
 
     [[nodiscard]] bool ready() const override;
     void send(std::span<const u8> frame) override;
@@ -26,6 +28,7 @@ public:
 [[nodiscard]] bool register_netpacket_interface(retro_environment_t environment,
                                                 retro_log_printf_t logger);
 [[nodiscard]] bool netpacket_interface_supported();
+void set_netpacket_offline();
 void shutdown_netpacket_interface();
 
 }  // namespace sm2::libretro
