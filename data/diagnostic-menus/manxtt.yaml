@@ -27,7 +27,9 @@ verification:
     persistent_output: ~/Documents/RetroArch/sm2-nvram-analysis/manxtt/generated
     validated: [srm_container, extracted_nvram, extracted_eeprom, screenshots, expected_fields, mirrored_backup_ram]
 
-controls: {profile: sega_service_l3_r3, enter_test_menu: L3, next_item: R3, select_or_change: L3}
+# Current frontend bindings, verified 2026-10-10. Archived acquisition
+# evidence retains its original pre-alignment button sequences.
+controls: {profile: sega_service_l3_r3, enter_test_menu: R3, next_item: L3, select_or_change: R3}
 
 nvram_layout:
   storage: eeprom_93c46

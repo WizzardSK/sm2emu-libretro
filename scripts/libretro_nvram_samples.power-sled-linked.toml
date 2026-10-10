@@ -1,0 +1,610 @@
+# Generated from the completed Phase 1 inventory; do not hand-edit sample subsets.
+# Regenerate: python3 scripts/generate-power-sled-recipe.py
+# Target acquisition: SM2-Emu Libretro in RetroArch exclusively; no calibration.
+schema_version = 1
+
+[[inventory]]
+path = "data/diagnostic-menus/powsledm.yaml"
+menu_sha256 = "ed0dc2eaab58a5a36d1bbed8220fabbb516dee7789d15c892bd952827062c40c"
+
+[[inventory]]
+path = "data/diagnostic-menus/powsledr.yaml"
+menu_sha256 = "18eba3628f078efe3d8540d523c9f212152d0b0c753dba1f8e2052eb8844c33f"
+
+[[inventory]]
+path = "data/diagnostic-menus/powsled.yaml"
+menu_sha256 = "b23b7449c7a9e7e235020326739ce67a7d403162b5dc67f03acdf910b8421595"
+
+[macros]
+enter_assignments = ["R3", "WAIT(2.0)", "L3*6", "A", "WAIT(1.0)"]
+enter_time = ["@enter_assignments", "L3*3", "A", "WAIT(1.0)"]
+enter_motion = ["R3", "WAIT(2.0)", "L3*6", "A", "WAIT(1.0)", "L3*4", "A", "WAIT(1.0)"]
+enter_country = ["@enter_assignments", "L3", "A", "WAIT(1.0)"]
+enter_ride = ["@enter_assignments", "L3*2", "A", "WAIT(1.0)"]
+
+[[samples]]
+suffix = "motion-native-default"
+setting = "motion"
+offset = 26
+screenshot = "motion-default"
+expected = [380, 380, 380]
+reuse = "build-libretro-gpu/validation/power-sled-phase2-20261008/motion-native-default"
+sequence = ["@enter_motion", "SCREENSHOT(motion-before-default)", "L3*4", "A", "SCREENSHOT(motion-default)", "L3*2", "A", "WAIT(1.0)", "SCREENSHOT(after-native-commit)", "CLOSE"]
+
+[[samples]]
+suffix = "motion-plus-step"
+setting = "motion"
+offset = 26
+screenshot = "motion-plus-step"
+expected = [385, 385, 385]
+before_screenshot = "motion-baseline"
+reuse = "build-libretro-gpu/validation/power-sled-phase2-20261008/motion-plus-step"
+sequence = ["@enter_motion", "SCREENSHOT(motion-baseline)", "L3*2", "A", "SCREENSHOT(motion-plus-step)", "L3*4", "A", "WAIT(1.0)", "SCREENSHOT(after-native-commit)", "CLOSE"]
+baseline = "motion-native-default"
+
+[[samples]]
+suffix = "motion-reload"
+setting = "motion"
+offset = 26
+screenshot = "motion-reloaded"
+expected = [385, 385, 385]
+reload_only = true
+reuse = "build-libretro-gpu/validation/power-sled-phase2-20261008/motion-reload"
+sequence = ["@enter_motion", "SCREENSHOT(motion-reloaded)", "CLOSE"]
+baseline = "motion-plus-step"
+
+[[samples]]
+suffix = "checkpoint-0-default"
+setting = "checkpoint_0"
+offset = 10
+screenshot = "selected"
+expected = [49, 49, 49]
+sequence = ["@enter_time", "L3*1", "A", "WAIT(0.6)", "L3*4", "A", "L3*2", "A", "WAIT(0.6)", "SCREENSHOT(selected)", "CLOSE"]
+baseline = "motion-native-default"
+
+[[samples]]
+suffix = "checkpoint-0-step"
+setting = "checkpoint_0"
+offset = 10
+screenshot = "selected"
+expected = [50, 50, 50]
+before_screenshot = "reloaded"
+sequence = ["@enter_time", "SCREENSHOT(reloaded)", "L3*1", "A", "WAIT(0.6)", "L3*2", "A*1", "L3*4", "A", "WAIT(0.6)", "SCREENSHOT(selected)", "CLOSE"]
+baseline = "checkpoint-0-default"
+
+[[samples]]
+suffix = "checkpoint-0-minimum"
+setting = "checkpoint_0"
+offset = 10
+screenshot = "selected"
+expected = [5, 5, 5]
+before_screenshot = "reloaded"
+sequence = ["@enter_time", "SCREENSHOT(reloaded)", "L3*1", "A", "WAIT(0.6)", "L3*3", "A*45", "L3*3", "A", "WAIT(0.6)", "SCREENSHOT(selected)", "CLOSE"]
+baseline = "checkpoint-0-step"
+
+[[samples]]
+suffix = "checkpoint-0-maximum"
+setting = "checkpoint_0"
+offset = 10
+screenshot = "selected"
+expected = [99, 99, 99]
+before_screenshot = "reloaded"
+sequence = ["@enter_time", "SCREENSHOT(reloaded)", "L3*1", "A", "WAIT(0.6)", "L3*2", "A*94", "L3*4", "A", "WAIT(0.6)", "SCREENSHOT(selected)", "CLOSE"]
+baseline = "checkpoint-0-minimum"
+
+[[samples]]
+suffix = "checkpoint-0-reload"
+setting = "checkpoint_0"
+offset = 10
+screenshot = "selected"
+expected = [99, 99, 99]
+reload_only = true
+sequence = ["@enter_time", "SCREENSHOT(selected)", "CLOSE"]
+baseline = "checkpoint-0-maximum"
+
+[[samples]]
+suffix = "checkpoint-1-default"
+setting = "checkpoint_1"
+offset = 12
+screenshot = "selected"
+expected = [35, 35, 35]
+sequence = ["@enter_time", "L3*2", "A", "WAIT(0.6)", "L3*4", "A", "L3*2", "A", "WAIT(0.6)", "SCREENSHOT(selected)", "CLOSE"]
+baseline = "checkpoint-0-default"
+
+[[samples]]
+suffix = "checkpoint-1-step"
+setting = "checkpoint_1"
+offset = 12
+screenshot = "selected"
+expected = [36, 36, 36]
+before_screenshot = "reloaded"
+sequence = ["@enter_time", "SCREENSHOT(reloaded)", "L3*2", "A", "WAIT(0.6)", "L3*2", "A*1", "L3*4", "A", "WAIT(0.6)", "SCREENSHOT(selected)", "CLOSE"]
+baseline = "checkpoint-1-default"
+
+[[samples]]
+suffix = "checkpoint-1-minimum"
+setting = "checkpoint_1"
+offset = 12
+screenshot = "selected"
+expected = [5, 5, 5]
+before_screenshot = "reloaded"
+sequence = ["@enter_time", "SCREENSHOT(reloaded)", "L3*2", "A", "WAIT(0.6)", "L3*3", "A*31", "L3*3", "A", "WAIT(0.6)", "SCREENSHOT(selected)", "CLOSE"]
+baseline = "checkpoint-1-step"
+
+[[samples]]
+suffix = "checkpoint-1-maximum"
+setting = "checkpoint_1"
+offset = 12
+screenshot = "selected"
+expected = [99, 99, 99]
+before_screenshot = "reloaded"
+sequence = ["@enter_time", "SCREENSHOT(reloaded)", "L3*2", "A", "WAIT(0.6)", "L3*2", "A*94", "L3*4", "A", "WAIT(0.6)", "SCREENSHOT(selected)", "CLOSE"]
+baseline = "checkpoint-1-minimum"
+
+[[samples]]
+suffix = "checkpoint-1-reload"
+setting = "checkpoint_1"
+offset = 12
+screenshot = "selected"
+expected = [99, 99, 99]
+reload_only = true
+sequence = ["@enter_time", "SCREENSHOT(selected)", "CLOSE"]
+baseline = "checkpoint-1-maximum"
+
+[[samples]]
+suffix = "checkpoint-2-default"
+setting = "checkpoint_2"
+offset = 14
+screenshot = "selected"
+expected = [35, 35, 35]
+sequence = ["@enter_time", "L3*3", "A", "WAIT(0.6)", "L3*4", "A", "L3*2", "A", "WAIT(0.6)", "SCREENSHOT(selected)", "CLOSE"]
+baseline = "checkpoint-1-default"
+
+[[samples]]
+suffix = "checkpoint-2-step"
+setting = "checkpoint_2"
+offset = 14
+screenshot = "selected"
+expected = [36, 36, 36]
+before_screenshot = "reloaded"
+sequence = ["@enter_time", "SCREENSHOT(reloaded)", "L3*3", "A", "WAIT(0.6)", "L3*2", "A*1", "L3*4", "A", "WAIT(0.6)", "SCREENSHOT(selected)", "CLOSE"]
+baseline = "checkpoint-2-default"
+
+[[samples]]
+suffix = "checkpoint-2-minimum"
+setting = "checkpoint_2"
+offset = 14
+screenshot = "selected"
+expected = [5, 5, 5]
+before_screenshot = "reloaded"
+sequence = ["@enter_time", "SCREENSHOT(reloaded)", "L3*3", "A", "WAIT(0.6)", "L3*3", "A*31", "L3*3", "A", "WAIT(0.6)", "SCREENSHOT(selected)", "CLOSE"]
+baseline = "checkpoint-2-step"
+
+[[samples]]
+suffix = "checkpoint-2-maximum"
+setting = "checkpoint_2"
+offset = 14
+screenshot = "selected"
+expected = [99, 99, 99]
+before_screenshot = "reloaded"
+sequence = ["@enter_time", "SCREENSHOT(reloaded)", "L3*3", "A", "WAIT(0.6)", "L3*2", "A*94", "L3*4", "A", "WAIT(0.6)", "SCREENSHOT(selected)", "CLOSE"]
+baseline = "checkpoint-2-minimum"
+
+[[samples]]
+suffix = "checkpoint-2-reload"
+setting = "checkpoint_2"
+offset = 14
+screenshot = "selected"
+expected = [99, 99, 99]
+reload_only = true
+sequence = ["@enter_time", "SCREENSHOT(selected)", "CLOSE"]
+baseline = "checkpoint-2-maximum"
+
+[[samples]]
+suffix = "checkpoint-3-default"
+setting = "checkpoint_3"
+offset = 16
+screenshot = "selected"
+expected = [30, 30, 30]
+sequence = ["@enter_time", "L3*4", "A", "WAIT(0.6)", "L3*4", "A", "L3*2", "A", "WAIT(0.6)", "SCREENSHOT(selected)", "CLOSE"]
+baseline = "checkpoint-2-default"
+
+[[samples]]
+suffix = "checkpoint-3-step"
+setting = "checkpoint_3"
+offset = 16
+screenshot = "selected"
+expected = [31, 31, 31]
+before_screenshot = "reloaded"
+sequence = ["@enter_time", "SCREENSHOT(reloaded)", "L3*4", "A", "WAIT(0.6)", "L3*2", "A*1", "L3*4", "A", "WAIT(0.6)", "SCREENSHOT(selected)", "CLOSE"]
+baseline = "checkpoint-3-default"
+
+[[samples]]
+suffix = "checkpoint-3-minimum"
+setting = "checkpoint_3"
+offset = 16
+screenshot = "selected"
+expected = [5, 5, 5]
+before_screenshot = "reloaded"
+sequence = ["@enter_time", "SCREENSHOT(reloaded)", "L3*4", "A", "WAIT(0.6)", "L3*3", "A*26", "L3*3", "A", "WAIT(0.6)", "SCREENSHOT(selected)", "CLOSE"]
+baseline = "checkpoint-3-step"
+
+[[samples]]
+suffix = "checkpoint-3-maximum"
+setting = "checkpoint_3"
+offset = 16
+screenshot = "selected"
+expected = [99, 99, 99]
+before_screenshot = "reloaded"
+sequence = ["@enter_time", "SCREENSHOT(reloaded)", "L3*4", "A", "WAIT(0.6)", "L3*2", "A*94", "L3*4", "A", "WAIT(0.6)", "SCREENSHOT(selected)", "CLOSE"]
+baseline = "checkpoint-3-minimum"
+
+[[samples]]
+suffix = "checkpoint-3-reload"
+setting = "checkpoint_3"
+offset = 16
+screenshot = "selected"
+expected = [99, 99, 99]
+reload_only = true
+sequence = ["@enter_time", "SCREENSHOT(selected)", "CLOSE"]
+baseline = "checkpoint-3-maximum"
+
+[[samples]]
+suffix = "checkpoint-4-default"
+setting = "checkpoint_4"
+offset = 18
+screenshot = "selected"
+expected = [30, 30, 30]
+sequence = ["@enter_time", "L3*5", "A", "WAIT(0.6)", "L3*4", "A", "L3*2", "A", "WAIT(0.6)", "SCREENSHOT(selected)", "CLOSE"]
+baseline = "checkpoint-3-default"
+
+[[samples]]
+suffix = "checkpoint-4-step"
+setting = "checkpoint_4"
+offset = 18
+screenshot = "selected"
+expected = [31, 31, 31]
+before_screenshot = "reloaded"
+sequence = ["@enter_time", "SCREENSHOT(reloaded)", "L3*5", "A", "WAIT(0.6)", "L3*2", "A*1", "L3*4", "A", "WAIT(0.6)", "SCREENSHOT(selected)", "CLOSE"]
+baseline = "checkpoint-4-default"
+
+[[samples]]
+suffix = "checkpoint-4-minimum"
+setting = "checkpoint_4"
+offset = 18
+screenshot = "selected"
+expected = [5, 5, 5]
+before_screenshot = "reloaded"
+sequence = ["@enter_time", "SCREENSHOT(reloaded)", "L3*5", "A", "WAIT(0.6)", "L3*3", "A*26", "L3*3", "A", "WAIT(0.6)", "SCREENSHOT(selected)", "CLOSE"]
+baseline = "checkpoint-4-step"
+
+[[samples]]
+suffix = "checkpoint-4-maximum"
+setting = "checkpoint_4"
+offset = 18
+screenshot = "selected"
+expected = [99, 99, 99]
+before_screenshot = "reloaded"
+sequence = ["@enter_time", "SCREENSHOT(reloaded)", "L3*5", "A", "WAIT(0.6)", "L3*2", "A*94", "L3*4", "A", "WAIT(0.6)", "SCREENSHOT(selected)", "CLOSE"]
+baseline = "checkpoint-4-minimum"
+
+[[samples]]
+suffix = "checkpoint-4-reload"
+setting = "checkpoint_4"
+offset = 18
+screenshot = "selected"
+expected = [99, 99, 99]
+reload_only = true
+sequence = ["@enter_time", "SCREENSHOT(selected)", "CLOSE"]
+baseline = "checkpoint-4-maximum"
+
+[[samples]]
+suffix = "motion-minimum"
+setting = "motion"
+offset = 26
+screenshot = "selected"
+expected = [100, 100, 100]
+before_screenshot = "reloaded"
+sequence = ["@enter_motion", "SCREENSHOT(reloaded)", "L3*3", "A*56", "SCREENSHOT(selected)", "L3*3", "A", "WAIT(0.6)", "SCREENSHOT(committed)", "CLOSE"]
+baseline = "motion-native-default"
+
+[[samples]]
+suffix = "motion-byte-before"
+setting = "motion"
+offset = 26
+screenshot = "selected"
+expected = [255, 255, 255]
+before_screenshot = "reloaded"
+sequence = ["@enter_motion", "SCREENSHOT(reloaded)", "L3*2", "A*31", "SCREENSHOT(selected)", "L3*4", "A", "WAIT(0.6)", "SCREENSHOT(committed)", "CLOSE"]
+baseline = "motion-minimum"
+
+[[samples]]
+suffix = "motion-byte-after"
+setting = "motion"
+offset = 26
+screenshot = "selected"
+expected = [260, 260, 260]
+before_screenshot = "reloaded"
+sequence = ["@enter_motion", "SCREENSHOT(reloaded)", "L3*2", "A*1", "SCREENSHOT(selected)", "L3*4", "A", "WAIT(0.6)", "SCREENSHOT(committed)", "CLOSE"]
+baseline = "motion-byte-before"
+
+[[samples]]
+suffix = "motion-maximum"
+setting = "motion"
+offset = 26
+screenshot = "selected"
+expected = [450, 450, 450]
+before_screenshot = "reloaded"
+sequence = ["@enter_motion", "SCREENSHOT(reloaded)", "L3*2", "A*38", "SCREENSHOT(selected)", "L3*4", "A", "WAIT(0.6)", "SCREENSHOT(committed)", "CLOSE"]
+baseline = "motion-byte-after"
+
+[[samples]]
+suffix = "motion-limits-reload"
+setting = "motion"
+offset = 26
+screenshot = "selected"
+expected = [450, 450, 450]
+reload_only = true
+sequence = ["@enter_motion", "SCREENSHOT(selected)", "CLOSE"]
+baseline = "motion-maximum"
+
+[[samples]]
+suffix = "country-initial"
+setting = "country"
+offset = 9
+screenshot = "selected"
+width = 1
+allowed = [0, 1]
+sequence = ["@enter_country", "L3*2", "A", "SCREENSHOT(selected)", "L3*2", "A", "WAIT(0.6)", "CLOSE"]
+baseline = "checkpoint-4-default"
+
+[[samples]]
+suffix = "country-alternate"
+setting = "country"
+offset = 9
+screenshot = "selected"
+width = 1
+allowed = [0, 1]
+toggle = true
+before_screenshot = "reloaded"
+sequence = ["@enter_country", "SCREENSHOT(reloaded)", "L3*2", "A", "SCREENSHOT(selected)", "L3*2", "A", "WAIT(0.6)", "CLOSE"]
+baseline = "country-initial"
+
+[[samples]]
+suffix = "country-cycle-close"
+setting = "country"
+offset = 9
+screenshot = "selected"
+width = 1
+allowed = [0, 1]
+toggle = true
+before_screenshot = "reloaded"
+sequence = ["@enter_country", "SCREENSHOT(reloaded)", "L3*2", "A", "SCREENSHOT(selected)", "L3*2", "A", "WAIT(0.6)", "CLOSE"]
+baseline = "country-alternate"
+
+[[samples]]
+suffix = "country-reload"
+setting = "country"
+offset = 9
+screenshot = "selected"
+width = 1
+allowed = [0, 1]
+reload_only = true
+sequence = ["@enter_country", "SCREENSHOT(selected)", "CLOSE"]
+baseline = "country-cycle-close"
+
+[[samples]]
+suffix = "ride-main-initialize"
+setting = "ride_id"
+offset = 8
+screenshot = "selected"
+width = 1
+expected = [0, 0, 255]
+setup_only = true
+baseline = "country-cycle-close"
+[[samples.steps]]
+sets = ["powsledm"]
+sequence = ["@enter_ride", "SCREENSHOT(ride-uninitialized)", "L3*2", "A", "SCREENSHOT(initial-red)", "A", "SCREENSHOT(initial-black)", "A", "SCREENSHOT(selected)", "L3*2", "A", "WAIT(1.0)"]
+[[samples.steps]]
+sets = ["powsledr"]
+sequence = ["@enter_ride", "SCREENSHOT(ride-uninitialized)", "L3*2", "A", "SCREENSHOT(selected)", "L3*2", "A", "WAIT(1.0)"]
+[[samples.steps]]
+sets = ["powsled"]
+sequence = ["@enter_ride", "SCREENSHOT(selected)"]
+[[samples.steps]]
+sets = ["powsledm", "powsledr", "powsled"]
+sequence = ["CLOSE"]
+
+[[samples]]
+suffix = "ride-initialize"
+setting = "ride_id"
+offset = 8
+screenshot = "selected"
+width = 1
+expected = [0, 0, 0]
+before_screenshot = "reloaded"
+bootstrap_reload = true
+baseline = "ride-main-initialize"
+[[samples.steps]]
+sets = ["powsledm", "powsledr", "powsled"]
+sequence = ["@enter_ride", "SCREENSHOT(reloaded)"]
+[[samples.steps]]
+sets = ["powsled"]
+sequence = ["L3*2", "A", "SCREENSHOT(initial-red)", "A", "SCREENSHOT(initial-black)", "A", "SCREENSHOT(selected)", "L3*2", "A", "WAIT(1.0)"]
+[[samples.steps]]
+sets = ["powsledm", "powsledr"]
+sequence = ["SCREENSHOT(selected)"]
+[[samples.steps]]
+sets = ["powsledm", "powsledr", "powsled"]
+sequence = ["CLOSE"]
+
+[[samples]]
+suffix = "ride-silver-cycle"
+setting = "ride_id"
+offset = 8
+screenshot = "selected"
+width = 1
+expected = [0, 0, 0]
+before_screenshot = "reloaded"
+sequence = ["@enter_ride", "SCREENSHOT(reloaded)", "L3*2", "A", "SCREENSHOT(cycle-silver)", "SCREENSHOT(selected)", "L3*2", "A", "WAIT(1.0)", "CLOSE"]
+baseline = "ride-initialize"
+
+[[samples]]
+suffix = "ride-silver-reload"
+setting = "ride_id"
+offset = 8
+screenshot = "selected"
+width = 1
+expected = [0, 0, 0]
+before_screenshot = "reloaded"
+reload_only = true
+sequence = ["@enter_ride", "SCREENSHOT(reloaded)", "SCREENSHOT(selected)", "CLOSE"]
+baseline = "ride-silver-cycle"
+
+[[samples]]
+suffix = "ride-red-initialize"
+setting = "ride_id"
+offset = 8
+screenshot = "selected"
+width = 1
+expected = [1, 0, 1]
+before_screenshot = "reloaded"
+bootstrap_reload = true
+sequence = ["@enter_ride", "SCREENSHOT(reloaded)", "L3*2", "A", "SCREENSHOT(initial-red)", "SCREENSHOT(selected)", "L3*2", "A", "WAIT(1.0)", "CLOSE"]
+baseline = "country-cycle-close"
+
+[[samples]]
+suffix = "ride-red-cycle"
+setting = "ride_id"
+offset = 8
+screenshot = "selected"
+width = 1
+expected = [1, "observed", 1]
+allowed = [0, 1, 2]
+before_screenshot = "reloaded"
+baseline = "ride-red-initialize"
+[[samples.steps]]
+sets = ["powsledm", "powsledr", "powsled"]
+sequence = ["@enter_ride", "SCREENSHOT(reloaded)"]
+[[samples.steps]]
+sets = ["powsled"]
+sequence = ["L3*2", "RIDE_CYCLE(1)", "SCREENSHOT(selected)", "L3*2", "A", "WAIT(1.0)"]
+[[samples.steps]]
+sets = ["powsledm"]
+sequence = ["L3*2", "RIDE_CYCLE(1)", "SCREENSHOT(selected)", "L3*2", "A", "WAIT(1.0)"]
+[[samples.steps]]
+sets = ["powsledr"]
+sequence = ["L3*2", "A", "SCREENSHOT(cycle-red)", "SCREENSHOT(selected)", "L3*2", "A", "WAIT(1.0)"]
+[[samples.steps]]
+sets = ["powsledm", "powsledr", "powsled"]
+sequence = ["CLOSE"]
+
+[[samples]]
+suffix = "ride-red-reload"
+setting = "ride_id"
+offset = 8
+screenshot = "selected"
+width = 1
+expected = [1, "observed", 1]
+before_screenshot = "reloaded"
+allowed = [0, 1, 2]
+reload_only = true
+sequence = ["@enter_ride", "SCREENSHOT(reloaded)", "SCREENSHOT(selected)", "CLOSE"]
+baseline = "ride-red-cycle"
+
+[[samples]]
+suffix = "ride-red-relay-repeat"
+setting = "ride_id"
+offset = 8
+screenshot = "selected"
+width = 1
+expected = [1, "observed", 1]
+allowed = [0, 1, 2]
+before_screenshot = "reloaded"
+baseline = "ride-red-reload"
+[[samples.steps]]
+sets = ["powsledm", "powsledr", "powsled"]
+sequence = ["@enter_ride", "SCREENSHOT(reloaded)"]
+[[samples.steps]]
+sets = ["powsled"]
+sequence = ["SCREENSHOT(selected)"]
+[[samples.steps]]
+sets = ["powsledm"]
+sequence = ["SCREENSHOT(selected)"]
+[[samples.steps]]
+sets = ["powsledr"]
+sequence = ["L3*2", "A", "SCREENSHOT(cycle-silver)", "SCREENSHOT(selected)", "L3*2", "A", "WAIT(1.0)"]
+[[samples.steps]]
+sets = ["powsledm", "powsledr", "powsled"]
+sequence = ["CLOSE"]
+
+[[samples]]
+suffix = "ride-red-relay-reload"
+setting = "ride_id"
+offset = 8
+screenshot = "selected"
+width = 1
+expected = [1, "observed", 1]
+before_screenshot = "reloaded"
+allowed = [0, 1, 2]
+reload_only = true
+sequence = ["@enter_ride", "SCREENSHOT(reloaded)", "SCREENSHOT(selected)", "CLOSE"]
+baseline = "ride-red-relay-repeat"
+
+[[samples]]
+suffix = "ride-black-slave-initialize"
+setting = "ride_id"
+offset = 8
+screenshot = "selected"
+width = 1
+expected = [0, 0, 2]
+before_screenshot = "reloaded"
+bootstrap_reload = true
+setup_only = true
+baseline = "ride-main-initialize"
+[[samples.steps]]
+sets = ["powsledm", "powsledr", "powsled"]
+sequence = ["@enter_ride", "SCREENSHOT(reloaded)"]
+[[samples.steps]]
+sets = ["powsled"]
+sequence = ["L3*2", "A", "SCREENSHOT(initial-red)", "A", "SCREENSHOT(initial-black)", "SCREENSHOT(selected)", "L3*2", "A", "WAIT(1.0)"]
+[[samples.steps]]
+sets = ["powsledm", "powsledr"]
+sequence = ["SCREENSHOT(selected)"]
+[[samples.steps]]
+sets = ["powsledm", "powsledr", "powsled"]
+sequence = ["CLOSE"]
+
+[[samples]]
+suffix = "ride-black-initialize"
+setting = "ride_id"
+offset = 8
+screenshot = "selected"
+width = 1
+expected = [2, 0, 2]
+before_screenshot = "reloaded"
+baseline = "ride-black-slave-initialize"
+[[samples.steps]]
+sets = ["powsledm", "powsledr", "powsled"]
+sequence = ["@enter_ride", "SCREENSHOT(reloaded)"]
+[[samples.steps]]
+sets = ["powsledm"]
+sequence = ["L3*2", "A", "SCREENSHOT(initial-red)", "A", "SCREENSHOT(initial-black)", "SCREENSHOT(selected)", "L3*2", "A", "WAIT(1.0)"]
+[[samples.steps]]
+sets = ["powsledr", "powsled"]
+sequence = ["SCREENSHOT(selected)"]
+[[samples.steps]]
+sets = ["powsledm", "powsledr", "powsled"]
+sequence = ["CLOSE"]
+
+[[samples]]
+suffix = "ride-black-reload"
+setting = "ride_id"
+offset = 8
+screenshot = "selected"
+width = 1
+expected = [2, 0, 2]
+before_screenshot = "reloaded"
+reload_only = true
+sequence = ["@enter_ride", "SCREENSHOT(reloaded)", "SCREENSHOT(selected)", "CLOSE"]
+baseline = "ride-black-initialize"

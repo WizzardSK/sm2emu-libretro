@@ -10,6 +10,9 @@ audio. Le funzioni ancora aperte sono indicate nella roadmap.
 
 Requisito dell'utente: facilitare l'integrazione delle versioni future di
 `dmanlfc/sm2-emu`, mantenendo la struttura originale e riducendo le divergenze.
+Applicare anche il [manifesto generale dei porting](Docs/UPSTREAM_PORTING_MANIFESTO.md):
+integrare per default ogni modifica upstream compatibile, adattare al frontend
+Libretro e richiedere una scelta solo quando emerge una collisione concreta.
 
 - Concentrare il futuro adattatore in `src/libretro/`, con target CMake proprio:
   ABI e ciclo di vita, callback, opzioni, input e persistenza del frontend.
@@ -30,6 +33,14 @@ per separare standalone/headless; accesso neutrale `sound_board()` su
 `Model2MachineBase` e implementazioni nelle quattro varianti. Il runner vive
 in `src/headless/` e il confronto in `scripts/compare-headless.py`. Mantenere
 questo inventario aggiornato quando cambia la superficie modificata del motore.
+The 2026-10-10 CPU package imports upstream direct i960 ROM/work-RAM fetch,
+MB86235 program-RAM fetch and settled coprocessor wait skipping. Machine init
+binds the existing allocations; reset and state loading retain those allocations.
+Host fetch pointers are excluded from serialization, with bus fallback outside
+the bounded windows. No Libretro dependency enters CPU/machine code and the
+state format stays 10. The SCSP depth-index-3 correction is an upstream synthesis
+change. See `Docs/UPSTREAM_CPU_SCSP_PACKAGE_2026-10-10.md` for reference revisions,
+pointer/state checks and platform limits.
 La milestone 2 aggiunge `src/libretro/` e due agganci CMake (opzione e
 subdirectory). La persistenza frontend aggiunge alla macchina soltanto viste
 neutrali su backup RAM ed EEPROM; formato, import e opzioni restano nell'adattatore.
@@ -38,6 +49,18 @@ un solo parametro `verify_crc`, abilitato per default: lo standalone e il
 runner headless conservano quindi invariato il confronto CRC, mentre il core
 può richiedere esplicitamente il fallback per nome senza introdurre header o
 callback Libretro nel loader.
+The shared-device BIOS follow-up adds one optional, frontend-neutral device
+directory argument to `RomLoader::load`. Only the Libretro adapter supplies its
+System directory; standalone and headless callers keep the previous default.
+The loader keeps the selected device archive separate so device firmware takes
+precedence over a copy embedded in the game ZIP without changing parent/game
+identification.
+The linked-network preset maps only reviewed operator values through the
+existing NVRAM adapter; the communication transport remains frontend-neutral.
+`SoundBoard` exposes source presence and output gain for the loaded hardware.
+The Libretro adapter owns menu values and visibility, while each board applies
+gain after its source advances. These gains are frontend settings and are not
+serialized as emulated machine state.
 La GPU aggiunge `render/vk/pass_context.h`, implementato dal contesto standalone
 e dall'adattatore. I passaggi tilemap/poly3D dipendono da questa interfaccia
 anziché dal contesto con finestra; shader e algoritmi restano condivisi.
@@ -45,6 +68,11 @@ CMake abilita gli shader anche per Libretro Vulkan/OpenGL e compila i passaggi
 con entry point risolti dal frontend. Nessun nuovo accesso alla macchina/CPU.
 OpenGL riusa i passaggi upstream GL e riceve dal frontend funzioni e framebuffer;
 non introduce una finestra SDL né una copia dei renderer nell'adattatore.
+The OpenGL abandonment path also clears the whole-polygon geometry buffer
+record before destroying the old renderer. This keeps teardown after an
+unannounced context loss from unmapping/deleting dead-context buffer names;
+normal shutdown still releases the live geometry buffer. See
+`Docs/RENDERING_REVIEW_2026-10-09.md` for the source audit and lifecycle evidence.
 Gli enhancement GPU del commit upstream `ce59cf5` restano nei passaggi e negli
 shader condivisi: l'adattatore espone le scelte tramite Core Options e passa
 solo gli identificatori ai renderer. xBR/ScaleFX opera sulle tilemap 2D prima
@@ -62,6 +90,21 @@ successore, lasciando a `M2Comm` il protocollo hardware ad anello. Per i
 trasporti standalone `ready()` coincide con `connected()`. Il motore non
 include header Libretro e il core non apre socket. Senza trasporto esterno resta
 attivo il `LoopbackTransport` dello standalone per un solo cabinet.
+
+NetBoard v3 distinguishes identity requests from Hello replies. A known peer
+must answer a new request after another frontend resets its local roster;
+ordinary replies never trigger another reply. Pending copies of both packet
+types are deduplicated. This repair stays in `src/libretro/netpacket.cpp` and
+does not alter native board enumeration, frame payloads or machine state.
+Every participant must update together. The separate native Daytona recovery
+procedure is coordinated Restart after a cabinet reboot or disconnection;
+transport roster recovery does not itself restart native FF/FE enumeration.
+See [network validation](Docs/NETWORK_VALIDATION_2026-10-09.md) for evidence.
+The frontend-neutral `M2Comm::role_inputs()` accessor reports the existing FG
+and shared role bytes without advancing the flip gate or changing shared RAM.
+It extends native link diagnostics only. The attempted Manx TT role-3
+adaptation did not pass real frontend qualification and was reverted; native
+role predicates and machine save-state layout remain unchanged.
 
 Eccezione hardware condivisa con lo standalone: il workaround BEL in
 `src/hw/model2c.cpp` mantiene i parametri temporanei della calibrazione anche
@@ -133,6 +176,23 @@ e nuova baseline: una correzione upstream può cambiare legittimamente gli hash.
 La separazione limita i conflitti, ma ogni aggiornamento richiede comunque
 revisione e validazione.
 
+On 2026-10-08, upstream `1a60affc251dd9992044013650dbe24075221593` was
+backported verbatim into the frontend-neutral M68000 wrapper. It rebinds host
+pointers after a state load without changing the serialized format. The full
+baseline remains 0.9.13; pending SCSP/DSB2 serializer changes belong with their
+audio implementations. See [the verification report](Docs/UPSTREAM_SAVE_STATE_PACKAGE_2026-10-08.md).
+
+On 2026-10-08, renderer fix `277a482` was adapted with upstream geometry
+binding 5 retained and the absent replacement-texture binding omitted from
+Vulkan descriptor allocation. Shared polygon interpolation remains upstream;
+no frontend menus changed. See [the renderer report](Docs/UPSTREAM_TEXTURE_WARP_PACKAGE_2026-10-08.md).
+
+Upstream geometry fix `d0db61c` and shadow-detail fix `2c4e9e2` were
+backported on 2026-10-08. The geometry serializer retains two discarded legacy
+words to preserve its layout. Five-title legacy-state and replay checks pass;
+no menu options changed. See [the package report](Docs/UPSTREAM_GEOMETRY_SHADOW_PACKAGE_2026-10-08.md)
+for exact revisions and the controlled upstream reference construction.
+
 ## Riferimento verificato
 
 Su richiesta dell'utente, usare il progetto personale
@@ -165,6 +225,18 @@ contiene opzioni implementate e utili; il primo core software può averne meno.
 Usare nomi coerenti per funzioni equivalenti e chiavi proprie con prefisso
 `sm2_`, stabili dopo la prima pubblicazione. Verificare il comportamento sui
 frontend target quando categorie o visibilità dinamica non sono disponibili.
+
+Equivalent frontend controls must use the same labels, choices, ordering and
+saved-value convention across cores. Source Gain follows TGPulse: Auto as the
+default (`auto`), Mute (`0`), then 10% through 100% (`10` through `100`).
+Use source labels such as `MultiPCM 1 Gain`, `FM (YM3438) Gain` and
+`DSB (MPEG) Gain`, without Absolute/Relative suffixes: the final output also
+depends on the reference mix and other volume controls.
+Auto preserves each machine's reference mix; SM2 resolves Auto to its existing
+100% source output. Keep published numeric behavior and keys compatible.
+Register saved legacy values before reading them, then expose only an active
+legacy value alongside the canonical selector. Do not rewrite frontend files
+on read or require an external migration script.
 
 | Categoria | Direzione per SM2 | Quando |
 | --- | --- | --- |
@@ -263,15 +335,24 @@ dichiarare la dipendenza da piattaforma ed endianness; il rifiuto del comando
 da parte di un frontend precedente costituisce il fallback e non modifica il
 formato né i callback di serializzazione.
 
-Magic, versione, gioco e scheda vengono verificati prima di modificare la
-macchina. Un payload troncato viene applicato in modo transazionale e causa il
-ripristino dello snapshot precedente. Il formato del core è versione 4: separa
-lo stato off-screen seriale dalle coordinate lightgun e include la matrice P3/P4
-di Air Walkers e lo stato di `Enhanced Audio Balance`, assenti nel layout
-upstream versione 1. Dopo un caricamento, la macchina invalida le generazioni video; il
-solo adattatore svuota audio pendente, cadenza, rumble e latch input del
-frontend. Una sessione `Linked Cabinets` rifiuta save/load perché il peer
-Netpacket esterno non fa parte dello stato emulato.
+Magic, supported version, game identity and board are validated before loading.
+Truncated/invalid machine payloads roll back to the preceding machine snapshot.
+The current machine writer uses format 8; the reader accepts formats 4–8.
+Format 4 carries the port's serial lightgun/P3–P4/EAB fields; later formats add
+sound scheduler conversion (5), audio history (6), persistent geometry (7)
+and local communication queues (8). Data absent from an older archive cannot
+be reconstructed merely by accepting its format. The fixed 9 MiB buffer
+includes a 96-byte frontend runtime tail. The next save writes format 8 without
+rewriting the file that was loaded.
+
+After loading, derived renderer state and queued audio are invalidated and
+rumble is stopped; saved cadence, audio delivery remainder, input runtime,
+gun-flash state and output DC history are restored from the frontend tail.
+An external `Linked Cabinets` session refuses save/load because the peer
+Netpacket session is outside the machine archive. Platform/endianness dependence
+and Musashi pointer rebinding preclude treating cross-process raw archive
+identity as a portable semantic test. Current and historical qualification
+scopes are recorded in `Docs/SAVE_STATE_COMPATIBILITY_REVIEW_2026-10-09.md`.
 
 `Automatic Initial NVRAM Setup` è Enabled per default. In assenza sia del `.srm`
 sia di NVRAM native valide, i parent supportati ricevono un campione completo
@@ -279,7 +360,11 @@ validato prima del primo frame; il core vi applica Country/Nation Export, con
 USA come fallback quando Export non è disponibile, e
 i valori offline necessari; il core imposta inoltre Daytona su Cabinet=Deluxe e
 Super GT 24h su I/O Type=C, senza attribuire questo valore al default originale
-del gioco. Il campione
+del gioco. Motor Raid Deluxe likewise uses Cabinet Type=Twin for automatic
+initialization and as the matching NVRAM selector default. Its native acquired
+template remains Deluxe; saved NVRAM takes precedence over automatic setup,
+and an explicit Deluxe selection remains available. The Twin compound fields,
+mirrors and checksum use the existing validated NVRAM writer. Il campione
 stabilisce subito un layout integro e
 non richiede una modifica tardiva seguita da riavvio. I salvataggi esistenti
 restano sempre prioritari; le successive scritture ordinarie del gioco
@@ -304,10 +389,30 @@ RetroPad né le sole coordinate al bordo.
 
 Affidare al frontend remapping, opzioni per gioco, shader, volume generale,
 pausa, screenshot e sincronizzazione della presentazione. Il core comunica
-per default il timing hardware; la modalità esplicita `60 Hz Compatibility`
-mantiene la velocità della macchina distribuendo duplicazioni video e pacchetti
-audio sulla cadenza del frontend. Evitare una seconda interfaccia ImGui o nuovi parametri
-EmulationStation per funzioni già gestite da RetroArch.
+per default la modalità `60 Hz (Default)`. Questa esegue un nuovo frame
+macchina per ogni callback a 60 Hz, accelerando gioco e suono di circa il 4,3%,
+e ricampiona l'audio al rate dichiarato dalla scheda. La frazione usata per il
+conteggio dei campioni resta nello stato Libretro. Evitare una seconda
+interfaccia ImGui o nuovi parametri EmulationStation per funzioni già gestite da
+RetroArch. Le prove frontend GPU restano indicate nella roadmap.
+
+The timing menu follows the user's cross-core convention: `60 Hz (Default)`
+and `57.524 Hz (Native Model 2)`. The stored `sm2_av_timing = "60hz"` value
+selects one new machine frame per callback, including when read from an
+existing option file; the next save keeps that value. An explicit `native`
+setting continues to select the Model 2 cadence. The earlier duplicate-frame
+behavior is removed. TGPulse-Next adopts the corresponding Model 1 wording in
+its own project chat.
+
+## Power Sled NVRAM Adapter
+
+Power Sled's reviewed per-program NVRAM fields and independent initial images
+use the existing adapter engines. The layout gate waits for three concordant
+native 28-byte settings blocks and valid numeric ranges; manual writes update
+only their proven field copies. No machine implementation or native checksum
+is added. Existing SRAM/native saves retain precedence over initial seeding.
+Country and conditional ID assignment are not automatically overridden. See
+`Docs/POWER_SLED_NVRAM_OPTIONS_2026-10-09.md`.
 
 ## Funzioni da valutare separatamente
 
@@ -340,3 +445,368 @@ iniziali mantengano la baseline e che i salvataggi esistenti siano preservati.
 Verificare comandi canonici e alias, calibrazione e indipendenza P1/P2 con
 dispositivi reali sui frontend dichiarati. Una build o un menu correttamente
 visualizzato non dimostrano il funzionamento dei controlli.
+
+## Internal Resolution Extension (2026-10-08)
+
+Upstream `609c3c53f0d8b48555a992df9d4e6fe7da3a86de` is backported for the
+shared maximum scale and standalone configuration/menu. The Libretro adapters
+expose 1×–8×, default 1×, reusing the common dimension-clamp helper. They keep
+requested and effective scale separate, return the effective scale after GPU
+initialization, and notify the frontend when the base geometry changes.
+The maximum geometry remains sized for the request so context recreation can
+restore the requested resolution on a more capable device. No emulated machine,
+CPU timing, audio, input mapping or Save State layout changes are required.
+See `Docs/UPSTREAM_RESOLUTION_PACKAGE_2026-10-08.md` for verification and limits.
+
+## Shot-Flash Presentation History (2026-10-08)
+
+The `96e0f0e` detector and tile drawing/upload changes are shared with
+standalone. The Libretro adapter calls the detector after each emulated frame
+for games whose metadata declares a lightgun interface. Hide Shot Flash remains
+visible for every game, default Disabled; it is a no-op on other games.
+
+A frontend-neutral `Model2Video::GunFlashState` accessor exposes presentation
+history. Machine reset/archive load clears that transient history. Libretro
+saves a tagged four-byte representation at offset 76 in its existing 96-byte
+frontend tail, restoring it after machine load. Legacy zero-filled reserved
+bytes mean empty history. The marker is `0x47460000`, low bits 0–1 store held
+triggers, bit 2 the previous press, bit 3 the previous full window and bit 4 the
+current suppression. Neither the machine archive nor the 9,437,184-byte ABI
+size changes. The tail version remains 1 because older readers ignore this
+previously reserved field.
+
+Standalone keeps the upstream transient presentation behavior across loads;
+only Libretro uses the reserved frontend extension. No emulated RAM is altered.
+See `Docs/UPSTREAM_GUN_FLASH_PACKAGE_2026-10-08.md`.
+
+### Split Device Firmware and Power Sled — 2026-10-08
+
+Upstream `600f1c8` supplies Daytona/Desert Tank device-set metadata without
+changing their I/O. Preserve frontend system-BIOS priority over embedded
+firmware when adapting upstream's conditional archive lookup. Power Sled
+`e8d96c1` reuses existing `Inputs::in3` for port E and sets its link offset
+to 0x180; it adds no serialized fields or Core Options. The new profile maps
+upstream cabinet actions through Libretro and retains preliminary status.
+See `Docs/UPSTREAM_ROM_LOADER_PACKAGE_2026-10-08.md` for tests and limitations.
+
+### Sample-Locked Sound Timing and State Versioning — 2026-10-08
+
+Upstream timing patches `def088c` (scheduler/stall/cache subset), `8e1e7c3`
+and `71a81e3` now drive the shared sound machine. Frontend gains remain in
+the established output stages. No new option or visibility change is needed.
+Machine Save State format 5 distinguishes the new scheduler units, while
+Archive carries source version 4 during legacy reads so Model2Sound converts
+its clock carries without changing field widths. Old cores reject version 5;
+new saves retain the fixed Libretro capacity and existing frontend tail.
+See `Docs/UPSTREAM_SOUND_TIMING_PACKAGE_2026-10-08.md` for the isolated pristine
+reference, four-board adapter comparisons and fresh-process compatibility tests.
+
+
+### Selective i960 and Area Timing Imports — 2026-10-08
+
+`8a49096`, `7080210`, `e36f757` and `1987d82` add CPU/SHARC corrections,
+Virtual-On tile/texture waits and per-area data waits on all four boards.
+The existing optional ties-to-even rounding implementation and published
+frontend contract are unchanged. Timing remains frontend-neutral; instruction
+fetch guards are transient, while existing CPU-control registers already belong
+to the machine archive. No new serialized fields or frontend selector are
+needed. Original Model 2 retains the port's Daytona Maxx protection branches.
+See `Docs/UPSTREAM_I960_PACKAGE_2026-10-08.md` for imports, pristine comparison,
+old/new state checks, Linux verification and installed-core RetroArch evidence.
+
+
+### Audio Balance and Source Auto — 2026-10-08
+
+The upstream SCSP profiles (`abb42bb`, `88d5557`, `cb57c0a`, `3a71c1d`),
+original-board output attenuation and Top Skater DSB2 level are derived from
+metadata. Enhanced Audio Balance remains Enabled by default. Source Gain Auto
+is conveyed separately from manual 100% through the frontend-neutral SoundBoard
+setter. Auto uses the enabled game profile; manual percentages replace it for
+that source. MultiPCM automatic contributions are summed before the upstream
+board-level attenuation, while manual contributions retain the hardware routes.
+The obsolete VF2 per-slot profile is removed. Its serialized fields remain in
+the published archive layout for compatibility; current metadata and frontend
+preferences reapply the new profile on load. No archive-size/version change is
+needed. See `Docs/UPSTREAM_AUDIO_BALANCE_PACKAGE_2026-10-08.md`.
+
+## Upstream Control Reconciliation — 2026-10-08
+
+The adapter integrates corrected House of the Dead trigger metadata and
+upstream serial-gun endpoint handling. Libretro normalized screen coordinates
+already refer to the game image, so standalone window/desktop conversion,
+RawInput and evdev ownership are excluded. Native off-screen status remains
+independent of on-screen coordinates. Legacy explicit P2 IN2 metadata remains
+readable, while the bundled database now uses IN1 bit 1 for every HOTD set.
+
+Top Skater preserves published independent Curving/Slide axes and adds upstream
+trigger aliases and D-Pad steering. The user approved Progressive as the
+Curving default, retaining Linear through a universally visible Core Option.
+Response and alias policy live exclusively in `src/libretro/`; no machine or
+archive layout changes. Ski Super G channel corrections
+were already present. The user approved independent Swing/Inclining axes as
+the core-specific behavior, with optional coupling through frontend binding
+in Settings > Input > Port 1 Controls. Do not add a Core Option or Quick Menu
+selector. Built-in coupling is only a future reconsideration if frontend
+binding limitations or gameplay evidence justify it; exact equivalence of
+upstream response and rounding is not established.
+
+## Drive Board and Rumble Reconciliation — 2026-10-08
+
+The neutral shared `src/osd/drive_command.*` decoder is imported verbatim from
+upstream `868dce7`, including preceding Daytona spring/Kick and Rally brake/chop
+metadata fixes. `DriveProtocol::Indy` is appended to retain the existing enum
+values. `drive_protocol="indy"` is parsed and inherited; Indy 500 and Over Rev
+metadata select it, with Over Rev drive-board writes now enabled for its family.
+No control mappings, audio defaults, Core Option names or archive layout change.
+
+The adapter maps Push/Kick to existing gamepad impacts, including upstream's
+Kick direction threshold at 2*256 steering units. Spring geometry and Rally
+chop metadata are preserved by the shared decoder for upstream compatibility;
+wheel force output is outside the standard rumble adapter. The existing generic
+cornering vibration, 12-frame tail and lifecycle stop behavior are preserved.
+All new decoded effect fields remain adapter state and are cleared on reset,
+load, unload and disable; they are not added to machine archives.
+
+Over Rev's game-side board traffic requires the existing HARDWARE TYPE setting
+SEGA STCC. This is the approved Hardware Type core default and automatic initial
+override for Over Rev and its parent-compatible clones. The override is applied
+to newly seeded templates only, through the existing generic patch/checksum
+engine. Keep the acquired native NORMAL (2in1) template unchanged. Existing
+frontend/native NVRAM retains precedence, and explicit saved Core Option values
+remain respected by NVRAM Settings. See
+`Docs/OVER_REV_HARDWARE_DEFAULT_2026-10-09.md` and
+`Docs/UPSTREAM_RUMBLE_PACKAGE_2026-10-08.md` for evidence and physical controller
+qualification limits.
+
+
+### Persistent Geometry State and LFO Restore — 2026-10-08
+
+Machine Save State format 7 adds the geometry engine's persistent register and RAM
+snapshot (texture/log RAM, polygon RAM, matrices, clip planes, lighting,
+texture and window parameters). These values persist across display lists and
+cannot be rebuilt from the current buffer RAM alone. Keep this fix frontend-neutral
+in Geometrizer; generated polygon/depth pools remain transient. Formats 4/5/6
+remain readable without claiming recovery of RAM absent from their archives.
+The fixed 9 MiB Libretro buffer and 96-byte frontend tail are unchanged.
+MultiPCM restores archived pitch/amplitude LFO steps after rebuilding pointers,
+preserving the effect of zero register writes. No Core Option is added.
+See `Docs/VIRTUA_COP_SAVE_STATE_REPLAY_2026-10-08.md` for the isolated pristine
+serializer probe, exact replay campaign, compatibility evidence and limitations.
+
+
+### Local Communication State and Set Identification — 2026-10-08
+
+Format 8 includes bounded pending loopback frames and its overflow flag, preserving
+single-cabinet communication state independently of external networking. Formats
+4/5/6/7 remain readable; their missing queue is cleared on load instead of retaining
+future traffic. External transport sessions are not serialized. Libretro's fixed
+9 MiB capacity remains unchanged. Keep this fix in the frontend-neutral transport
+and M2Comm rather than frontend callbacks.
+
+ROM identification still prefers chip match quality. Resolve exact score ties by
+archive stem to distinguish sets with identical chips and different patches, such
+as Power Sled Main/Relay. Explicit standalone set selection retains precedence;
+renamed ambiguous archives retain catalogue-order fallback. No game-specific
+Libretro option or duplicate ROM loader is introduced. See
+`Docs/POWER_SLED_PRELIMINARY_VALIDATION_2026-10-08.md` for evidence and limits.
+
+
+### Power Sled Mixed-Program Netpacket Ring — 2026-10-08
+
+The adapter adds the three Power Sled sets to Linked Cabinets with Disabled /
+3 Cabinets only. They share family `powsled`. An optional one-byte HELLO payload
+identifies the ROM program: 1 Main, 2 Relay, 3 Slave. A Power Sled roster requires
+all three distinct program tags; these are independent of communication RAM,
+FG, link ID and operator Ride ID. Existing games keep their empty HELLO payload
+and wire version 2. Power Sled had no prior linked-session contract.
+
+`M2Comm`, its MAME-derived ring protocol, Power Sled receive offset `0x180`, and
+initial frame size `0x0e00` are unchanged. All new transport identity validation
+and native board transition logging live in `src/libretro/`. No upstream-facing
+machine modification is needed for this integration. No unverified Automatic
+Network Settings or NVRAM offsets are exposed. Actual RetroArch evidence shows
+Main 1/3, Relay program 3/3, Slave 2/3 and access to all three Service Menus.
+See `Docs/POWER_SLED_SERVICE_MENU_CAMPAIGN.md` for evidence and acquisition gates.
+
+
+### Power Sled Color Presets And Second Rider — 2026-10-09
+
+Automatic Network Settings manages reviewed Ride ID colors on `powsledm`
+and `powsled`: Silver, Red, Black, Disabled. The new selector defaults to
+Disabled to preserve existing manual Ride selections. The ROM program fixes
+the native role; frontend host/client status does not change it. `powsledr`
+retains its native Relay identity and has no color selector. This reuses
+`automatic_network.cpp` and the existing NVRAM apply/write-back path; no
+communication protocol, hardware role or unreviewed field is modified.
+
+Power Sled Port 2 now supplies independent P2 Entry/Call and analog
+handlebars. MAME defines P1 on mux 1/3 and P2 on 5/7. P1 bindings, its P2
+button aliases and Test/Service conventions are retained. Appended neutral
+`AnalogControl` identifiers and metadata parsing activate the existing machine
+I/O callbacks for 5/7; no Libretro callback is added to machine code.
+P2 is a rider in the same cabinet, not the Slave network instance. Save State
+version 8 and frontend buffer size remain unchanged.
+
+The generic manual launcher reuses `test-retroarch-netpacket.py`; see
+`Docs/LINKED_CABINET_LAUNCHER.md`. Native roles are embedded. Power Sled always
+starts Main, Relay and Slave programs, displaying Main/Slave above Relay;
+its optional Relay CLI switch is ignored.
+
+## Unified ANS Values And Explicit ROM Lists — 2026-10-09
+
+Automatic Network Settings uses one raw-value convention: `0` Disabled,
+`1` Master / Cabinet 1, `2` first Slave, subsequent sequential numbers for
+other cabinets, and `relay` where supported. Visible labels retain their
+reviewed game-specific meanings. Power Sled Main/Slave use `1` Silver,
+`2` Red and `3` Black. Core defaults remain Disabled (`0`) for those programs
+and Master (`1`) for generic playable sets. Dedicated `powsledr` and `vonr`
+offer only `relay`; Power Sled Relay manages no color, while Virtual On Relay
+retains its reviewed No Link operator attribute. ROM identity still determines
+fixed program roles. No aliases or migration for old development ANS values
+are implemented, as explicitly directed by the user. Native NVRAM keys and
+values, emulation, communication and save formats are unchanged.
+
+The launcher accepts a repeated ROM name, comma-separated per-instance names,
+and optional per-instance `:ANS` suffixes. Its transport receives the explicit
+ROM list; it does not infer a different ROM from a numeric suffix. An explicit Power Sled
+Main/Slave/Relay triplet retains the native Main/Relay/Slave transport order
+while preserving declared controller mapping and role-based window positions.
+Other lists and repeated names are passed through literally. Per the user's
+KISS instruction, the launcher does not check game compatibility, native
+program combinations or game-specific cabinet limits; the core/frontend own
+connection behavior. Process-lifecycle success is separate from network proof.
+Explicit suffixes override saved values. Without suffixes, valid Power Sled
+session colors persist; fresh sessions select Silver for Main and Red for
+Slave. The optional Relay flag remains ignored for Power Sled.
+
+### Power Sled Main Audio Regions — 2026-10-09
+
+The Main approximation now declares the matched Slave audio program
+EPR-19466 and sample FPR-19459. The existing frontend-neutral loader searches
+the selected archive first and opens the split parent `powsled.zip` / `.7z`
+only when required chips are missing. CRC lookup remains enabled. The old
+Relay audio chips are absent from the Main definition; Relay retains them.
+
+The small generic loader adjustment gives a known archive name precedence
+when all maincpu chips match by CRC, preserving `powsledm` selection after its
+audio definition changes. Otherwise the existing whole-set scoring remains.
+An incompatible program cannot be selected by filename alone. This also makes
+known split sets identifiable before their parent supplies missing regions.
+No new metadata schema, emulation branch, Core Option, audio callback or
+serialization layout is introduced. Imported changes are limited to the ROM
+loader and Main ROM metadata; sound synthesis is unchanged. See
+`Docs/POWER_SLED_MAIN_AUDIO_INTEGRATION_2026-10-09.md` for evidence and limits.
+
+### Power Sled Main Ride Caption — 2026-10-10
+
+The Main database patches its two identity-caption selectors to read the
+native NVRAM Ride byte instead of the internal role word. Display the same
+`THIS IS <COLOR> RIDE` labels as Slave, keeping Main's role and operator/network
+behavior intact. Original text/fallback tables and code addresses remain.
+This is a Main-only metadata adaptation; no machine or Libretro callback
+change. See `Docs/POWER_SLED_MAIN_RIDE_CAPTION_2026-10-10.md`.
+
+### Power Sled Main First-Person Sled Color — 2026-10-10
+
+The Main database selects first-person sled resources from the native NVRAM
+Ride byte, preserving the race object index and Main role. Three resource
+reads call a byte-load helper in an existing twelve-byte zero gap; neighboring
+functions and resource tables remain intact. Paired RetroArch captures verify
+Red instead of black with Ride ID Red. Remote/third-person selection paths
+are outside this qualification. See
+`Docs/POWER_SLED_MAIN_SLED_COLOR_2026-10-10.md`.
+
+### Power Sled Main Mode-Selection Scene — 2026-10-10
+
+The native mode-selection drawing initializer handles rider colors and Relay,
+but selects no drawing callback for Master role `0x0200`. Main therefore shows
+the mode overlay on a black background. Read the native NVRAM Ride byte only
+at this visual selector: two database patch words for Relay-derived Main and
+two guarded adapter patch words at the relocated Slave site. Existing drawing
+callbacks and assets are reused; Master identity, network/operator paths and
+race index are preserved. Paired RetroArch observation demonstrates the missing
+scene and its restoration; both normal installed-core donor runs pass linked
+race entry and save integrity. Related placement selectors have no demonstrated
+defect and are unchanged. See `Docs/POWER_SLED_MAIN_PRESENTATION_2026-10-10.md`.
+
+### Power Sled Master Donor — 2026-10-10
+
+The always-visible System option `sm2_power_sled_master_donor` chooses Relay
+(default) or Slave for `powsledm` at content load; other games ignore it.
+The adapter loads only CRC-verified Slave maincpu from the current archive or
+adjacent `powsled`, validates all patch sites before writing, and adapts its
+initializer to Main. Both program bases include the native Ride caption and
+first-person sled color fixes, plus the subsequent mode-selection scene fix.
+Missing/incompatible requested donors fail
+loading. Main identity, I/O, assets, audio, network role and SRAM are preserved.
+Save States tag Slave in an unused frontend flag and reject donor mismatches
+before machine mutation; legacy untagged states remain Relay. No machine/CPU
+frontend dependency or state-size change. Reload content to change the donor.
+See `Docs/POWER_SLED_MASTER_DONOR_2026-10-10.md`.
+
+### Manx TT Counted Relay — 2026-10-09
+
+The native Manx TT boot program requires every node, including shared role 3,
+to have an ID in 1..count. A frontend-neutral `M2Comm` configuration, enabled
+only by the Manx TT family in the Model 2A machine, counts that Relay during
+enumeration and assigns a positive ID. Subsequent gameplay qualification also
+requires transmitting its own native status slot before the received slot train;
+pure forwarding passed boot but blocked race selection. Both vblank and FG-read
+paths use the existing shared-RAM send path for this counted node.
+The generic role-0 Relay remains uncounted. This content-load configuration
+does not add serialized mutable state, frontend callbacks, options or bindings.
+See `Docs/MANX_TT_RELAY_INITIALIZATION_2026-10-09.md` for native code evidence,
+reference limits, exact old/new baseline and RetroArch qualification.
+The race-selection correction, normal-core two-rider races, LIVE camera,
+Time Up/ranking/re-entry and unchanged serialization/UI are recorded in
+`Docs/MANX_TT_GAMEPLAY_VALIDATION_2026-10-09.md`.
+
+
+### Manx TT Cabinet Audio And Additional Board — 2026-10-10
+
+The always-visible frontend selector and committed EEPROM policy live in
+`src/libretro/manxtt_audio.*`; owned alternate audio regions outlive the machine.
+The generic `RomLoader::load_regions` reuses archive lookup, CRC verification
+and assembly without loading donor main programs or EEPROMs. It requires every
+requested chip even for otherwise optional regions.
+
+`Model2Sound` adds frontend-neutral optional ROM banks and the existing M1
+board, with shared host UART fanout, native board clocks, one populated PCM,
+existing Gain controls and exact-rate stereo resampling. These shared machine
+changes contain no Libretro headers/callbacks. Format 9 persists bank identity,
+auxiliary CPU/chips/UART and resampler history while retaining formats 4–8 on
+read. Missing required banks/board reject state restoration and trigger rollback.
+The main CPU and physical input definitions are unchanged. See
+`Docs/MANX_TT_CABINET_AUDIO_2026-10-10.md`.
+
+### Manx TT Deluxe AMS Acknowledgement — 2026-10-10
+
+`src/hw/manxtt_ams.h` owns the minimal acknowledgement state, independently of
+the generic drive-board latch. `Model2` connects it through existing parallel
+D/E callbacks for the three Manx TT sets only. The native EEPROM Cabinet Type
+at byte `0x0a` selects Deluxe (0) or Twin (1) for Revision C/D; the Deluxe-only
+program always connects it. Twin keeps its original P2 input. Each I/O access
+observes the current cabinet selection; transitions and machine reset clear
+the handshake. No frontend callback, Core Option, ROM patch or calibration
+write is introduced by this stub. Cabinet audio selection is independent.
+
+Format 10 appends the enable/response bytes to Model 2A serialization and
+validates their domain on load. Formats 4–9 have no AMS state and initialize
+it to idle; the original legacy file is not rewritten. The fixed Libretro buffer
+and other board payloads retain their layouts. This implements native boot
+acknowledgements only; motors, position feedback, diagnostic error simulation
+and a complete drive-board protocol remain outside its scope. See
+`Docs/MANX_TT_MOTION_STUB_2026-10-10.md`.
+
+### Power Sled Master Role And Color — 2026-10-10
+
+The Relay-derived Main retains command role `0x0200` and publishes its native
+Ride color separately. ROM-database adaptations in all three Power Sled programs
+use that color for the roster, both cabinet counts and rider packet selection;
+Main's local race index and native panorama offset follow Ride ID. Command scans
+retain the original role identities. The shared native boarding introduction
+still constructs four color actors independently of local Ride selection.
+Main Silver / Slave Red and the inverse order qualify in bounded RetroArch races.
+No generic machine/renderer change, new option or binding is required. These
+patches extend an undumped-Main reconstruction and do not authenticate factory
+firmware or mixed old/new peer programs. See `Docs/POWER_SLED_MASTER_COLOR_2026-10-10.md`.

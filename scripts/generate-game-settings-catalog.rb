@@ -414,8 +414,17 @@ games = games_from_xml
 parents = games.select { |_name, game| game[:parent].nil? }
 clones = games.reject { |_name, game| game[:parent].nil? }
 
-missing_parent_definitions = parents.keys - PARENTS.keys
-missing_clone_definitions = clones.keys - CLONES.keys
+# Power Sled retains independent campaign evidence and deferred interpretations.
+# Preserve their independent evidence and unresolved field interpretations.
+PENDING_CAMPAIGNS = {
+  "powsled" => "Reviewed Checkpoints, Motion Angle and Ride ID implemented; independent initial template integrated. Country and conditional ID assignment remain deferred; linked gameplay remains unverified.",
+  "powsledm" => "Reviewed Checkpoints, Motion Angle and Ride ID implemented; independent initial template integrated. Country and conditional ID assignment remain deferred; linked gameplay remains unverified.",
+  "powsledr" => "Reviewed Checkpoints and Motion Angle implemented; independent initial template integrated. Country and hidden Ride byte remain deferred; linked gameplay remains unverified."
+}.freeze
+POWER_SLED_SCREEN_ROOT = ROOT / "build-libretro-gpu/validation/power-sled-service-menu-20261008"
+
+missing_parent_definitions = parents.keys - PARENTS.keys - PENDING_CAMPAIGNS.keys
+missing_clone_definitions = clones.keys - CLONES.keys - PENDING_CAMPAIGNS.keys
 abort "Missing parent definitions: #{missing_parent_definitions.join(', ')}" unless missing_parent_definitions.empty?
 abort "Missing clone definitions: #{missing_clone_definitions.join(', ')}" unless missing_clone_definitions.empty?
 
@@ -471,7 +480,7 @@ all_parent_pngs = Dir[PARENT_SCREEN_ROOT.join("**/*.png")].length
 lines << "| Screenshot primari della campagna parent indicizzati | #{primary_parent_screens} |"
 lines << "| PNG supplementari nell'archivio parent | #{all_parent_pngs - primary_parent_screens} |"
 lines << "| Campagne parent con schermata base ordinaria | #{PARENTS.count { |name, (_menu, rows)| !rows.empty? && base_screenshot(name) }} |"
-lines << "| Acquisizioni dichiarate incomplete | #{CLONES.count { |_name, rule| rule[:incomplete] }} |"
+lines << "| Campaigns With Remaining Validation Or Implementation | #{CLONES.count { |_name, rule| rule[:incomplete] } + PENDING_CAMPAIGNS.length} |"
 lines << ""
 
 lines << "## Matrice delle differenze parent/clone"
@@ -612,15 +621,44 @@ CLONES.each do |name, rule|
   lines << ""
 end
 
+lines << "## Power Sled Campaign — Approved Fields Implemented"
+lines << ""
+PENDING_CAMPAIGNS.each do |name, status|
+  game = games.fetch(name)
+  lines << "### #{game[:title] || name} (`#{name}`)"
+  lines << ""
+  lines << "- **Parent:** `#{game[:parent] || name}`"
+  lines << "- **Status:** #{status}"
+  lines << "- **Recipe:** `scripts/libretro_nvram_samples.#{name}.toml`"
+  screens = Dir[POWER_SLED_SCREEN_ROOT.join(name, "screenshots/*.png")].sort
+  links = screens.map { |path| "[#{File.basename(path, '.png')}](<#{path}>)" }
+  lines << "- **Navigation Evidence:** #{links.join(', ')}" unless links.empty?
+  lines << "- **Documentation:** `Docs/POWER_SLED_SERVICE_MENU_CAMPAIGN.md`; each set verified separately in linked MAME. Calibration listed only. Country/Ride ID expose no Use Default action; fresh invalid values are not defaults."
+  lines << ""
+  lines << "| # | Setting | Native Default | Allowed Values |"
+  lines << "| --- | --- | --- | --- |"
+  rows = [["Country", "—", "Export"],
+          ["Ride ID (Color)", "—", name == "powsledr" ? "Relay" : "Silver Ride, Red Ride, Black Ride"]]
+  [49, 35, 35, 30, 30].each_with_index { |value, i| rows << ["Checkpoint #{i}", value.to_s, "5–99 Seconds (Step 1)"] }
+  rows << ["Motion Angle", "38.0", "10.0–45.0 Degrees (Step 0.5)"]
+  rows.each_with_index { |values, i| lines << "| #{i+1} | #{values.join(' | ')} |" }
+  lines << ""
+  lines << "- **Conditional Availability:** Reference seeds initialize both Main and Slave to the same color; the matrix does not establish Main-only causality. Main/Slave color mapping 0/1/2 is verified in the core; further ID logic is deferred. Relay displays role 0x100 independently of its stored byte."
+  lines << "- **Native Integrity:** Three 28-byte settings copies and three 52-byte bookkeeping copies use whole-block agreement and ROM defaults on disagreement; no native checksum for these groups. See `Docs/POWER_SLED_NVRAM_INTEGRITY_2026-10-09.md`."
+  lines << "- **Phase 2:** 49 RetroArch stages / 147 program records validate operator field samples and fresh reload. Native recovery and three complete independent initial images are verified by 11 additional RetroArch trials / 33 program records. The approved fields and initial templates are implemented; no automatic color assignment or Country override is introduced. See `Docs/POWER_SLED_NVRAM_OPTIONS_2026-10-09.md`."
+  lines << ""
+end
+
 lines << "## Lacune residue"
 lines << ""
 incomplete = CLONES.select { |_name, rule| rule[:incomplete] }
-if incomplete.empty?
+if incomplete.empty? && PENDING_CAMPAIGNS.empty?
   lines << "Nessuna. Tutti i parent e i cloni presenti in `games.xml` hanno una trascrizione strutturata oppure, nel caso speciale `rascot2`, un esito diagnostico conclusivo senza Game Settings ordinari."
 else
   lines << "| Set | Lacuna |"
   lines << "| --- | --- |"
   incomplete.each { |name, rule| lines << "| `#{name}` | #{rule[:incomplete]} |" }
+  PENDING_CAMPAIGNS.each { |name, status| lines << "| `#{name}` | #{status} |" }
 end
 
 OUTPUT.write(lines.join("\n") + "\n")

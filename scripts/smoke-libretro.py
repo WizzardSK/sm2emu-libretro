@@ -6,6 +6,7 @@ comparison, --reference points to a sm2-headless output for the same frame count
 ROM selection and fresh NVRAM. No ROMs are distributed with this test.
 """
 import argparse
+import binascii
 import ctypes as C
 import hashlib
 import json
@@ -40,6 +41,25 @@ class RumbleInterface(C.Structure):
     _fields_ = [('set_rumble_state', RUMBLE)]
 
 def sha(data): return hashlib.sha256(data).hexdigest()
+def capture_save_ram(core, game, saves):
+    """Capture actual frontend SRAM and hash its native payload for all renderers."""
+    core.retro_get_memory_size.argtypes = [C.c_uint]
+    core.retro_get_memory_size.restype = C.c_size_t
+    core.retro_get_memory_data.argtypes = [C.c_uint]
+    core.retro_get_memory_data.restype = C.c_void_p
+    size = core.retro_get_memory_size(0)
+    pointer = core.retro_get_memory_data(0)
+    assert size == 16576 and pointer, 'Missing frontend Save RAM'
+    data = C.string_at(pointer, size)
+    assert data[:8] == b'SM2SRAM\0' and int.from_bytes(data[8:12], 'little') == 1
+    assert int.from_bytes(data[12:16], 'little') == 16384
+    assert int.from_bytes(data[16:20], 'little') == 128
+    assert data[24:56].split(b'\0')[0].decode() == game, 'Mismatched SRAM game'
+    payload = data[64:]
+    assert binascii.crc_hqx(payload, 0) == int.from_bytes(data[20:24], 'little'), 'Invalid SRAM CRC'
+    (saves / f'{game}.srm').write_bytes(data)
+    return {f'{game}.nv': sha(payload[:16384]), f'{game}.eeprom': sha(payload[16384:])}
+
 def files(path):
     return {str(p.relative_to(path)): sha(p.read_bytes()) for p in sorted(path.rglob('*')) if p.is_file()}
 
@@ -57,6 +77,8 @@ def main():
                         help='Verify deterministic Libretro save/load and corrupt-state rejection')
     parser.add_argument('--save-state-stress-cycles', type=int, default=0,
                         help='Repeat run-ahead and reverse-order rewind state patterns')
+    parser.add_argument('--state-input', type=Path,
+                        help='Load an external state in this fresh process before advancing')
     parser.add_argument('--state-output', type=Path,
                         help='Write the final Libretro state image for a frontend integration test')
     parser.add_argument('--reject-state', type=Path,
@@ -65,7 +87,11 @@ def main():
                         help='Verify that the loaded configuration rejects save states')
     parser.add_argument('--switch-rom', type=Path, help='Exercise a second board/rate in the same library instance')
     parser.add_argument('--press', action='store_true', help='Coin then Start then action buttons (not an idle comparison)')
+    parser.add_argument('--link-reconfigure-test', action='store_true',
+                        help='Exercise Linked Cabinets changes through Resume and Restart')
     parser.add_argument('--av-timing', choices=['native','60hz'], default='native')
+    parser.add_argument('--unset-av-timing', action='store_true',
+                        help='Omit the saved timing value to verify the core default')
     parser.add_argument('--timing-overlay', choices=['disabled','auto','11','12','13','14'], default='disabled')
     parser.add_argument('--audio-balance', choices=['enabled','disabled'], default='enabled')
     parser.add_argument('--aspect-ratio', choices=['auto','4_3','16_9'], default='auto')
@@ -89,6 +115,8 @@ def main():
                      b'sm2_crosshairs': args.crosshairs.encode(),
                      b'sm2_crosshair_style': args.crosshair_style.encode(),
                      b'sm2_automatic_start_gear': args.automatic_start_gear.encode()}
+    if args.unset_av_timing: option_values.pop(b'sm2_av_timing')
+    effective_av_timing = '60hz' if args.unset_av_timing else args.av_timing
     for assignment in args.core_option:
         if '=' not in assignment: parser.error('--core-option requires KEY=VALUE')
         key, value = assignment.split('=', 1)
@@ -108,9 +136,9 @@ def main():
     lib.retro_get_memory_data.argtypes = [C.c_uint]; lib.retro_get_memory_data.restype = C.c_void_p
     lib.retro_set_controller_port_device.argtypes = [C.c_uint, C.c_uint]
     pixels = b''; pcm = bytearray(); frame = 0; videos = 0; polls = 0; batches = 0
-    duplicates = 0; statuses = []; geometry_updates = []
+    duplicates = 0; statuses = []; geometry_updates = []; published_options = {}
     rumble_calls = 0; rumble_peak = [0, 0]
-    errors = []; reject_pixel = False; shutdown = False
+    errors = []; reject_pixel = False; shutdown = False; variable_update = False
     serialization_quirks = None
     @RUMBLE
     def rumble(port, effect, strength):
@@ -121,7 +149,7 @@ def main():
         return True
     @ENV
     def env(cmd, data):
-        nonlocal shutdown, serialization_quirks
+        nonlocal shutdown, serialization_quirks, variable_update
         if cmd in directories:
             C.cast(data, C.POINTER(C.c_char_p))[0] = directories[cmd]; return True
         if cmd == 10: return not reject_pixel and C.cast(data, C.POINTER(C.c_int))[0] == 1
@@ -129,7 +157,16 @@ def main():
         if cmd == 15:
             var=C.cast(data,C.POINTER(Variable)).contents
             var.value=option_values.get(var.key); return var.value is not None
-        if cmd == 17: C.cast(data, C.POINTER(C.c_bool))[0] = False; return True
+        if cmd == 70:
+            var=C.cast(data,C.POINTER(Variable)).contents
+            option_values[var.key]=var.value
+            published_options[var.key.decode()]=var.value.decode()
+            variable_update=True
+            return True
+        if cmd == 17:
+            C.cast(data, C.POINTER(C.c_bool))[0] = variable_update
+            variable_update = False
+            return True
         if cmd == 23:
             C.cast(data, C.POINTER(RumbleInterface)).contents.set_rumble_state = rumble
             return True
@@ -203,8 +240,22 @@ def main():
     assert lib.retro_load_game(C.byref(game))
     av = AV(); lib.retro_get_system_av_info(C.byref(av))
     native_fps=25000000/434600
-    assert abs(av.timing.fps-(60.0 if args.av_timing=='60hz' else native_fps)) < 1e-9
+    assert abs(av.timing.fps-(60.0 if effective_av_timing!='native' else native_fps)) < 1e-9
     assert av.timing.rate in (44100,44642)
+    if args.state_input:
+        # Complete first-frame SRAM import/seeding before restoring a snapshot;
+        # that initialization can reset the machine. Exclude this bootstrap
+        # frame from the requested replay's observations.
+        lib.retro_run()
+        videos = polls = batches = duplicates = 0
+        pcm.clear()
+        statuses.clear()
+        geometry_updates.clear()
+        rumble_calls = 0
+        rumble_peak[:] = [0, 0]
+        state_bytes = args.state_input.resolve(strict=True).read_bytes()
+        state_buffer = C.create_string_buffer(state_bytes)
+        assert lib.retro_unserialize(state_buffer, len(state_bytes)), 'External Save State rejected'
     for frame in range(args.frames):
         lib.retro_run()
         assert not shutdown, 'Core requested shutdown'
@@ -305,11 +356,9 @@ def main():
     current_av = AV(); lib.retro_get_system_av_info(C.byref(current_av))
     expected_aspect = 16/9 if args.expect_aspect == '16:9' else 4/3
     assert abs(current_av.geometry.aspect-expected_aspect) < 1e-6
-    if args.av_timing=='60hz':
-        expected=args.frames*(1-native_fps/60)
-        assert abs(duplicates-expected)<=1,(duplicates,expected)
+    assert duplicates==0,duplicates
+    if effective_av_timing=='60hz':
         assert abs(len(pcm)//4-args.frames*av.timing.rate/60)<av.timing.rate/native_fps+2
-    else: assert duplicates==0
     overlays=[entry for entry in statuses if entry]
     if args.timing_overlay!='disabled':
         assert not overlays
@@ -320,17 +369,12 @@ def main():
     (out/'software_frame.ppm').write_bytes(ppm)
     with wave.open(str(out/'audio.wav'),'wb') as w:
         w.setparams((2,2,int(av.timing.rate),0,'NONE','not compressed')); w.writeframes(pcm)
-    save_size=lib.retro_get_memory_size(0)
-    save_data=C.string_at(lib.retro_get_memory_data(0),save_size)
-    assert save_size==16576 and save_data[:8]==b'SM2SRAM\0'
+    nvram=capture_save_ram(lib,args.rom.stem,saves)
     lib.retro_unload_game()
-    (saves/f'{args.rom.stem}.srm').write_bytes(save_data)
     assert not any(path.is_dir() for path in saves.iterdir())
-    payload=save_data[64:]
-    nvram={f'{args.rom.stem}.nv':sha(payload[:16384]),
-           f'{args.rom.stem}.eeprom':sha(payload[16384:])}
     report = {'frames':videos,'duplicated_frames':duplicates,'fps':av.timing.fps,
-              'av_timing':args.av_timing,'timing_overlay':args.timing_overlay,
+              'av_timing':effective_av_timing,'unset_av_timing':args.unset_av_timing,
+              'timing_overlay':args.timing_overlay,
               'audio_balance':args.audio_balance,
               'aspect_ratio':args.aspect_ratio,'resolved_aspect':current_av.geometry.aspect,
               'geometry_updates':geometry_updates,
@@ -338,8 +382,10 @@ def main():
               'automatic_start_gear':args.automatic_start_gear,
               'rumble_calls':rumble_calls,'rumble_peak':rumble_peak,
               'overlay_updates':len(overlays),'audio_rate':av.timing.rate,
+              'published_options':published_options,
               'audio_frames':len(pcm)//4,'video_sha256':sha(ppm),'audio_sha256':sha(pcm),
               'nvram':nvram,'save_layout':'frontend directory only',
+              'external_state_loaded':bool(args.state_input),
               'abi_checks':True,'backpressure':args.backpressure}
     if state_report:
         report['save_state'] = state_report
@@ -379,6 +425,27 @@ def main():
             lib.retro_unload_game()
         lib.retro_set_audio_sample_batch(batch)
         report['sample_callback_and_rate_transitions']=True
+    if args.link_reconfigure_test:
+        key=f'sm2_linked_cabinets_{args.rom.stem}'.encode()
+        option_values[key]=b'disabled'
+        assert lib.retro_load_game(C.byref(game))
+        state_size=lib.retro_serialize_size()
+        state_data=C.create_string_buffer(state_size)
+        assert lib.retro_serialize(state_data,state_size)
+        option_values[key]=b'2'; variable_update=True
+        lib.retro_run()  # Resume from Core Options
+        assert not lib.retro_serialize(state_data,state_size)
+        option_values[key]=b'disabled'; variable_update=True
+        lib.retro_run()
+        assert lib.retro_serialize(state_data,state_size)
+        option_values[key]=b'2'
+        lib.retro_reset()  # RetroArch Restart
+        assert not lib.retro_serialize(state_data,state_size)
+        option_values[key]=b'disabled'
+        lib.retro_reset()
+        assert lib.retro_serialize(state_data,state_size)
+        lib.retro_unload_game()
+        report['link_reconfigure_resume_and_reset']=True
     lib.retro_deinit(); lib.retro_init(); lib.retro_deinit()
     (out/'result.json').write_text(json.dumps(report,indent=2)+'\n')
     print(json.dumps(report,indent=2))

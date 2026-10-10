@@ -59,10 +59,15 @@ def main():
     for name in ['retroarch','core','system','rom','output']:
         p.add_argument('--'+name,type=Path,required=True)
     p.add_argument('--set-name',default='vf2',help='ROM set name used for save and capture files')
+    p.add_argument('--power-sled-inputs',action='store_true',
+                   help='Add Power Sled cabinet cancels, Entry/Call and handlebar triggers')
     p.add_argument('--driving-inputs',action='store_true',
                    help='Add steering, pedals and four-speed gate input to the replay')
     p.add_argument('--sequential-inputs',action='store_true',
                    help='Add steering, pedals, View 1/2 and sequential shift input to the replay')
+    p.add_argument('--top-skater-inputs',action='store_true',
+                   help='Exercise Curving, independent Slide, trigger aliases and jumps')
+    p.add_argument('--top-skater-curving-response',choices=['linear','progressive'],default='progressive')
     p.add_argument('--analog-joystick-inputs',action='store_true',
                    help='Add left-stick X/Y and Sky Target action buttons to the replay')
     p.add_argument('--desert-inputs',action='store_true',
@@ -82,16 +87,23 @@ def main():
     p.add_argument('--crosshairs',choices=['0','1','2','3'],default='0',
                    help='Crosshair mask: disabled, P1, P2, or both players')
     p.add_argument('--timeout',type=int,default=180)
+    p.add_argument('--max-frames',type=int,default=2300,
+                   help='Frontend frame limit; raise for a bounded live-menu inspection')
     p.add_argument('--renderer',choices=['software','vulkan','opengl'],default='software')
     p.add_argument('--opengl-driver',choices=['gl','glcore'],default='glcore',
                    help='RetroArch video driver used with --renderer opengl')
-    p.add_argument('--scale',type=int,choices=range(1,5),default=1)
+    p.add_argument('--hide-shot-flash',choices=['disabled','enabled'],default='disabled')
+    p.add_argument('--scale',type=int,choices=range(1,9),default=1)
     p.add_argument('--texture-filter',choices=['faithful','2','4','8','16'],default='faithful')
     p.add_argument('--upscale-2d',choices=['faithful','xbr','scalefx'],default='faithful')
     p.add_argument('--av-timing',choices=['native','60hz'],default='native')
     p.add_argument('--timing-overlay',choices=['disabled','auto','11','12','13','14'],default='disabled')
     p.add_argument('--audio-balance',choices=['enabled','disabled'],default='enabled')
+    p.add_argument('--manxtt-cabinet-audio',choices=['enabled','disabled'],default='enabled')
+    p.add_argument('--scsp-output-low-pass-filter',choices=['disabled','enabled'],default='disabled')
     p.add_argument('--music-volume',choices=[str(value) for value in range(0,201,10)],default='100')
+    p.add_argument('--source-gain',action='append',default=[],metavar='SOURCE=PERCENT',
+                   help='Set a fitted source Gain (scsp, dsb, multipcm1, multipcm2, ym3438) to 0–200%%')
     p.add_argument('--aspect-ratio',choices=['auto','4_3','16_9'],default='auto')
     p.add_argument('--initial-nvram-setup',choices=['enabled','disabled'],default='enabled')
     p.add_argument('--nvram-settings',choices=['disabled','enabled'],default='disabled')
@@ -99,18 +111,34 @@ def main():
     p.add_argument('--vf2-drink',choices=['ok','ng'],default='ok')
     p.add_argument('--vf2-difficulty',choices=['normal','hard','hardest','easy'],default='normal')
     p.add_argument('--vf2-display-type',choices=['projector','crt'],default='projector')
+    p.add_argument('--overrev-hardware-type', choices=['normal_2in1','sega_indy','sega_indy_dx_gt24h_dx','sega_stcc'],
+                   help='Existing Over Rev NVRAM hardware setting for an isolated test')
     p.add_argument('--initial-srm',type=Path,help='Optional frontend save RAM copied in before launch')
     p.add_argument('--initial-state',type=Path,
                    help='Optional Libretro state embedded in the replay and loaded by RetroArch')
+    p.add_argument('--input-replay',type=Path,
+                   help='Use an existing validated input replay instead of the generated fixture')
     p.add_argument('--replay-reader', choices=['1.21','1.22'], default='1.21',
                    help='1.22 reads 40 header bytes even for a stateless v1 replay')
     p.add_argument('--audio-driver', default='coreaudio' if platform.system()=='Darwin' else 'alsa')
     p.add_argument('--input-driver', default='cocoa' if platform.system()=='Darwin' else 'x')
     p.add_argument('--moltenvk',type=Path,help='Optional macOS MoltenVK library, used only by the test process')
     a=p.parse_args()
+    if a.input_replay and a.initial_state:
+        p.error('--input-replay and --initial-state are mutually exclusive')
+    if a.max_frames < 2300:
+        p.error('--max-frames must be at least 2300 for the gameplay capture')
+    source_gains={}
+    for entry in a.source_gain:
+        source, separator, value=entry.partition('=')
+        if not separator or source not in {'scsp','dsb','multipcm1','multipcm2','ym3438'} \
+                or value not in {str(step) for step in range(0,201,10)} \
+                or source in source_gains:
+            p.error(f'Invalid or duplicate --source-gain: {entry}')
+        source_gains[source]=value
     gun_inputs=a.gun_inputs or a.bel_inputs
     input_modes=(a.driving_inputs,a.sequential_inputs,a.analog_joystick_inputs,
-                 a.desert_inputs,gun_inputs)
+                 a.desert_inputs,gun_inputs,a.top_skater_inputs)
     if sum(input_modes)>1:
         p.error('input replay modes are mutually exclusive')
     out=a.output.resolve();out.mkdir(parents=True,exist_ok=False)
@@ -127,18 +155,29 @@ def main():
         movie += initial_state
     elif a.replay_reader=='1.22':
         movie += bytes(16)
-    for frame in range(2400):
+    # Keep input playback active through bounded long-duration captures.
+    # RetroArch can pause at EOF, before --max-frames has been reached.
+    for frame in range(max(2400, a.max_frames + 100)):
         pressed=set()
         if 800<=frame<810 or 820<=frame<830:pressed.add(2)  # Select / coin
         if 870<=frame<880 or 950<=frame<960 or 1050<=frame<1060:pressed.add(3)
         if frame>1100:
-            if a.driving_inputs:
+            if a.power_sled_inputs:
+                if frame % 240 < 12: pressed.update([10, 11])  # Cabinet cancels
+                if frame % 180 < 12: pressed.add(0)  # P1 Entry
+                if frame % 180 < 24: pressed.add(8)  # P1 Call
+            elif a.driving_inputs:
                 if frame<1110:pressed.add(1)  # West / Neutral before engaging the gate
             elif a.sequential_inputs:
                 if frame%480<120:pressed.add(4)  # D-Pad Up / View 1
                 elif frame%480<240:pressed.add(5)  # D-Pad Down / View 2
                 if frame%360<12:pressed.add(10)  # L1 / Shift Down
                 elif frame%360<24:pressed.add(11)  # R1 / Shift Up
+            elif a.top_skater_inputs:
+                if frame%180<12:pressed.add(0)  # Jump Tail
+                if frame%360<12:pressed.add(8)  # Jump Front
+                if frame%480<30:pressed.add(6)  # Select/Curving Left
+                elif frame%480<60:pressed.add(7)  # Select/Curving Right
             elif a.analog_joystick_inputs:
                 if frame%90<12:pressed.add(0)  # South / Machine Gun
                 if frame%360<12:pressed.add(8)  # East / Missile
@@ -157,6 +196,10 @@ def main():
             else:
                 if frame%30<8:pressed.update([0,8,1])  # South, East, West
                 if frame%120<60:pressed.add(7)  # Right
+        if gun_inputs:
+            # Gun titles can still be booting during the generic early sequence.
+            if 1200 <= frame < 1210 or 1220 <= frame < 1230: pressed.add(2)
+            if 1350 <= frame < 1360 or 1450 <= frame < 1460 or 1550 <= frame < 1560: pressed.add(3)
         analog_axes={(port,index,axis):0 for port in range(2)
                      for index in range(2) for axis in range(2)}
         analog_buttons={(port,button):0 for port in range(2) for button in range(16)}
@@ -164,6 +207,16 @@ def main():
             analog_axes[(0,0,0)]=-18000 if (frame//180)%2==0 else 18000
             analog_buttons[(0,13)]=0 if frame%180<20 else 32767  # R2 / Accelerator
             if frame%360<30:analog_buttons[(0,12)]=24576  # L2 / Brake
+        if a.power_sled_inputs and frame>1100:
+            analog_buttons[(0,13)]=32767 if frame%360<180 else 16384
+            analog_buttons[(0,12)]=16384 if frame%360<180 else 32767
+        if a.top_skater_inputs and frame>1100:
+            analog_axes[(0,0,0)]=-18000 if (frame//180)%2==0 else 18000
+            # Alternate the old independent stick and the new trigger aliases.
+            if (frame//360)%2==0:
+                analog_axes[(0,1,0)]=-22000 if (frame//180)%2==0 else 22000
+            else:
+                analog_buttons[(0,12 if (frame//180)%2==0 else 13)]=24576
         if a.analog_joystick_inputs and frame>1100:
             analog_axes[(0,0,0)]=-18000 if (frame//180)%2==0 else 18000
             analog_axes[(0,0,1)]=-14000 if (frame//240)%2==0 else 14000
@@ -198,7 +251,9 @@ def main():
             for lightgun_id in (2,3,6,7,13,14,15,16):
                 movie+=struct.pack('<4BHh',port,RETRO_DEVICE_LIGHTGUN,0,0,lightgun_id,0)
         movie+=b'f'
-    replay=out/'vf2-inputs.replay';replay.write_bytes(movie)
+    replay=out/'vf2-inputs.replay'
+    replay.write_bytes(a.input_replay.resolve(strict=True).read_bytes()
+                       if a.input_replay else movie)
     hardware=a.renderer!='software'
     cfg={'system_directory':str(a.system.resolve()),'savefile_directory':str(out/'saves'),
          'savestate_directory':str(out/'states'),'screenshot_directory':str(out/'screenshots'),
@@ -219,11 +274,15 @@ def main():
     cfg['video_gpu_record']='true' if hardware else 'false'
     cfg['core_options_path']=str(out/'core-options.cfg')
     (out/'core-options.cfg').write_text(
+        f'sm2_hide_shot_flash = "{a.hide_shot_flash}"\n'
         f'sm2_renderer = "{a.renderer}"\nsm2_internal_resolution = "{a.scale}"\n'
         f'sm2_texture_filter = "{a.texture_filter}"\nsm2_upscale_2d = "{a.upscale_2d}"\n'
+        f'sm2_top_skater_curving_response = "{a.top_skater_curving_response}"\n'
         f'sm2_av_timing = "{a.av_timing}"\n'
         f'sm2_timing_overlay = "{a.timing_overlay}"\n'
         f'sm2_audio_balance = "{a.audio_balance}"\n'
+        f'sm2_manxtt_cabinet_audio = "{a.manxtt_cabinet_audio}"\n'
+        f'sm2_scsp_output_low_pass_filter = "{a.scsp_output_low_pass_filter}"\n'
         f'sm2_music_volume = "{a.music_volume}"\n'
         f'sm2_aspect_ratio = "{a.aspect_ratio}"\n'
         f'sm2_gun_input = "{"analog" if gun_inputs else "hybrid"}"\n'
@@ -238,8 +297,12 @@ def main():
         f'sm2_nvram_vf2_country = "{a.vf2_country}"\n'
         f'sm2_nvram_vf2_drink = "{a.vf2_drink}"\n')
     with (out/'core-options.cfg').open('a') as options:
+        if a.overrev_hardware_type:
+            options.write(f'sm2_nvram_overrev_hardware_type = "{a.overrev_hardware_type}"\n')
         options.write(f'sm2_nvram_vf2_difficulty = "{a.vf2_difficulty}"\n')
         options.write(f'sm2_nvram_vf2_display_type = "{a.vf2_display_type}"\n')
+        for source, value in source_gains.items():
+            options.write(f'sm2_{source}_gain = "{value}"\n')
     runtime_env=os.environ.copy()
     if a.moltenvk:
         library=a.moltenvk.resolve(strict=True)
@@ -252,7 +315,7 @@ def main():
         if any(c in value for c in ['"','\n','\r']):raise ValueError('Unsupported config path character')
     config.write_text(''.join(f'{k} = "{v}"\n' for k,v in cfg.items()))
     command=[str(a.retroarch.resolve()),'-v','-c',str(config),'-L',str(a.core.resolve()),
-             '-P',str(replay),'--max-frames','2300','--max-frames-ss',
+             '-P',str(replay),'--max-frames',str(a.max_frames),'--max-frames-ss',
              '--max-frames-ss-path',str(out/f'{a.set_name}-gameplay.png'),
              '-r',str(out/f'{a.set_name}.wav'),str(a.rom.resolve())]
     (out/'command.json').write_text(json.dumps(command,indent=2)+'\n')
@@ -279,15 +342,24 @@ def main():
     params,pcm,recording_format=read_recording(out/f'{a.set_name}.wav')
     assert params.nchannels==2 and params.sampwidth==2 and params.framerate>0
     peak=max(map(abs,array.array('h',pcm)))
-    assert peak>0 and params.nframes>44100*20
+    assert params.nframes>44100*20
+    assert peak>0 or a.power_sled_inputs  # Preliminary Power Sled may remain silent.
     srm=(out/'saves'/f'{a.set_name}.srm').read_bytes()
     assert len(srm)==64+16384+128 and srm[:8]==b'SM2SRAM\0'
-    report={'set_name':a.set_name,'recording_format':recording_format,'renderer':a.renderer,'internal_scale':a.scale,
+    report={'power_sled_inputs':a.power_sled_inputs,'hide_shot_flash':a.hide_shot_flash,'set_name':a.set_name,'recording_format':recording_format,'renderer':a.renderer,'internal_scale':a.scale,
+            'max_frames':a.max_frames,
+            'overrev_hardware_type':a.overrev_hardware_type,
+            'top_skater_inputs':a.top_skater_inputs,
+            'top_skater_curving_response':a.top_skater_curving_response,
             'texture_filter':a.texture_filter,'upscale_2d':a.upscale_2d,
             'gamepad_rumble':a.gamepad_rumble,
             'initial_state':bool(initial_state),
+            'external_input_replay':bool(a.input_replay),
+            'input_replay_sha256':hashlib.sha256(replay.read_bytes()).hexdigest(),
             'av_timing':a.av_timing,'timing_overlay':a.timing_overlay,
             'audio_balance':a.audio_balance,'music_volume':a.music_volume,
+            'scsp_output_low_pass_filter':a.scsp_output_low_pass_filter,
+            'source_gains':source_gains,
             'aspect_ratio':a.aspect_ratio,
             'crosshairs':a.crosshairs,'save_ram_size':len(srm),'elapsed_seconds':elapsed,'exit_code':result.returncode,'audio_frames':params.nframes,'audio_rate':params.framerate,
             'audio_peak':peak,'audio_sha256':hashlib.sha256(pcm).hexdigest(),

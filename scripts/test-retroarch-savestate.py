@@ -41,8 +41,24 @@ def send_command(command_port: int, command: str) -> None:
         sock.sendto(f"{command}\n".encode(), ("127.0.0.1", command_port))
 
 
-def toggle_pause(command_port: int) -> None:
-    send_command(command_port, "PAUSE_TOGGLE")
+def set_paused(command_port: int, paused: bool) -> None:
+    """A replay can already be paused at EOF; never toggle blindly."""
+    deadline = time.monotonic() + 3.0
+    toggled = False
+    while time.monotonic() < deadline:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+            sock.settimeout(1.0)
+            sock.sendto(b"GET_STATUS\n", ("127.0.0.1", command_port))
+            status = sock.recv(4096).decode().split()
+        if len(status) < 2 or status[1] not in ("PAUSED", "PLAYING"):
+            raise RuntimeError(f"Unexpected frontend status: {status!r}")
+        if (status[1] == "PAUSED") == paused:
+            return
+        if not toggled:
+            send_command(command_port, "PAUSE_TOGGLE")
+            toggled = True
+        time.sleep(0.05)
+    raise RuntimeError("RetroArch did not reach the requested pause state")
 
 
 def crop_game_region(source: Path, destination: Path) -> None:
@@ -92,6 +108,8 @@ def main() -> None:
     parser.add_argument("--set-name", required=True)
     parser.add_argument("--boot-wait", type=float, default=38.0)
     parser.add_argument("--advance-wait", type=float, default=3.0)
+    parser.add_argument("--software-threading", choices=("asynchronous", "synchronous"),
+                        default="asynchronous")
     args = parser.parse_args()
 
     retroarch = args.retroarch.resolve(strict=True)
@@ -108,11 +126,19 @@ def main() -> None:
     core_options = output / "core-options.cfg"
     core_options.write_text(
         'sm2_renderer = "software"\n'
+        f'sm2_software_renderer_threading = "{args.software_threading}"\n'
         'sm2_linked_cabinets = "disabled"\n',
         encoding="utf-8",
     )
     config_values = {
         "config_save_on_exit": "false",
+        "log_to_file": "false",
+        "user_language": "0",
+        "history_list_enable": "false",
+        "content_runtime_log": "false",
+        "content_runtime_log_aggregate": "false",
+        "cheevos_enable": "false",
+        "cheevos_hardcore_mode_enable": "false",
         "system_directory": system,
         "savefile_directory": output / "saves",
         "savestate_directory": output / "states",
@@ -140,6 +166,7 @@ def main() -> None:
         "input_pause_toggle": "p",
         "input_save_state": "f2",
         "input_load_state": "f4",
+        "input_frame_advance": "k",
         "video_shader_enable": "false",
         "video_threaded": "false",
         "auto_overrides_enable": "false",
@@ -164,26 +191,44 @@ def main() -> None:
         try:
             activate_process(process)
             wait_while_alive(process, args.boot_wait)
-            toggle_pause(command_port)
+            set_paused(command_port, True)
             wait_while_alive(process, 1.0)
             send_command(command_port, "SAVE_STATE")
             state = wait_for_state(output / "states", process)
             wait_while_alive(process, 2.5)
+            # Original Model 2 rebuilds geometry every other frame. Three
+            # steps also cover the asynchronous renderer's one-frame delay.
+            for _ in range(3):
+                post_key_to_pid(process.pid, 40, "Frame Advance")
+                wait_while_alive(process, 0.5)
             saved = take_screenshot(process, output, command_port, "saved")
 
-            toggle_pause(command_port)
+            set_paused(command_port, False)
             wait_while_alive(process, args.advance_wait)
-            toggle_pause(command_port)
+            set_paused(command_port, True)
             wait_while_alive(process, 1.0)
             advanced = take_screenshot(process, output, command_port, "advanced")
 
-            # Resume, issue the configured load hotkey and immediately pause,
-            # then capture the restored framebuffer without wall-clock drift.
-            toggle_pause(command_port)
-            post_key_to_pid(process.pid, 118, "F4")
-            toggle_pause(command_port)
+            # Screenshot file creation precedes task completion in RetroArch.
+            # Let its blocking task leave the queue before requesting a load.
             wait_while_alive(process, 1.0)
+
+            # Explicit slot command bypasses transient hotkey delivery.
+            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+                sock.settimeout(3.0)
+                sock.sendto(b"LOAD_STATE_SLOT 0\n", ("127.0.0.1", command_port))
+                reply = sock.recv(1024).decode().strip()
+                if reply != "LOAD_STATE_SLOT 0":
+                    raise RuntimeError(f"Unexpected load reply: {reply!r}")
+            wait_while_alive(process, 2.0)
+            # Match the same geometry/presentation warm-up as the reference.
+            for _ in range(3):
+                post_key_to_pid(process.pid, 40, "Frame Advance")
+                wait_while_alive(process, 0.5)
             restored = take_screenshot(process, output, command_port, "restored")
+            set_paused(command_port, False)
+            wait_while_alive(process, 0.5)
+            resumed = take_screenshot(process, output, command_port, "resumed")
         finally:
             forced = quit_retroarch(process, command_port)
 
@@ -193,13 +238,19 @@ def main() -> None:
     restored_hash = digest(restored)
     saved_crop = output / "screenshots" / "saved-game-region.png"
     restored_crop = output / "screenshots" / "restored-game-region.png"
+    advanced_crop = output / "screenshots" / "advanced-game-region.png"
+    resumed_crop = output / "screenshots" / "resumed-game-region.png"
     crop_game_region(saved, saved_crop)
     crop_game_region(restored, restored_crop)
+    crop_game_region(advanced, advanced_crop)
+    crop_game_region(resumed, resumed_crop)
     saved_game_hash = digest(saved_crop)
     restored_game_hash = digest(restored_crop)
     log_text = (output / "run.log").read_text(encoding="utf-8", errors="replace")
     result = {
         "set_name": args.set_name,
+        "software_threading": args.software_threading,
+        "pause_state_verified": True,
         "state": str(state),
         "state_size": state.stat().st_size,
         "saved_screenshot": str(saved),
@@ -210,22 +261,29 @@ def main() -> None:
         "restored_sha256": restored_hash,
         "saved_game_region_sha256": saved_game_hash,
         "restored_game_region_sha256": restored_game_hash,
-        "advanced_changed": advanced_hash != saved_hash,
+        "advanced_changed": digest(advanced_crop) != saved_game_hash,
+        "resumed_changed": digest(resumed_crop) != restored_game_hash,
+        "resumed_screenshot": str(resumed),
+        "comparison_frame_steps": 3,
         "restored_game_region_exactly": restored_game_hash == saved_game_hash,
         "save_log_message": (
-            "Salvataggio dello stato" in log_text or "Saved state" in log_text
+            "Salvataggio dello stato" in log_text or "Saving state" in log_text
         ),
         "load_log_message": (
-            "Caricamento dello stato" in log_text or "Loaded state" in log_text
+            "Caricamento dello stato" in log_text or "Loading state" in log_text
         ),
         "exit_code": process.returncode,
         "forced_kill": forced,
     }
     (output / "result.json").write_text(json.dumps(result, indent=2) + "\n")
+    if not result["save_log_message"] or not result["load_log_message"]:
+        raise RuntimeError("RetroArch did not confirm both Save State and Load State")
     if not result["advanced_changed"]:
         raise RuntimeError("The game image did not advance after saving")
     if not result["restored_game_region_exactly"]:
         raise RuntimeError("The loaded state did not restore the saved video frame exactly")
+    if not result["resumed_changed"]:
+        raise RuntimeError("The game image did not advance after loading")
     if process.returncode != 0 or forced:
         raise RuntimeError("RetroArch did not close cleanly")
     print(json.dumps(result, indent=2))

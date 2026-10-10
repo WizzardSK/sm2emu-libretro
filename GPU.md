@@ -11,11 +11,12 @@ software resta disponibile per confronti e frontend privi dei contesti richiesti
   shader originali SM2-Emu, senza copiarli nell'adattatore.
 - Immagine Vulkan o OpenGL consegnata direttamente al frontend: il percorso normale
   non legge i pixel sulla CPU e non usa il renderer software per disegnare il 3D.
-- Risoluzione interna 1×, 2×, 3× o 4×: da 496 × 384 a 1984 × 1536. Le tilemap
-  partono dal dettaglio nativo; aspect sempre 4:3.
+- Internal resolution 1×–8×: from 496 × 384 to 3968 × 3072. Tilemaps
+  retain their native detail. Final aspect and presentation scaling follow the
+  core Aspect Ratio option and the frontend.
 - Core Options v2, categoria Video: `sm2_renderer`
   (Auto/Vulkan/OpenGL/Software) e
-  `sm2_internal_resolution` (1–4). Entrambe si applicano al successivo
+  `sm2_internal_resolution` (1–8). Entrambe si applicano al successivo
   caricamento del contenuto. `3D Texture Filtering` offre Faithful e
   Anisotropic 2x/4x/8x/16x; `2D Layer Upscaling Filter` offre Faithful, xBR e
   ScaleFX. Queste ultime due opzioni cambiano immediatamente. Per frontend
@@ -178,8 +179,8 @@ python3 scripts/smoke-vulkan.py \
 Usare `--context-cycle 950 --reference /percorso/risultato-precedente` per
 verificare la continuità dopo la ricreazione del dispositivo. Le opzioni
 `--av-timing 60hz --timing-overlay 13 --context-cycle 1` verificano anche
-che una ricreazione coincidente con una duplicazione presenti prima una nuova
-immagine del dispositivo. Il frontend di prova serializza il lavoro GPU per le
+che Full Frames continui a consegnare una nuova immagine dopo la ricreazione
+del dispositivo, senza callback video duplicate. Il frontend di prova serializza il lavoro GPU per le
 acquisizioni deterministiche: la presentazione asincrona viene verificata
 separatamente in RetroArch.
 Gli hash NVRAM nel report si riferiscono ai 1800 frame iniziali; con `--exercise`
@@ -265,3 +266,59 @@ di gioco, PCM e NVRAM identici tra i renderer, uscita regolare. Vedere [CI.md](C
 per ambiente, artifact, riproduzione e limiti. Il worktree corrente è stato
 inoltre verificato con Daytona e OpenGL Core 4.6 sullo stesso hardware. La
 compatibilità estesa ad altre GPU e driver rimane aperta.
+
+## Whole-Polygon Texture Interpolation (2026-10-08)
+
+Upstream `277a482` is integrated in the shared Vulkan/OpenGL shader and passes.
+The VF2 Vulkan image matches pristine upstream exactly with aligned initial
+NVRAM; Mesa desktop GL and GLES match each other. Context recreation at 2×
+and installed-core RetroArch gameplay at 2× with anisotropic 16× passed.
+Both local core copies are updated. See the [package report](Docs/UPSTREAM_TEXTURE_WARP_PACKAGE_2026-10-08.md)
+for source adaptation, hashes, evidence and cross-driver limits. GPU runners
+support `--initial-nvram-setup disabled` for pristine-upstream comparisons.
+
+## Top Skater Geometry and Shadow Detail (2026-10-08)
+
+The upstream second-matrix skinning fix replaces the Top Skater culling
+exemption; the gamma black point is now 40 in both Software and the shared
+GPU tone curve. Vulkan, Mesa GL/GLES and installed-core RetroArch Top Skater
+gameplay checks passed. Five-title state compatibility and controlled
+upstream-reference comparisons are documented in the [package report](Docs/UPSTREAM_GEOMETRY_SHADOW_PACKAGE_2026-10-08.md).
+Both local core copies have the artifact recorded in that report.
+
+## Internal Resolution up to 8× (2026-10-08)
+
+Upstream `609c3c5` extends the common scale limit and standalone configuration
+and menus to 8×. The Libretro option adds 5×–8× with explicit dimensions,
+retaining the existing key, values 1–4 and default 1×. Vulkan and OpenGL reduce
+the requested scale to fit the device texture dimension limit and publish the
+actual base geometry to the frontend. The requested scale is retained across
+context recreation; maximum geometry accommodates it. Software remains native.
+This is a dimension guard, not a retry after an out-of-memory allocation.
+See [verification and installation evidence](Docs/UPSTREAM_RESOLUTION_PACKAGE_2026-10-08.md).
+
+## Optional Shot-Flash Filter (2026-10-08)
+
+Upstream `96e0f0e` is integrated in Software, Vulkan and OpenGL/GLES.
+`Hide Shot Flash` is in Input, visible for every game, Disabled by default,
+and effective immediately. It operates only on the metadata-defined lightgun
+interface. The shared filter preserves emulated tile RAM and existing fades;
+GPU passes clear the window mask only in their uploaded presentation copy,
+invalidating that copy whenever suppression changes. Software applies the
+same mask rule while drawing tiles.
+
+The Libretro presentation tail retains the trigger/window history without
+changing the emulated archive or fixed ABI size. See the [package report](Docs/UPSTREAM_GUN_FLASH_PACKAGE_2026-10-08.md)
+for shot captures, state checks, the old-core comparison and the pre-existing
+Virtua Cop first-replay limitation.
+
+## Rendering Review (2026-10-09)
+
+The approved upstream renderer candidate group is fully accounted for in
+[the consolidated review](Docs/RENDERING_REVIEW_2026-10-09.md). The review fixes
+the omitted geometry-buffer record in OpenGL context abandonment and uses the
+existing Software/Vulkan/OpenGL/GLES runners to compare current frames, PCM
+and actual frontend Save RAM. Old GPU reports with an empty `nvram` dictionary
+are not NVRAM equality evidence. Current runners retain and validate the `.srm`
+and report native payload hashes; Software image comparisons explicitly select
+synchronous rendering to align the current frame with GPU output.

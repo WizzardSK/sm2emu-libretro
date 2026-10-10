@@ -1,0 +1,658 @@
+schema_version: 1
+
+game: {set: powsled, parent: powsled, title: Power Sled, board: model2b, declared_manufacturer: Sega}
+classification:
+  gameplay_type: sled_racing
+  control_family: special_power_sled
+  observed_menu_family: network_check_observed_operator_menu_pending
+verification:
+  status: service_menu_documented
+  date: "2026-10-08"
+  core_source_state: main plus uncommitted integration changes; Save State format 8
+  method: retroarch_scripted_diagnostic_menu
+  persistent_script: scripts/libretro_nvram_samples.powsled.toml
+  persistent_output: build-libretro-gpu/validation/power-sled-service-menu-20261008/powsled
+  captured: [boot, test_switch_response, service_switch_response, network_cancel_probe]
+  validated: [isolated_srm_container, set_identity, extra_service_input]
+  pending: [country_region_interpretation, relay_hidden_byte_semantics, linked_gameplay]
+  inheritance: not_verified
+controls:
+  service: DOWN
+  service2_select: L3
+  test: R3
+  cancel_error: L
+  cancel_network_check: R
+  p1_entry: B
+  p1_call: A
+  p2_entry: Y
+  p2_call: X
+  note: Service B / Select maps L3 to IN0 bit 0x40; Service A maps D-Pad Down to IN0 bit 0x08 in the Test/Service profile. P1 Call confirms. Bindings swapped by user request on 2026-10-09; historical captures retain their original manifests.
+menus:
+  {
+    "game_assignments": {
+      "initial_selection": "Exit",
+      "entries": [
+        "Country",
+        "Ride ID (Color)",
+        "Time Extension",
+        "Motion Angle",
+        "Exit"
+      ],
+      "options": [
+        {
+          "key": "country",
+          "label": "Country",
+          "position": 1,
+          "native_default": null,
+          "default_status": "No Use Default Command; Fresh Export Label Does Not Establish A Region Default",
+          "values": [
+            "Export"
+          ],
+          "display_values": "Export Remains Displayed During Selection",
+          "menu_path": [
+            "Game Assignments",
+            "Country"
+          ],
+          "commands": [
+            "Select Country",
+            "Cancel & Exit",
+            "Set & Exit"
+          ],
+          "initial_selection": "Cancel & Exit",
+          "evidence": [
+            "build-libretro-gpu/validation/power-sled-phase1-20261008/initialized-menu/3-powsled/screen-0013.png",
+            "build-libretro-gpu/validation/power-sled-phase1-20261008/initialized-menu/3-powsled/screen-0017.png"
+          ],
+          "behavior": "No distinct region label observed; stored-state meaning is Phase 2 work."
+        },
+        {
+          "key": "ride_id",
+          "label": "Ride ID (Color)",
+          "position": 2,
+          "native_default": null,
+          "default_status": "No Use Default Command; Fresh Main/Slave 255 Is Uninitialized, Relay Reports Its Role",
+          "values": [
+            "Silver Ride",
+            "Red Ride",
+            "Black Ride"
+          ],
+          "display_values": "Silver Ride, Red Ride, Black Ride",
+          "menu_path": [
+            "Game Assignments",
+            "Network ID (Ride Color) Setting"
+          ],
+          "commands": [
+            "Select ID",
+            "Cancel & Exit",
+            "Set & Exit"
+          ],
+          "initial_selection": "Cancel & Exit",
+          "evidence": [
+            "build-libretro-gpu/validation/power-sled-phase1-20261008/initialized-menu/3-powsled/screen-0003.png",
+            "build-libretro-gpu/validation/power-sled-phase1-20261008/initialized-menu/3-powsled/screen-0004.png",
+            "build-libretro-gpu/validation/power-sled-phase1-20261008/initialized-menu/3-powsled/screen-0005.png",
+            "build-libretro-gpu/validation/power-sled-phase1-20261008/initialized-menu/3-powsled/screen-0006.png",
+            "build-libretro-gpu/validation/power-sled-phase1-20261008/initialized-menu/3-powsled/screen-0007.png",
+            "build-libretro-gpu/validation/power-sled-phase1-20261008/initialized-menu/3-powsled/screen-0008.png",
+            "build-libretro-gpu/validation/power-sled-phase1-20261008/initialized-menu/3-powsled/screen-0009.png",
+            "build-libretro-gpu/validation/power-sled-phase1-20261008/initialized-menu/3-powsled/screen-0010.png",
+            "build-libretro-gpu/validation/power-sled-phase1-20261008/initialized-menu/3-powsled/screen-0011.png",
+            "build-libretro-gpu/validation/power-sled-phase1-20261008/initialized-menu/3-powsled/screen-0012.png"
+          ],
+          "behavior": "Slave Cycles Observed With Matching Initial Main/Slave Colors; Main Held Fixed"
+        },
+        {
+          "key": "checkpoint_0",
+          "label": "Checkpoint 0",
+          "position": 3,
+          "native_default": 49,
+          "default_status": "Native Use Default Action",
+          "range": {
+            "minimum": 5,
+            "maximum": 99,
+            "step": 1,
+            "unit": "Seconds"
+          },
+          "display_values": "5\u201399 Seconds; Step 1; Default 49",
+          "menu_path": [
+            "Game Assignments",
+            "Time Extension Setting",
+            "Checkpoint 0"
+          ],
+          "commands": [
+            "Increase",
+            "Decrease",
+            "Use Default",
+            "Cancel & Exit",
+            "Set & Exit"
+          ],
+          "initial_selection": "Cancel & Exit",
+          "evidence": [
+            "build-libretro-gpu/validation/power-sled-settings-20261008/mame-time0-range/3-powsled/screen-0002.png",
+            "build-libretro-gpu/validation/power-sled-settings-20261008/mame-time0-range/3-powsled/screen-0003.png",
+            "build-libretro-gpu/validation/power-sled-settings-20261008/mame-time0-range/3-powsled/screen-0114.png"
+          ],
+          "behavior": "Parent Page Initially Selects Exit; Five Checkpoints In Order 0..4"
+        },
+        {
+          "key": "checkpoint_1",
+          "label": "Checkpoint 1",
+          "position": 4,
+          "native_default": 35,
+          "default_status": "Native Use Default Action",
+          "range": {
+            "minimum": 5,
+            "maximum": 99,
+            "step": 1,
+            "unit": "Seconds"
+          },
+          "display_values": "5\u201399 Seconds; Step 1; Default 35",
+          "menu_path": [
+            "Game Assignments",
+            "Time Extension Setting",
+            "Checkpoint 1"
+          ],
+          "commands": [
+            "Increase",
+            "Decrease",
+            "Use Default",
+            "Cancel & Exit",
+            "Set & Exit"
+          ],
+          "initial_selection": "Cancel & Exit",
+          "evidence": [
+            "build-libretro-gpu/validation/power-sled-settings-20261008/mame-time1-range/3-powsled/screen-0002.png",
+            "build-libretro-gpu/validation/power-sled-settings-20261008/mame-time1-range/3-powsled/screen-0003.png",
+            "build-libretro-gpu/validation/power-sled-settings-20261008/mame-time1-range/3-powsled/screen-0114.png"
+          ],
+          "behavior": "Parent Page Initially Selects Exit; Five Checkpoints In Order 0..4"
+        },
+        {
+          "key": "checkpoint_2",
+          "label": "Checkpoint 2",
+          "position": 5,
+          "native_default": 35,
+          "default_status": "Native Use Default Action",
+          "range": {
+            "minimum": 5,
+            "maximum": 99,
+            "step": 1,
+            "unit": "Seconds"
+          },
+          "display_values": "5\u201399 Seconds; Step 1; Default 35",
+          "menu_path": [
+            "Game Assignments",
+            "Time Extension Setting",
+            "Checkpoint 2"
+          ],
+          "commands": [
+            "Increase",
+            "Decrease",
+            "Use Default",
+            "Cancel & Exit",
+            "Set & Exit"
+          ],
+          "initial_selection": "Cancel & Exit",
+          "evidence": [
+            "build-libretro-gpu/validation/power-sled-settings-20261008/mame-time2-range/3-powsled/screen-0002.png",
+            "build-libretro-gpu/validation/power-sled-settings-20261008/mame-time2-range/3-powsled/screen-0003.png",
+            "build-libretro-gpu/validation/power-sled-settings-20261008/mame-time2-range/3-powsled/screen-0114.png"
+          ],
+          "behavior": "Parent Page Initially Selects Exit; Five Checkpoints In Order 0..4"
+        },
+        {
+          "key": "checkpoint_3",
+          "label": "Checkpoint 3",
+          "position": 6,
+          "native_default": 30,
+          "default_status": "Native Use Default Action",
+          "range": {
+            "minimum": 5,
+            "maximum": 99,
+            "step": 1,
+            "unit": "Seconds"
+          },
+          "display_values": "5\u201399 Seconds; Step 1; Default 30",
+          "menu_path": [
+            "Game Assignments",
+            "Time Extension Setting",
+            "Checkpoint 3"
+          ],
+          "commands": [
+            "Increase",
+            "Decrease",
+            "Use Default",
+            "Cancel & Exit",
+            "Set & Exit"
+          ],
+          "initial_selection": "Cancel & Exit",
+          "evidence": [
+            "build-libretro-gpu/validation/power-sled-settings-20261008/mame-time3-range/3-powsled/screen-0002.png",
+            "build-libretro-gpu/validation/power-sled-settings-20261008/mame-time3-range/3-powsled/screen-0003.png",
+            "build-libretro-gpu/validation/power-sled-settings-20261008/mame-time3-range/3-powsled/screen-0114.png"
+          ],
+          "behavior": "Parent Page Initially Selects Exit; Five Checkpoints In Order 0..4"
+        },
+        {
+          "key": "checkpoint_4",
+          "label": "Checkpoint 4",
+          "position": 7,
+          "native_default": 30,
+          "default_status": "Native Use Default Action",
+          "range": {
+            "minimum": 5,
+            "maximum": 99,
+            "step": 1,
+            "unit": "Seconds"
+          },
+          "display_values": "5\u201399 Seconds; Step 1; Default 30",
+          "menu_path": [
+            "Game Assignments",
+            "Time Extension Setting",
+            "Checkpoint 4"
+          ],
+          "commands": [
+            "Increase",
+            "Decrease",
+            "Use Default",
+            "Cancel & Exit",
+            "Set & Exit"
+          ],
+          "initial_selection": "Cancel & Exit",
+          "evidence": [
+            "build-libretro-gpu/validation/power-sled-settings-20261008/mame-time4-range/3-powsled/screen-0002.png",
+            "build-libretro-gpu/validation/power-sled-settings-20261008/mame-time4-range/3-powsled/screen-0003.png",
+            "build-libretro-gpu/validation/power-sled-settings-20261008/mame-time4-range/3-powsled/screen-0114.png"
+          ],
+          "behavior": "Parent Page Initially Selects Exit; Five Checkpoints In Order 0..4"
+        },
+        {
+          "key": "motion_angle",
+          "label": "Motion Angle",
+          "position": 8,
+          "native_default": "38.0",
+          "default_status": "Native Use Default Action",
+          "range": {
+            "minimum": 10.0,
+            "maximum": 45.0,
+            "step": 0.5,
+            "unit": "Degrees"
+          },
+          "display_values": "10.0\u201345.0 Degrees; Step 0.5; Default 38.0",
+          "menu_path": [
+            "Game Assignments",
+            "Maximum Rotation Setting"
+          ],
+          "commands": [
+            "Increase",
+            "Decrease",
+            "Use Default",
+            "Cancel & Exit",
+            "Set & Exit"
+          ],
+          "initial_selection": "Cancel & Exit",
+          "evidence": [
+            "build-libretro-gpu/validation/power-sled-settings-20261008/mame-motion-range/3-powsled/screen-0002.png",
+            "build-libretro-gpu/validation/power-sled-settings-20261008/mame-motion-range/3-powsled/screen-0003.png",
+            "build-libretro-gpu/validation/power-sled-settings-20261008/mame-motion-range/3-powsled/screen-0114.png"
+          ],
+          "behavior": "Operator Rotation Limit; Included, Unlike Handlebar Endpoint Calibration"
+        }
+      ]
+    },
+    "volume_setting": {
+      "page": "Volume Setting",
+      "policy": "Listed Only; No Endpoint Acquisition",
+      "listed_fields": [
+        "P1 Right Forward",
+        "P1 Right Back",
+        "P1 Left Forward",
+        "P1 Left Back",
+        "P2 Right Forward",
+        "P2 Right Back",
+        "P2 Left Forward",
+        "P2 Left Back"
+      ],
+      "evidence": "build-libretro-gpu/validation/power-sled-phase1-20261008/country-one-menu/3-powsled/screen-0018.png"
+    }
+  }
+review:
+  core_options: pending_acquisition
+  automatic_nvram_settings: pending_validated_samples
+  automatic_initial_nvram_setup: pending_validated_template
+
+source_review:
+  date: "2026-10-08"
+  reference: MAME model2.cpp and m2comm.cpp
+  local_revision: 6c504efbee8342f4cbf813d066176523a720d7d5
+  findings: Docs/POWER_SLED_SERVICE_MENU_CAMPAIGN.md
+  evidence_kind: source_inspection_not_operator_setting_acquisition
+  linked_topology: unverified
+  extra_service_input: IN0 bit 0x40 IPT_SERVICE2 advances the MAME Test Menu cursor; current core binding is Service B / Select on L3 (swapped with Service A on 2026-10-09)
+  communication_frame_size: MAME initializes 0x0e00; 0x0c00 is only a source TODO
+
+linked_mame_reference:
+  version: MAME v0.289 mame0289-1171-g6c504efbee8
+  evidence: build-libretro-gpu/validation/mame-power-sled-20261008
+  topology_tested: [powsledm, powsledr, powsled]
+  game_checks_on_main: {main: OK, relay: OK}
+  ride_id_observed_fresh_nvram: 255 (no color label)
+  gameplay: unverified
+  operator_navigation: Service 2 selects; P1 Call confirms
+  observed_game_assignments_entries: [Country, Ride ID (Color), Time Extension, Motion Angle, Exit]
+  menu_evidence: main-relay-slave-assignments
+  setting_defaults_and_cycles: pending
+  observed_network_id_page:
+    title: Network ID (Ride Color) Setting
+    entries: [Select ID, Cancel & Exit, Set & Exit]
+    initial_selection: Cancel & Exit
+    evidence: main-relay-slave-ride-id/screen-51.png (per-unit directory)
+    value_cycle_and_commit: verified_under_tested_topology; see ride_id_campaign
+
+historical_ride_id_campaign:
+  evidence: build-libretro-gpu/validation/mame-power-sled-20261008/ride-id-observations.json
+  method: linked_mame_native_operator_menu
+  topology: [powsledm, powsledr, powsled]
+  label: Ride ID (Color)
+  observed_values: [{id: 0, label: Silver Ride}]
+  cycle_closed: true
+  native_default: unverified
+  conditional_availability: unverified_outside_tested_topology
+  fresh_reload: {id: 0, label: Silver Ride}
+  commit: Set & Exit confirmed with P1 Call; fresh-process menu reload verified
+  other_operator_fields: acquisition_pending
+  storage_mapping: unverified
+  native_checksum: unverified
+  core_option_review: pending
+  automatic_policy: pending
+
+operator_settings_campaign:
+  {
+    "evidence": "build-libretro-gpu/validation/power-sled-settings-20261008/operator-settings-observations.json",
+    "sha256": "9ae8a3d7ed3706f0e6e5d563b89596706c130315527fb2b6451882a44019621f",
+    "status": "numeric_fields_verified",
+    "method": "linked_mame_native_operator_commit_and_fresh_process_reload",
+    "time": {
+      "encoding": "u16le_seconds",
+      "base_offsets": [
+        10,
+        12,
+        14,
+        16,
+        18
+      ],
+      "copy_stride": 256,
+      "copies": 3,
+      "minimum": 5,
+      "maximum": 99,
+      "step": 1,
+      "use_default": [
+        49,
+        35,
+        35,
+        30,
+        30
+      ]
+    },
+    "motion": {
+      "encoding": "u16le_tenths_of_degree",
+      "base_offset": 26,
+      "copy_stride": 256,
+      "copies": 3,
+      "minimum": 100,
+      "maximum": 450,
+      "step": 5,
+      "use_default": 380
+    },
+    "country": {
+      "observed_label": "Export",
+      "stable_after_calls": 8,
+      "encoding": "unresolved: native images contain 0 and 1 while displaying Export; no selectable region inferred"
+    },
+    "calibration": {
+      "page": "Volume Setting",
+      "policy": "listed_only_excluded_from_acquisition_and_presets"
+    },
+    "integrity": "Checkpoint 0 one-copy and two-copy disagreement: majority value restored to all three copies on all sets; general algorithm still unverified",
+    "core_options": "pending_review",
+    "automatic_setup": "pending_complete_template",
+    "pending": [
+      "native_integrity_algorithm",
+      "country_encoding",
+      "complete_initial_template",
+      "core_import_validation",
+      "core_option_review",
+      "automatic_policy",
+      "linked_gameplay"
+    ]
+  }
+
+phase1_documentation:
+  {
+    "status": "documented_under_tested_topology",
+    "evidence": "build-libretro-gpu/validation/power-sled-phase1-20261008/service-menu-observations.json",
+    "sha256": "f8cda56b53beee755a0dccc445c57d9c6b0449df7395e609ad2aadd429781e0b",
+    "root_menu": {
+      "initial_selection": "Exit",
+      "observed_labels": [
+        "Exit"
+      ],
+      "accessible_operator_slots": {
+        "Game Assignments": 6,
+        "Volume Setting": 7
+      },
+      "note": "Only Exit Label Initially Rendered; Operator Pages Reachable With Service 2; Do Not Inherit Main Label Rendering",
+      "evidence": "build-libretro-gpu/validation/power-sled-phase1-20261008/initialized-menu/3-powsled/screen-0001.png"
+    },
+    "conditional_matrix": [
+      {
+        "main": "Silver Ride",
+        "slave_allowed": [
+          "Silver Ride"
+        ],
+        "relay": "Relay",
+        "slave_initial": "Silver Ride"
+      },
+      {
+        "main": "Red Ride",
+        "slave_allowed": [
+          "Silver Ride",
+          "Red Ride"
+        ],
+        "relay": "Relay",
+        "slave_initial": "Red Ride"
+      },
+      {
+        "main": "Black Ride",
+        "slave_allowed": [
+          "Silver Ride",
+          "Red Ride",
+          "Black Ride"
+        ],
+        "relay": "Relay",
+        "slave_initial": "Black Ride"
+      }
+    ],
+    "phase2": "acquisition_and_native_reload_validated",
+    "sampling": "All Discrete Variants; Representative Numeric Samples After Pattern Verification; Calibration Listed Only"
+  }
+
+target_core_motion_acquisition:
+  backend: SM2-Emu Libretro In RetroArch Only
+  status: native_default_increment_and_fresh_reload_verified
+  recipe: scripts/libretro_nvram_samples.power-sled-linked.toml
+  evidence: build-libretro-gpu/validation/power-sled-phase2-20261008/motion-summary.json
+  native_default_degrees: 38.0
+  verified_increment_degrees: 38.5
+  storage: U16 Little Endian Tenths At 0x1a, 0x11a, 0x21a
+  pending: [full_native_integrity, initial_template, core_option_review]
+
+target_core_campaign:
+  {
+    "backend": "SM2-Emu Libretro In RetroArch Only",
+    "status": "acquisition_and_native_reload_validated",
+    "scope": "Operator Field Mapping; Further ID Assignment Logic Deferred By User",
+    "recipe": "scripts/libretro_nvram_samples.power-sled-linked.toml",
+    "planned_stages": 49,
+    "program_records": 147,
+    "evidence": "build-libretro-gpu/validation/power-sled-phase2-20261009/coverage.json",
+    "evidence_sha256": "3330e16596f7b6c48556f79b043319d2e8098a59ea85bdad9daa57bad0b2ebe0",
+    "core_sha256": "27c6ae57122d6502e46dfea176a2668baaf2e8730ddc434c421fad21382309a0",
+    "calibration": "Listed Only; Excluded From Acquisition",
+    "storage": {
+      "copy_stride": 256,
+      "copies": 3,
+      "time": {
+        "encoding": "U16 Little Endian Seconds",
+        "base_offsets": [
+          10,
+          12,
+          14,
+          16,
+          18
+        ],
+        "minimum": 5,
+        "maximum": 99,
+        "step": 1,
+        "native_defaults": [
+          49,
+          35,
+          35,
+          30,
+          30
+        ]
+      },
+      "motion": {
+        "encoding": "U16 Little Endian Tenths Of Degree",
+        "base_offset": 26,
+        "minimum": 100,
+        "maximum": 450,
+        "step": 5,
+        "native_default": 380
+      },
+      "country": {
+        "encoding": "U8",
+        "base_offset": 9,
+        "observed_stored_states": [
+          0,
+          1
+        ],
+        "visible_label": "Export",
+        "meaning": "Unresolved"
+      },
+      "ride_id": {
+        "encoding": "U8",
+        "base_offset": 8,
+        "copy_offsets": [
+          8,
+          264,
+          520
+        ],
+        "color_mapping": {
+          "0": "Silver Ride",
+          "1": "Red Ride",
+          "2": "Black Ride"
+        },
+        "relay_role": null,
+        "assignment_logic": "Deferred By User; Not A Gate For Color Mapping"
+      }
+    },
+    "native_integrity": "Whole-Block Agreement And Native Fallback Verified; Settings 28 Bytes, Bookkeeping 52 Bytes; No Native Checksum For These Groups",
+    "core_option_review": "Pending",
+    "automatic_policies": "Pending",
+    "pending": [
+      "General Native Integrity Algorithm",
+      "Complete Initial Image Suitability",
+      "Country Semantics",
+      "Conditional Ride ID Assignment Logic",
+      "Core Option Review",
+      "Automatic Policies",
+      "Linked Gameplay"
+    ]
+  }
+
+target_core_integrity:
+  {
+    "status": "native_integrity_and_per_set_initial_images_validated",
+    "date": "2026-10-09",
+    "backend": "SM2-Emu Libretro In RetroArch Only",
+    "core_sha256": "367cdfcb96969a7b4866cf32a5f6d4682d3b5fe3963dec5cbdd01184eef71390",
+    "trials": 11,
+    "program_records": 33,
+    "evidence": "build-libretro-gpu/validation/power-sled-integrity-20261009/coverage.json",
+    "evidence_sha256": "8fa6ef1de43760f9766c3c3845f646158d0a0a6ef0f3f9f74f663bd67c47fcbb",
+    "settings": {
+      "base_offsets": [
+        0,
+        256,
+        512
+      ],
+      "length": 28,
+      "final_byte": 27
+    },
+    "bookkeeping": {
+      "base_offsets": [
+        768,
+        1024,
+        1280
+      ],
+      "length": 52,
+      "final_byte": 51
+    },
+    "rule": "First Equal Whole-Block Pair; No Matching Pair Uses ROM Defaults",
+    "native_checksum": "Not Used By These Block Comparison/Recovery Routines",
+    "earlier_field_records_whole_block_agreement": 147,
+    "unrelated_bytes_and_eeprom": "Preserved In All Trials",
+    "initial_image": {
+      "source": "/Users/andrea/dev/sm2-emu-libretro/build-libretro-gpu/validation/power-sled-integrity-20261009/initial-image-reload-inputs-02/client2/saves/powsled.srm",
+      "payload": "/Users/andrea/dev/sm2-emu-libretro/build-libretro-gpu/validation/power-sled-integrity-20261009/initial-images/powsled.bin",
+      "payload_sha256": "447fbd4f9d1c81d442a1658a108475fe02038c3385e772f111b393434fd9792f",
+      "size": 16512,
+      "native_bookkeeping_defaults": true,
+      "fresh_reload": "Verified In RetroArch",
+      "parent_reuse": "Not Assumed",
+      "embedded_template": "Not Implemented"
+    },
+    "calibration": "Listed Only; No Menu Acquisition Or Calibration Preset",
+    "pending": [
+      "core_option_review",
+      "automatic_implementation",
+      "country_region_interpretation",
+      "relay_hidden_byte_semantics",
+      "linked_gameplay"
+    ],
+    "id_assignment_logic": "Deferred By User; Not An Integration Gate For Established Mapping"
+  }
+
+core_option_implementation:
+  {
+    "status": "implemented_and_verified_in_retroarch",
+    "date": "2026-10-09",
+    "core_sha256": "f1e93586bf051c85b648b96dc2b956f3f3afca00a97b6ff4547081a2b1fe7928",
+    "evidence": "build-libretro-gpu/validation/power-sled-options-20261009/coverage.json",
+    "evidence_sha256": "9e76e95b57032e3dea239bd3860243e275f0a3df8d3c337793cb94f5c68f81dc",
+    "stages": 5,
+    "program_records": 15,
+    "initial_template": "Independent Qualified Image; Implemented",
+    "save_precedence": "Matching SRM, Native Files, Then Initial Template",
+    "manual_default": "NVRAM Settings Disabled",
+    "automatic_overrides": "None Added",
+    "calibration": "Listed Only",
+    "pending": [
+      "country_region_interpretation",
+      "relay_hidden_byte_semantics",
+      "linked_gameplay"
+    ],
+    "id_assignment_logic": "Deferred By User",
+    "approved_fields": [
+      "ride_id",
+      "checkpoint_0",
+      "checkpoint_1",
+      "checkpoint_2",
+      "checkpoint_3",
+      "checkpoint_4",
+      "motion_angle"
+    ],
+    "review": "Approved By User",
+    "documentation": "Docs/POWER_SLED_NVRAM_OPTIONS_2026-10-09.md"
+  }

@@ -159,11 +159,13 @@ digitale approvato, distinto dai due Dynamite Baseball con assi bat1/bat2.
    e cablaggio, non il numero e il nome di tutti i comandi realmente usati.
    Non dedurre quattro pulsanti VR attivi dal solo array di quattro elementi.
    Manx TT e Motor Raid condividono gli assi ma non necessariamente le azioni.
-3. **Parent/clone:** il risultato risolto di `hotdo` e `hotdp` ha il grilletto
-   P2 su IN1, mentre `hotd` indica IN2. `rchase2a` espone limiti 0–255 e nessuna
-   inversione, mentre `rchase2` specifica intervalli calibrati e reverse.
-   Sono differenze osservate nel loader, da confrontare con l'hardware/sorgente
-   di riferimento: non uniformarle e non correggerle automaticamente.
+3. **Parent/Clone:** upstream `fa88f95` resolves the House of the Dead P2
+   trigger discrepancy: `hotd`, `hotdo` and `hotdp` use IN1 bit 1. The bundled
+   database now follows that correction. Explicit `p2_trigger="in2"` metadata
+   remains readable for compatibility with external databases.
+   `rchase2a` still exposes 0–255 limits without inversion, while `rchase2`
+   specifies calibrated ranges and reverse; do not normalize that separate
+   difference without a reference.
 4. **Calibrazione:** Rail Chase 2 mette P2 sui canali pari; le motociclette
    collocano throttle/brake/bank su 0/1/2; Sky Target usa 0 e 2. Il profilo
    traduce azioni fisiche in comandi logici, poi il cablaggio del set decide
@@ -229,3 +231,50 @@ possono mantenere esplicitamente un set nel gruppo da verificare.
 - **Special: Top Skater (4):** `topskatr`, `topskatrj`, `topskatru`, `topskatruo`.
 - **Joystick (Twin) (4):** `von`, `vonj`, `vonr`, `vonu`.
 - **Special: Wave Runner (1):** `waverunr`.
+
+## Power Sled Upstream Addition — 2026-10-08
+
+The current database contains 87 sets; the original catalogue counts above
+are historical. `powsled`, `powsledm` and `powsledr` use the new
+`Special: Power Sled` profile. Port 1 follows the upstream cabinet
+layout, with the original P2 Entry/Call aliases retained. Port 2 additionally
+provides P2 Entry/Call and independent handlebars on MAME mux channels 5/7;
+Port 1 handlebars retain channels 1/3. All variants retain their
+preliminary status. L3 exposes **Service B / Select** (extra Service 2,
+IN0 bit 0x40) in the Test/Service controller variant, including the second-port
+service alias. It is absent and inactive in the reduced controller variant.
+D-Pad Down exposes **Service A** (Service 1, IN0 bit 0x08), following the
+user-requested swap on 2026-10-09. Both service inputs obey the same profile
+eligibility on both ports. P1 Call (A) confirms menu selections.
+Port 1 Start additionally supplies the qualified native operator input IN1
+`0x10` on Main and Relay, advancing linked boarding to the race through command
+5. The original Start line and Entry/Call wiring are preserved; Slave and Port
+2 do not supply the additional operator bit. Main/Relay P2 Entry deliberately
+requests Test Menu in the native program. See
+`Docs/POWER_SLED_OPERATOR_START_2026-10-09.md` for the verified sequence and limits.
+Exact actions, board wiring and verification limits are
+documented in `Docs/UPSTREAM_ROM_LOADER_PACKAGE_2026-10-08.md`.
+
+## Upstream Control Reconciliation — 2026-10-08
+
+Top Skater keeps Left Analog X Curving and Right Analog X Slide. L2/R2 add
+Slide Left/Right aliases (right minus left trigger); the stronger of trigger
+and right-stick travel wins, with the right stick winning ties. Digital-only
+triggers fall back to full travel. D-Pad Left/Right still select in menus and
+now also steer to full left/right lock, matching upstream.
+
+`Top Skater Curving Response` is visible for every game, with `Linear` and
+`Progressive (Fine Center)`, default `progressive` as approved by the user.
+Progressive follows upstream `cd40912`: 3000/32767 center deadzone and quadratic
+travel, preserving full lock. Linear retains the published direct stick curve.
+Only Top Skater consumes this setting. No SDL device ownership is imported.
+
+The existing Ski Super G channel order and polarity already match upstream
+`54d6ff2`. Independent Swing/Inclining bindings are the approved core-specific behavior.
+Users wanting coupled steering can bind both virtual horizontal axes to the
+same physical axis in Settings > Input > Port 1 Controls. Swing's metadata
+already supplies the opposite polarity. No additional Core Option or Quick
+Menu selector is planned. Exact upstream response/rounding equivalence has
+not been verified. Reconsider built-in coupling only if frontend binding
+limitations or gameplay evidence warrant it. See
+`Docs/UPSTREAM_CONTROLS_PACKAGE_2026-10-08.md` for evidence and limits.

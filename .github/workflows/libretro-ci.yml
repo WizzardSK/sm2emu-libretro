@@ -84,6 +84,10 @@ jobs:
         run: cmake --build build-ci --parallel 3
       - name: Check inputs and Libretro ABI without ROMs
         run: |
+          ./build-ci/bin/sm2-libretro-i960-checks
+          ./build-ci/bin/sm2-libretro-audio-balance-checks
+          ./build-ci/bin/sm2-libretro-audio-checks
+          ./build-ci/bin/sm2-libretro-sound-timing-checks
           ./build-ci/bin/sm2-libretro-input-checks
           ./build-ci/bin/sm2-libretro-save-ram-checks
           ./build-ci/bin/sm2-libretro-netpacket-checks

@@ -1,0 +1,39 @@
+# Current Power Sled bindings: L3 = Service 2 / Select; Down = Service 1.
+# Historical captures used the bindings recorded in their original manifests.
+# Power Sled Service Menu discovery; no variation values are inferred.
+[retroarch]
+executable = "~/Retro/Apps/RetroArch/Nightly/RetroArch (ARM).app/Contents/MacOS/RetroArch"
+core = "../build-libretro-gpu/libretro/sm2_libretro.dylib"
+rom_dir = "${SM2_ROM_DIR}"
+system_assets = "../build-libretro-gpu/libretro/system/sm2-emu"
+base_config = "~/Library/Application Support/RetroArch/config/retroarch.cfg"
+
+[campaign]
+game = "powsledr"
+output_dir = "../build-libretro-gpu/validation/power-sled-service-menu-20261008/powsledr"
+startup_wait = 12.0
+button_hold = 0.6
+button_hold_long = 1.0
+default_wait = 0.6
+settle_before_close = 0.5
+close_gap = 0.7
+shutdown_timeout = 20.0
+window_width = 496
+window_height = 384
+
+[core_options]
+sm2_initial_nvram_setup = "disabled"
+sm2_nvram_settings = "disabled"
+sm2_renderer = "software"
+
+[[samples]]
+suffix = "service-discovery"
+sequence = ["SCREENSHOT(boot)", "R3", "WAIT(3.0)", "SCREENSHOT(test-menu)", "DOWN", "WAIT(1.0)", "SCREENSHOT(service-next)", "R3", "WAIT(2.0)", "SCREENSHOT(selected-page)", "CLOSE"]
+
+[[samples]]
+suffix = "operator-inventory"
+sequence = ["R", "WAIT(3.0)", "R3", "WAIT(3.0)", "SCREENSHOT(test-after-network-cancel)", "L3*6", "A", "WAIT(2.0)", "SCREENSHOT(game-assignments)", "CLOSE"]
+
+[[samples]]
+suffix = "service2-binding"
+sequence = ["WAIT(18.0)", "R", "WAIT(3.0)", "R3", "WAIT(2.0)", "SCREENSHOT(test-menu)", "L3*6", "SCREENSHOT(game-selected)", "A", "WAIT(2.0)", "SCREENSHOT(assignments)", "L3*2", "A", "WAIT(2.0)", "SCREENSHOT(ride-id)", "CLOSE"]

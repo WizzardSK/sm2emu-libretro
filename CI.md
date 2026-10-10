@@ -180,3 +180,14 @@ in 41,65 secondi, ha salvato una `.srm` valida da 16.576 byte e prodotto
 1.762.492 campioni stereo non silenziosi a 44.100 Hz. Lo screenshot finale di
 gameplay ha SHA-256
 `ab7fdcbc72f0be46c96349ecf9f1c5adb50d7884e2ea02a3628fab7cea864b05`.
+
+## Native Batocera Audio Qualification — 2026-10-09
+
+The existing Linux rendering-review artifact was tested in isolated RetroArch
+1.22.2 on Batocera 43.1: VF2 SCSP filter Disabled/Enabled, Daytona MultiPCM and
+Top Skater mixed/isolated DSB2 recordings pass. Sound Test BGM 1 provides
+312.912 seconds of sustained music and repeated waveform content; this is not
+bit-exact repeated PCM or a decoder-branch trace. All eight frontend runs exit 0;
+installed core/configuration/ROMs/existing saves retain their hashes. No remote
+installed-core replacement or new CI run is claimed. Evidence and limits:
+[Native Batocera Audio Validation](Docs/NATIVE_BATOCERA_AUDIO_VALIDATION_2026-10-09.md).

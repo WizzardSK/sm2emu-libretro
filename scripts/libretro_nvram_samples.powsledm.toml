@@ -1,0 +1,77 @@
+# Current Power Sled bindings: L3 = Service 2 / Select; Down = Service 1.
+# Historical captures used the bindings recorded in their original manifests.
+# Power Sled Service Menu discovery; no variation values are inferred.
+[retroarch]
+executable = "~/Retro/Apps/RetroArch/Nightly/RetroArch (ARM).app/Contents/MacOS/RetroArch"
+core = "../build-libretro-gpu/libretro/sm2_libretro.dylib"
+rom_dir = "${SM2_ROM_DIR}"
+system_assets = "../build-libretro-gpu/libretro/system/sm2-emu"
+base_config = "~/Library/Application Support/RetroArch/config/retroarch.cfg"
+
+[campaign]
+game = "powsledm"
+output_dir = "../build-libretro-gpu/validation/power-sled-service-menu-20261008/powsledm"
+startup_wait = 12.0
+button_hold = 0.6
+button_hold_long = 1.0
+default_wait = 0.6
+settle_before_close = 0.5
+close_gap = 0.7
+shutdown_timeout = 20.0
+window_width = 496
+window_height = 384
+
+[core_options]
+sm2_initial_nvram_setup = "disabled"
+sm2_nvram_settings = "disabled"
+sm2_renderer = "software"
+
+[[samples]]
+suffix = "service-discovery"
+sequence = ["SCREENSHOT(boot)", "R3", "WAIT(3.0)", "SCREENSHOT(test-menu)", "DOWN", "WAIT(1.0)", "SCREENSHOT(service-next)", "R3", "WAIT(2.0)", "SCREENSHOT(selected-page)", "CLOSE"]
+
+[[samples]]
+suffix = "operator-inventory"
+sequence = ["R", "WAIT(3.0)", "R3", "WAIT(3.0)", "SCREENSHOT(test-after-network-cancel)", "L3*6", "A", "WAIT(2.0)", "SCREENSHOT(game-assignments)", "CLOSE"]
+
+[[samples]]
+suffix = "navigation-probe"
+sequence = ["R", "WAIT(3.0)", "R3", "WAIT(3.0)", "SCREENSHOT(menu)", "B", "SCREENSHOT(after-p1-entry)", "Y", "SCREENSHOT(after-p2-entry)", "DOWN", "SCREENSHOT(after-service)", "CLOSE"]
+
+[[samples]]
+suffix = "operator-entry-confirmation"
+sequence = ["R3", "WAIT(2.0)", "SCREENSHOT(test-menu)", "L3", "SCREENSHOT(first-entry)", "L3*5", "SCREENSHOT(game-selected)", "A", "WAIT(2.0)", "SCREENSHOT(assignments)", "CLOSE"]
+
+[[samples]]
+suffix = "service2-binding"
+sequence = ["R3", "WAIT(2.0)", "SCREENSHOT(test-menu)", "L3*6", "SCREENSHOT(game-selected)", "A", "WAIT(2.0)", "SCREENSHOT(assignments)", "L3*2", "A", "WAIT(2.0)", "SCREENSHOT(ride-id)", "CLOSE"]
+
+[[samples]]
+suffix = "main-country-inventory"
+sequence = ["R3", "WAIT(2.0)", "L3*6", "A", "WAIT(2.0)", "L3*1", "A", "WAIT(2.0)", "SCREENSHOT(country-initial)", "CLOSE"]
+
+[[samples]]
+suffix = "main-time-extension-inventory"
+sequence = ["R3", "WAIT(2.0)", "L3*6", "A", "WAIT(2.0)", "L3*3", "A", "WAIT(2.0)", "SCREENSHOT(time-extension-initial)", "CLOSE"]
+
+[[samples]]
+suffix = "main-motion-angle-inventory"
+sequence = ["R3", "WAIT(2.0)", "L3*6", "A", "WAIT(2.0)", "L3*4", "A", "WAIT(2.0)", "SCREENSHOT(motion-angle-initial)", "CLOSE"]
+
+[[samples]]
+suffix = "main-checkpoint-editor-inventory"
+sequence = ["R3", "WAIT(2.0)", "L3*6", "A", "WAIT(2.0)", "L3*3", "A", "WAIT(2.0)", "L3", "A", "WAIT(2.0)", "SCREENSHOT(checkpoint-0-editor)", "CLOSE"]
+
+# Volume Setting is handlebar calibration: listed only; no endpoint acquisition.
+
+[[samples]]
+suffix = "country-cycle-probe"
+sequence = ["R3", "WAIT(2.0)", "L3*6", "A", "WAIT(2.0)", "L3", "A", "WAIT(1.0)", "SCREENSHOT(country-fresh)", "L3*2", "SCREENSHOT(country-selected)", "A", "SCREENSHOT(country-cycle-01)", "A", "SCREENSHOT(country-cycle-02)", "A", "SCREENSHOT(country-cycle-03)", "A", "SCREENSHOT(country-cycle-04)", "A", "SCREENSHOT(country-cycle-05)", "A", "SCREENSHOT(country-cycle-06)", "A", "SCREENSHOT(country-cycle-07)", "A", "SCREENSHOT(country-cycle-08)", "CLOSE"]
+
+[[samples]]
+suffix = "time-default-probe"
+sequence = ["R3", "WAIT(2.0)", "L3*6", "A", "WAIT(2.0)", "L3*3", "A", "WAIT(1.0)", "L3", "A", "WAIT(1.0)", "L3*4", "A", "SCREENSHOT(time-use-default)", "L3*3", "A", "SCREENSHOT(time-increase-1)", "A", "SCREENSHOT(time-increase-2)", "A", "SCREENSHOT(time-increase-3)", "L3", "A", "SCREENSHOT(time-decrease-1)", "A", "SCREENSHOT(time-decrease-2)", "A", "SCREENSHOT(time-decrease-3)", "CLOSE"]
+
+[[samples]]
+suffix = "motion-default-probe"
+sequence = ["R3", "WAIT(2.0)", "L3*6", "A", "WAIT(2.0)", "L3*4", "A", "WAIT(1.0)", "L3*4", "A", "SCREENSHOT(motion-use-default)", "L3*3", "A", "SCREENSHOT(motion-increase-1)", "A", "SCREENSHOT(motion-increase-2)", "A", "SCREENSHOT(motion-increase-3)", "L3", "A", "SCREENSHOT(motion-decrease-1)", "A", "SCREENSHOT(motion-decrease-2)", "A", "SCREENSHOT(motion-decrease-3)", "CLOSE"]

@@ -17,16 +17,16 @@ YAML diagnostici né l'implementazione Libretro.
 
 | Elemento | Copertura |
 | --- | ---: |
-| Set totali in `games.xml` | 84 |
-| Parent catalogati | 36 / 36 |
-| Cloni catalogati | 48 / 48 |
+| Set totali in `games.xml` | 87 |
+| Parent catalogati | 36 / 37 |
+| Cloni catalogati | 48 / 50 |
 | Righe parent trascritte | 279 |
 | Righe parent con ciclo o campagna dedicata | 274 |
 | Righe parent solo visibili nella schermata base | 5 |
 | Screenshot primari della campagna parent indicizzati | 1259 |
 | PNG supplementari nell'archivio parent | 2 |
 | Campagne parent con schermata base ordinaria | 35 |
-| Acquisizioni dichiarate incomplete | 0 |
+| Campaigns With Remaining Validation Or Implementation | 3 |
 
 ## Matrice delle differenze parent/clone
 
@@ -1604,6 +1604,81 @@ non esiste una campagna ciclica dedicata al clone.
 | 8 | Extend Points | 600000 | non acquisiti | nessun ciclo |
 | 9 | Ranking Data | Do Initialize | non acquisiti | nessun ciclo |
 
+## Power Sled Campaign — Approved Fields Implemented
+
+### Power Sled (`powsled`)
+
+- **Parent:** `powsled`
+- **Status:** Reviewed Checkpoints, Motion Angle and Ride ID implemented; independent initial template integrated. Country and conditional ID assignment remain deferred; linked gameplay remains unverified.
+- **Recipe:** `scripts/libretro_nvram_samples.powsled.toml`
+- **Navigation Evidence:** [powsled-operator-inventory-game-assignments](</Users/andrea/dev/sm2-emu-libretro/build-libretro-gpu/validation/power-sled-service-menu-20261008/powsled/screenshots/powsled-operator-inventory-game-assignments.png>), [powsled-operator-inventory-test-after-network-cancel](</Users/andrea/dev/sm2-emu-libretro/build-libretro-gpu/validation/power-sled-service-menu-20261008/powsled/screenshots/powsled-operator-inventory-test-after-network-cancel.png>), [powsled-service-discovery-boot](</Users/andrea/dev/sm2-emu-libretro/build-libretro-gpu/validation/power-sled-service-menu-20261008/powsled/screenshots/powsled-service-discovery-boot.png>), [powsled-service-discovery-selected-page](</Users/andrea/dev/sm2-emu-libretro/build-libretro-gpu/validation/power-sled-service-menu-20261008/powsled/screenshots/powsled-service-discovery-selected-page.png>), [powsled-service-discovery-service-next](</Users/andrea/dev/sm2-emu-libretro/build-libretro-gpu/validation/power-sled-service-menu-20261008/powsled/screenshots/powsled-service-discovery-service-next.png>), [powsled-service-discovery-test-menu](</Users/andrea/dev/sm2-emu-libretro/build-libretro-gpu/validation/power-sled-service-menu-20261008/powsled/screenshots/powsled-service-discovery-test-menu.png>)
+- **Documentation:** `Docs/POWER_SLED_SERVICE_MENU_CAMPAIGN.md`; each set verified separately in linked MAME. Calibration listed only. Country/Ride ID expose no Use Default action; fresh invalid values are not defaults.
+
+| # | Setting | Native Default | Allowed Values |
+| --- | --- | --- | --- |
+| 1 | Country | — | Export |
+| 2 | Ride ID (Color) | — | Silver Ride, Red Ride, Black Ride |
+| 3 | Checkpoint 0 | 49 | 5–99 Seconds (Step 1) |
+| 4 | Checkpoint 1 | 35 | 5–99 Seconds (Step 1) |
+| 5 | Checkpoint 2 | 35 | 5–99 Seconds (Step 1) |
+| 6 | Checkpoint 3 | 30 | 5–99 Seconds (Step 1) |
+| 7 | Checkpoint 4 | 30 | 5–99 Seconds (Step 1) |
+| 8 | Motion Angle | 38.0 | 10.0–45.0 Degrees (Step 0.5) |
+
+- **Conditional Availability:** Reference seeds initialize both Main and Slave to the same color; the matrix does not establish Main-only causality. Main/Slave color mapping 0/1/2 is verified in the core; further ID logic is deferred. Relay displays role 0x100 independently of its stored byte.
+- **Native Integrity:** Three 28-byte settings copies and three 52-byte bookkeeping copies use whole-block agreement and ROM defaults on disagreement; no native checksum for these groups. See `Docs/POWER_SLED_NVRAM_INTEGRITY_2026-10-09.md`.
+- **Phase 2:** 49 RetroArch stages / 147 program records validate operator field samples and fresh reload. Native recovery and three complete independent initial images are verified by 11 additional RetroArch trials / 33 program records. The approved fields and initial templates are implemented; no automatic color assignment or Country override is introduced. See `Docs/POWER_SLED_NVRAM_OPTIONS_2026-10-09.md`.
+
+### Power Sled (`powsledm`)
+
+- **Parent:** `powsled`
+- **Status:** Reviewed Checkpoints, Motion Angle and Ride ID implemented; independent initial template integrated. Country and conditional ID assignment remain deferred; linked gameplay remains unverified.
+- **Recipe:** `scripts/libretro_nvram_samples.powsledm.toml`
+- **Navigation Evidence:** [powsledm-navigation-probe-after-p1-entry](</Users/andrea/dev/sm2-emu-libretro/build-libretro-gpu/validation/power-sled-service-menu-20261008/powsledm/screenshots/powsledm-navigation-probe-after-p1-entry.png>), [powsledm-navigation-probe-after-p2-entry](</Users/andrea/dev/sm2-emu-libretro/build-libretro-gpu/validation/power-sled-service-menu-20261008/powsledm/screenshots/powsledm-navigation-probe-after-p2-entry.png>), [powsledm-navigation-probe-after-service](</Users/andrea/dev/sm2-emu-libretro/build-libretro-gpu/validation/power-sled-service-menu-20261008/powsledm/screenshots/powsledm-navigation-probe-after-service.png>), [powsledm-navigation-probe-menu](</Users/andrea/dev/sm2-emu-libretro/build-libretro-gpu/validation/power-sled-service-menu-20261008/powsledm/screenshots/powsledm-navigation-probe-menu.png>), [powsledm-operator-entry-confirmation-assignments](</Users/andrea/dev/sm2-emu-libretro/build-libretro-gpu/validation/power-sled-service-menu-20261008/powsledm/screenshots/powsledm-operator-entry-confirmation-assignments.png>), [powsledm-operator-entry-confirmation-first-entry](</Users/andrea/dev/sm2-emu-libretro/build-libretro-gpu/validation/power-sled-service-menu-20261008/powsledm/screenshots/powsledm-operator-entry-confirmation-first-entry.png>), [powsledm-operator-entry-confirmation-game-selected](</Users/andrea/dev/sm2-emu-libretro/build-libretro-gpu/validation/power-sled-service-menu-20261008/powsledm/screenshots/powsledm-operator-entry-confirmation-game-selected.png>), [powsledm-operator-entry-confirmation-test-menu](</Users/andrea/dev/sm2-emu-libretro/build-libretro-gpu/validation/power-sled-service-menu-20261008/powsledm/screenshots/powsledm-operator-entry-confirmation-test-menu.png>), [powsledm-operator-inventory-game-assignments](</Users/andrea/dev/sm2-emu-libretro/build-libretro-gpu/validation/power-sled-service-menu-20261008/powsledm/screenshots/powsledm-operator-inventory-game-assignments.png>), [powsledm-operator-inventory-test-after-network-cancel](</Users/andrea/dev/sm2-emu-libretro/build-libretro-gpu/validation/power-sled-service-menu-20261008/powsledm/screenshots/powsledm-operator-inventory-test-after-network-cancel.png>), [powsledm-service-discovery-boot](</Users/andrea/dev/sm2-emu-libretro/build-libretro-gpu/validation/power-sled-service-menu-20261008/powsledm/screenshots/powsledm-service-discovery-boot.png>), [powsledm-service-discovery-selected-page](</Users/andrea/dev/sm2-emu-libretro/build-libretro-gpu/validation/power-sled-service-menu-20261008/powsledm/screenshots/powsledm-service-discovery-selected-page.png>), [powsledm-service-discovery-service-next](</Users/andrea/dev/sm2-emu-libretro/build-libretro-gpu/validation/power-sled-service-menu-20261008/powsledm/screenshots/powsledm-service-discovery-service-next.png>), [powsledm-service-discovery-test-menu](</Users/andrea/dev/sm2-emu-libretro/build-libretro-gpu/validation/power-sled-service-menu-20261008/powsledm/screenshots/powsledm-service-discovery-test-menu.png>)
+- **Documentation:** `Docs/POWER_SLED_SERVICE_MENU_CAMPAIGN.md`; each set verified separately in linked MAME. Calibration listed only. Country/Ride ID expose no Use Default action; fresh invalid values are not defaults.
+
+| # | Setting | Native Default | Allowed Values |
+| --- | --- | --- | --- |
+| 1 | Country | — | Export |
+| 2 | Ride ID (Color) | — | Silver Ride, Red Ride, Black Ride |
+| 3 | Checkpoint 0 | 49 | 5–99 Seconds (Step 1) |
+| 4 | Checkpoint 1 | 35 | 5–99 Seconds (Step 1) |
+| 5 | Checkpoint 2 | 35 | 5–99 Seconds (Step 1) |
+| 6 | Checkpoint 3 | 30 | 5–99 Seconds (Step 1) |
+| 7 | Checkpoint 4 | 30 | 5–99 Seconds (Step 1) |
+| 8 | Motion Angle | 38.0 | 10.0–45.0 Degrees (Step 0.5) |
+
+- **Conditional Availability:** Reference seeds initialize both Main and Slave to the same color; the matrix does not establish Main-only causality. Main/Slave color mapping 0/1/2 is verified in the core; further ID logic is deferred. Relay displays role 0x100 independently of its stored byte.
+- **Native Integrity:** Three 28-byte settings copies and three 52-byte bookkeeping copies use whole-block agreement and ROM defaults on disagreement; no native checksum for these groups. See `Docs/POWER_SLED_NVRAM_INTEGRITY_2026-10-09.md`.
+- **Phase 2:** 49 RetroArch stages / 147 program records validate operator field samples and fresh reload. Native recovery and three complete independent initial images are verified by 11 additional RetroArch trials / 33 program records. The approved fields and initial templates are implemented; no automatic color assignment or Country override is introduced. See `Docs/POWER_SLED_NVRAM_OPTIONS_2026-10-09.md`.
+
+### Power Sled (`powsledr`)
+
+- **Parent:** `powsled`
+- **Status:** Reviewed Checkpoints and Motion Angle implemented; independent initial template integrated. Country and hidden Ride byte remain deferred; linked gameplay remains unverified.
+- **Recipe:** `scripts/libretro_nvram_samples.powsledr.toml`
+- **Navigation Evidence:** [powsledr-operator-inventory-game-assignments](</Users/andrea/dev/sm2-emu-libretro/build-libretro-gpu/validation/power-sled-service-menu-20261008/powsledr/screenshots/powsledr-operator-inventory-game-assignments.png>), [powsledr-operator-inventory-test-after-network-cancel](</Users/andrea/dev/sm2-emu-libretro/build-libretro-gpu/validation/power-sled-service-menu-20261008/powsledr/screenshots/powsledr-operator-inventory-test-after-network-cancel.png>), [powsledr-service-discovery-boot](</Users/andrea/dev/sm2-emu-libretro/build-libretro-gpu/validation/power-sled-service-menu-20261008/powsledr/screenshots/powsledr-service-discovery-boot.png>), [powsledr-service-discovery-selected-page](</Users/andrea/dev/sm2-emu-libretro/build-libretro-gpu/validation/power-sled-service-menu-20261008/powsledr/screenshots/powsledr-service-discovery-selected-page.png>), [powsledr-service-discovery-service-next](</Users/andrea/dev/sm2-emu-libretro/build-libretro-gpu/validation/power-sled-service-menu-20261008/powsledr/screenshots/powsledr-service-discovery-service-next.png>), [powsledr-service-discovery-test-menu](</Users/andrea/dev/sm2-emu-libretro/build-libretro-gpu/validation/power-sled-service-menu-20261008/powsledr/screenshots/powsledr-service-discovery-test-menu.png>)
+- **Documentation:** `Docs/POWER_SLED_SERVICE_MENU_CAMPAIGN.md`; each set verified separately in linked MAME. Calibration listed only. Country/Ride ID expose no Use Default action; fresh invalid values are not defaults.
+
+| # | Setting | Native Default | Allowed Values |
+| --- | --- | --- | --- |
+| 1 | Country | — | Export |
+| 2 | Ride ID (Color) | — | Relay |
+| 3 | Checkpoint 0 | 49 | 5–99 Seconds (Step 1) |
+| 4 | Checkpoint 1 | 35 | 5–99 Seconds (Step 1) |
+| 5 | Checkpoint 2 | 35 | 5–99 Seconds (Step 1) |
+| 6 | Checkpoint 3 | 30 | 5–99 Seconds (Step 1) |
+| 7 | Checkpoint 4 | 30 | 5–99 Seconds (Step 1) |
+| 8 | Motion Angle | 38.0 | 10.0–45.0 Degrees (Step 0.5) |
+
+- **Conditional Availability:** Reference seeds initialize both Main and Slave to the same color; the matrix does not establish Main-only causality. Main/Slave color mapping 0/1/2 is verified in the core; further ID logic is deferred. Relay displays role 0x100 independently of its stored byte.
+- **Native Integrity:** Three 28-byte settings copies and three 52-byte bookkeeping copies use whole-block agreement and ROM defaults on disagreement; no native checksum for these groups. See `Docs/POWER_SLED_NVRAM_INTEGRITY_2026-10-09.md`.
+- **Phase 2:** 49 RetroArch stages / 147 program records validate operator field samples and fresh reload. Native recovery and three complete independent initial images are verified by 11 additional RetroArch trials / 33 program records. The approved fields and initial templates are implemented; no automatic color assignment or Country override is introduced. See `Docs/POWER_SLED_NVRAM_OPTIONS_2026-10-09.md`.
+
 ## Lacune residue
 
-Nessuna. Tutti i parent e i cloni presenti in `games.xml` hanno una trascrizione strutturata oppure, nel caso speciale `rascot2`, un esito diagnostico conclusivo senza Game Settings ordinari.
+| Set | Lacuna |
+| --- | --- |
+| `powsled` | Reviewed Checkpoints, Motion Angle and Ride ID implemented; independent initial template integrated. Country and conditional ID assignment remain deferred; linked gameplay remains unverified. |
+| `powsledm` | Reviewed Checkpoints, Motion Angle and Ride ID implemented; independent initial template integrated. Country and conditional ID assignment remain deferred; linked gameplay remains unverified. |
+| `powsledr` | Reviewed Checkpoints and Motion Angle implemented; independent initial template integrated. Country and hidden Ride byte remain deferred; linked gameplay remains unverified. |

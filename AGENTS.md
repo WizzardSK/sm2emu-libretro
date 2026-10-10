@@ -20,6 +20,16 @@
 
 ## Working agreement
 
+Cross-project changes use an interchange file and the destination project's own
+chat. The user's standing instruction authorizes sending approved handoffs to
+the appropriate existing project chats without asking again. Prepare the file,
+identify and read the destination chat, request the matching roadmap update,
+then verify that the destination roadmap records the requirement before removing
+its activity from the originating roadmap. Retain the interchange file as a
+reference. Roadmap handoff alone does not authorize implementation, commit or
+push; pass through only the scope the user approved. If the destination chat is
+missing or ambiguous, resolve that destination before sending.
+
 Use small, reviewable changes and preserve emulation accuracy, timing, audio
 and existing controls. Ask before installing/upgrading software or dependencies
 unless already authorized in the current session. Never add ROMs to Git.
@@ -39,6 +49,14 @@ Follow the current user request for scope; PORTING_PLAN.md lists later work.
 
 Distinguish compilation, application launch and actual gameplay verification.
 Do not claim runtime input/audio correctness from a successful build.
+
+## Local RetroArch Deployment
+
+For now, deploy local builds only to `sm2_libretro.dylib` in the configured
+RetroArch cores directory. The user removed `sm2_dev_libretro.dylib` and its
+matching core-info file on 2026-10-10. Do not recreate or update the dev copy
+unless the user explicitly asks to restore it. Older reports mentioning two
+installed copies describe the previous setup.
 
 ## Upstream integration
 
@@ -96,3 +114,54 @@ see LIBRETRO.md for the separate RetroArch runtime test.
 
 The upstream revision initially checked out is
 `8b3a468c5b51387093811cb16b076e6fd9289d66` (version 0.9.4).
+
+## Core Option Visibility — Mandatory User Convention
+
+Show Core Options for every game by default. Do not automatically hide an
+option because the current game cannot use it; make it a no-op where it does
+not apply and explain applicability in its help text. Restrict visibility only
+when the user explicitly requests it. Preserve previously explicit exceptions,
+such as the agreed per-game NVRAM settings. Do not ask the user to repeat this
+convention or infer new exceptions from hardware metadata.
+
+## Service Menu Campaigns
+
+Use two ordered phases. Phase 1 completes the Service Menu documentation:
+menu hierarchy/order, applicable settings, visible labels, defaults, complete
+discrete value cycles, numeric ranges and conditional behavior for each set,
+reconciled in YAML and the review workbook. Apply the user's agreed exclusions
+and numeric simplifications. Phase 2 implements/adapts and runs the sample
+acquisition script from that completed inventory. Do not start or expand Phase
+2 while Phase 1 has unresolved coverage. Existing exploratory saves are evidence,
+not proof that Phase 1 is complete.
+
+Phase 2 sample acquisition is authorized exclusively through the target
+Libretro core running in RetroArch. Do not use the acquisition script or its
+generated plans with MAME, standalone emulators or other emulator runners.
+Reference-emulator evidence is not a target-core sample. If a variant cannot
+reach its menus in RetroArch, keep its acquisition pending and document the
+target-core prerequisite instead of substituting another emulator.
+
+Choose sampling coverage per field. For selectors with few discrete variants,
+capture every selectable value and the complete native cycle. For numeric
+fields with a demonstrated regular encoding, derive the format and retain
+representative samples covering defaults, limits, increments and relevant byte
+boundaries, with native commit/reload checks. Reduced numeric sampling must
+not be applied to small discrete selectors. Calibration exclusions still apply.
+
+Calibration menus are listed only. Do not acquire calibration endpoints, value
+cycles or presets unless the user explicitly requests dedicated calibration work.
+Keep prior exploratory calibration evidence outside the active settings campaign.
+
+### One Recipe, One Campaign
+
+After Phase 1 is complete, generate one complete acquisition recipe from its
+verified inventory before starting Phase 2. Run that recipe as one campaign,
+validating each sample as it is acquired. Use a persistent manifest to record
+coverage, validation failures, native commit and fresh reload evidence; resume
+from validated results without reacquiring them. Do not substitute ad hoc
+single-option probes or arbitrary small batches for the complete campaign, and
+do not ask the user to authorize every sample or continuation. Pause only for a
+concrete failed validation, missing prerequisite, or an actual user decision.
+Fix routine runner failures and resume the same campaign autonomously. Keep
+numeric representative sampling and complete small-selector cycles as agreed.

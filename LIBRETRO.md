@@ -37,6 +37,19 @@ directory save. Le ROM restano esterne: il core accetta i percorsi ZIP/7z e
 chiede al frontend di non estrarre gli archivi. Se il loader richiede parent
 o firmware separati, valgono le regole del database upstream.
 
+For a separately supplied device BIOS, the Libretro core searches
+`<system directory>/sm2-emu/<device>.zip` or `.7z` first, then beside the game
+archive, then inside the game archive. Parent ROM archives continue to be
+searched beside the game. No BIOS is included with the core or system files.
+The standalone and headless loaders retain their existing sibling search.
+
+On 2026-10-07, an isolated RetroArch 1.21.0 run loaded Virtua Cop from a
+user-owned game archive deliberately missing `epr-17181.6`. The matching
+`model1io2.zip` in the test system directory contained that device file.
+The log recorded the separate device archive and 2300 frames completed with
+gameplay screenshot, nonzero PCM and valid SRAM. Test copies and recordings
+remain under the ignored `build-libretro/validation/` directory.
+
 La Core Option System `ROM CRC Verification (Restart Required)` è abilitata
 per default e confronta ogni chip con il CRC32 dichiarato in `games.xml`.
 Disabilitandola, il loader cerca i chip soltanto per nome; l'integrità interna
@@ -58,6 +71,10 @@ autorevole del database è:
 
 Ogni build destinata alle prove locali deve aggiornare quel file insieme al
 core installato in RetroArch.
+On macOS, replace the installed library using a fresh temporary file in the
+cores directory followed by an atomic rename, then verify its SHA-256. Avoid
+overwriting a mapped library in place: cached code-signing pages may cause a
+CODESIGNING Invalid Page termination even when the disk signature is valid.
 
 Il core usa direttamente la directory save fornita dal frontend, che può già
 essere specifica per `SM2-Emu` o per il contenuto. RetroArch gestisce qui
@@ -67,9 +84,10 @@ ulteriori sottocartelle `sm2-emu/<gioco>`.
 
 ## Profili digitali
 
-Il core riconosce esplicitamente tutti gli 83 set parent/clone revisionati
-attraverso i profili completati finora. Le descrizioni e i binding sono
-quelli approvati in `Docs/revisione_profili_model2.xlsx`; firme sconosciute o
+Il core riconosce esplicitamente tutti gli 87 set parent/clone attuali.
+I profili originali seguono i binding approvati in `Docs/revisione_profili_model2.xlsx`;
+il nuovo profilo Power Sled segue l'upstream come documentato in
+`Docs/UPSTREAM_ROM_LOADER_PACKAGE_2026-10-08.md`. Firme sconosciute o
 cambiate restano nel fallback conservativo. Ogni profilo registra due tipi di
 dispositivo su entrambe le porte: quello predefinito con slot Test/Service
 rimappabili e la variante senza i due slot. Poiché Model 2 dispone soltanto
@@ -108,7 +126,13 @@ RAM validi.
 Sega Ski Super G espone `Special: Ski Super G`. D-Pad Up/Down sono `Zoom In` e
 `Zoom Out`, L1/R1 sono i due Foot Sensor attivi alti e South/East/West sono
 `Select 2`/`Select 3`/`Select 1`. Right Analog X controlla `Inclining` sul
-canale Model 2 0 e Left Analog X controlla `Swing` sul canale Model 2 1. Swing
+canale Model 2 0 e Left Analog X controlla `Swing` sul canale Model 2 1.
+Independent axes are the approved core-specific layout. For coupled steering,
+users can bind both virtual horizontal axes to the same physical axis in
+Settings > Input > Port 1 Controls; Swing's metadata already reverses its
+polarity. No additional Core Option or Quick Menu selector is provided.
+Exact upstream response/rounding equivalence through this binding remains
+unverified. Swing
 applica la polarità invertita dichiarata nei metadata: X+ produce `00` e X-
 produce `FF`. L'emulazione comune non risponde al controllo della Drive Board
 esterna e il gioco si ferma su `DRIVE BOARD TROUBLE CODE: FF`. La Core Option
@@ -122,8 +146,12 @@ NVRAM o binding.
 Le quattro revisioni Top Skater condividono `Special: Top Skater`. D-Pad
 Left/Right corrispondono a `Select Left`/`Select Right`, South/East a `Jump
 Tail`/`Jump Front`, Left Analog X a `Curving` e Right Analog X a `Slide`.
-Curving applica direttamente la polarità invertita dichiarata nei metadata
-(`X+` produce `00`, `X-` produce `FF`); Slide resta invariato.
+Curving retains the metadata polarity (`X+` reaches `00`, `X-` reaches `FF`).
+`Top Skater Curving Response` defaults to `Progressive (Fine Center)`, using
+upstream's small deadzone and quadratic travel; `Linear` restores the previous
+direct curve. The option is visible for all games and only affects Top Skater.
+L2/R2 add Slide Left/Right aliases without removing Right Analog X; the
+stronger input wins (stick wins ties). D-Pad Left/Right also steer at full lock.
 Direzioni e pulsanti non assegnati nel foglio non vengono esposti. Il parent ha
 raggiunto una sessione di gioco in RetroArch macOS con audio e Save RAM validi;
 le tre revisioni ereditano la stessa firma verificata dal catalogo.
@@ -285,8 +313,10 @@ visibile e attiva per default, abilita o disabilita insieme i tre binding nei
 giochi supportati. Il grilletto di una lightgun fisicamente puntata fuori schermo resta
 sempre un gesto nativo di ricarica. Gunblade NY, Rail Chase 2 e BEL ricevono invece
 coordinate posizionali a 8 bit nel mux analogico e non espongono Reload
-Offscreen. House of the Dead conserva inoltre il diverso bit hardware del
-grilletto P2. BEL mantiene Shot/Missile separati per P1/P2 e traduce le linee
+Offscreen. House of the Dead now follows upstream `fa88f95`: P2 uses IN1 bit 1
+on all three revisions. Serial on-screen coordinates map one unit inside the
+calibrated endpoints, matching upstream `902fb86`; explicit off-screen status
+and reload shortcuts still use the endpoint. BEL mantiene Shot/Missile separati per P1/P2 e traduce le linee
 Test/Service scambiate dal cabinet in `Service A`/`Test A`.
 
 BEL dipende inoltre da quattro coppie centro/ampiezza e dai corrispondenti
@@ -416,7 +446,7 @@ Start, senza creare un profilo generico separato.
 
 ## Collegamento tra cabinet
 
-La Core Option System `Linked Cabinets (Restart Required)`, collocata prima di
+La Core Option System `Linked Cabinets`, collocata prima di
 `NVRAM Settings`, offre `Disabled`, predefinito, e valori da `2 Cabinets` a
 `8 Cabinets` per Daytona e Indy 500; STCC arriva a `9 Cabinets` includendo il
 Relay e Sega Rally arriva a `5 Cabinets` includendo il Relay. Motor Raid,
@@ -434,6 +464,45 @@ possesso del trasporto e il loopback sono quelli dello standalone upstream
 che il roster contenga tutti i cabinet configurati. Handshake, conteggio atteso
 e roster ordinato seguono la struttura del core Supermodel; i frame Model 2
 restano completi e vengono inoltrati al successore dell'anello.
+
+`Linked Cabinets` now reconfigures on return from Core Options or on Restart.
+For supported sets, `Automatic Network Settings` appears when `NVRAM Settings`
+is enabled. Its preset applies reviewed Master, Slave/cabinet and Relay values;
+`Disabled` leaves the manual selectors authoritative. With linking disabled,
+an active preset restores safe offline values. Netplay host/client status does
+not select the native cabinet role. A Daytona ABI probe passed the transition
+between one and two cabinets. On 2026-10-07, the isolated RetroArch Nightly
+runner used these presets to form a Daytona Master/Slave 2/2 roster and an
+STCC Car 1/2/3 3/3 roster. Each instance exited normally without residual
+processes. Screenshots showed distinct Daytona cabinet colors and the STCC
+three-player attract screen; they do not establish a synchronized race.
+
+The first STCC 3/3 attempt exposed a Netpacket startup overflow on the last
+client. Before that client's roster formed, early peer frames and repeated
+identical `Hello` packets could fill the pending queue. The adapter now drops
+frames that cannot yet enter the local ring and keeps one pending copy of each
+identical `Hello`. Unit checks cover 1400 early frames and 1400 repeated
+hellos, while preserving the bounded failure for a 1025-frame burst after
+the roster is ready. The repeated STCC 3/3 RetroArch run passed; extended
+stalls and reconnects were subsequently checked in the
+[2026-10-09 network package](Docs/NETWORK_VALIDATION_2026-10-09.md).
+
+The same package extends preset checks to a 20-case matrix, repairs known-peer
+identity requests after a local Restart and advances the protocol to NetBoard
+v3. All participants must use the updated build. Actual Daytona Core Options
+transitions between two cabinets and Disabled, menu return, coordinated Restart,
+2/20-second stalls and process reconnection were exercised in isolated
+RetroArch. Reconnection and an individual cabinet Restart require coordinated
+Restart to recover the native Daytona board. Motor Raid Deluxe's drive-board
+precondition is avoided for new automatic setups by the approved Cabinet Type =
+Twin default, also used by the NVRAM selector. Existing saves retain precedence;
+Deluxe remains selectable. Subsequent Manx TT qualification corrects the counted
+Relay's native status slot and verifies two-rider races with LIVE camera,
+Time Up/ranks and subsequent progression on the parent and Revision C.
+See [Manx TT Gameplay Validation](Docs/MANX_TT_GAMEPLAY_VALIDATION_2026-10-09.md).
+Other roster-only checks do not establish synchronized gameplay. Both installed local core
+copies were updated and hash-verified. See the package for exact cases, command
+flags, before/after evidence and recovery limits.
 
 Tutti i partecipanti devono usare la stessa build del core, lo stesso timing e
 lo stesso valore `Linked Cabinets`. Usano inoltre lo stesso ROM set, salvo il
@@ -472,6 +541,12 @@ client. Il runner applica automaticamente queste combinazioni.
 Manx TT usa `Master` e `Slave` con due cabinet; selezionando tre cabinet aggiunge
 una terza istanza `Relay`. `manxtt` e `manxttc` sono supportati, mentre
 `manxttdx` è escluso perché il relativo menu acquisito non espone `Link Type`.
+
+For the bounded local gameplay campaign, reuse `scripts/test-manxtt-gameplay.py`;
+see [the campaign and evidence](Docs/MANX_TT_GAMEPLAY_VALIDATION_2026-10-09.md).
+The separate DX single-program check reaches a race after the operation tutorial
+using normal bank, brake, Start and throttle inputs; it adds no link support,
+binding or calibration change.
 
 Virtual On usa due programmi Twin come cabinet giocabili: il primo imposta
 `Network Link Attribute=Master`, il secondo `Slave`. Se `Linked Cabinets=3`,
@@ -574,6 +649,12 @@ o residui. Nella prova distribuita con Master e Slave su macOS e Relay su
 Batocera, il nodo remoto ha formato il roster 3/3 e mostrato esplicitamente
 `THIS IS RELAY MACHINE`. Resta da verificare una gara con input reali.
 
+The 2026-10-09 audit distinguishes this historical transport roster from a
+completed native Relay handshake. Both `manxtt` and `manxttc` Relay remain
+unqualified: shared role 3 differs from the simulation's role-0 predicate,
+and a tested role-3 candidate still caused the game to reset the board. That
+candidate was reverted. See the network package for the retained failure traces.
+
 Virtual On è stato provato prima con due istanze `von` Master/Slave e poi con
 tre istanze `von`, `von` e `vonr`. Entrambe le sessioni hanno formato il roster
 completo su ogni partecipante; la seconda ha conservato negli `.srm` i valori
@@ -604,11 +685,15 @@ python3 scripts/test-retroarch-netpacket.py \
   --core /percorso/sm2_libretro.dylib \
   --rom /percorso/roms/daytona.zip \
   --system-assets /percorso/system/sm2-emu \
+  --automatic-network \
   --cabinets 3
 ```
 
 Per STCC o Sega Rally sostituire la ROM e usare rispettivamente `--set-name
 stcc` o `--set-name srallyc`.
+`--automatic-network` selects each instance's reviewed native preset. Without
+it, the runner explicitly disables the preset and writes the manual NVRAM
+selectors, preserving the earlier test mode.
 
 Il runner deriva ogni istanza da una copia della configurazione RetroArch
 esistente, applica directory e porte isolate, conserva log e risultato JSON e
@@ -815,13 +900,24 @@ casi risoluzione, frame e NVRAM restano invariati.
 
 ## A/V Timing e overlay diagnostico
 
-Le Core Options Video includono `A/V Timing`, con `Native (57.524160 Hz)` come
-default e `60 Hz Compatibility` come alternativa. La seconda non esegue un
-frame macchina per ogni callback a 60 Hz, perché ciò accelererebbe il gioco:
-mantiene la cadenza hardware e duplica periodicamente l'ultimo frame. L'audio
-resta al sample rate effettivo della scheda e viene distribuito su pacchetti da
-60 Hz; eventuali campioni non accettati o non ancora disponibili restano in
-coda e vengono recuperati nelle callback successive.
+Le Core Options Video includono `A/V Timing`, con le sole voci
+`60 Hz (Default)` e `57.524 Hz (Native Model 2)`. Il valore `60hz`, anche
+se già salvato in un file di opzioni, seleziona 60 Hz e rimane `60hz` al
+successivo salvataggio. La modalità predefinita esegue un nuovo
+frame macchina per ogni callback a 60 Hz, accelerando gioco e suono di circa
+il 4,3%; ricampiona i campioni generati al rate audio dichiarato dalla scheda.
+La frazione di campioni per callback è serializzata nei Save State. I campioni
+non accettati dal frontend restano in coda e vengono recuperati nelle callback
+successive. Native conserva la cadenza e l'audio della scheda senza ricampionare.
+La precedente modalità a 60 Hz con frame duplicati non è più esposta.
+
+Core Options V2 registers exactly those two labels with `60hz` as default;
+the legacy options fallback orders the raw values `60hz|native`. A bounded VF2
+direct-ABI run with no saved timing value completed 180 callbacks at 60 FPS,
+zero duplicated video callbacks, 132,300 stereo audio frames at 44.1 kHz and a
+deterministic Save State replay. An explicit saved `native` completed 180
+callbacks at 57.524160 Hz with no video duplicates. A separate visual menu and
+subjective A/V check in RetroArch remains open.
 
 `Timing / FPS Overlay` riutilizza il pannello Dear ImGui del core Supermodel.
 `Auto`, collocato subito dopo `Off`, seleziona il font base da 13 pixel; seguono
@@ -835,6 +931,18 @@ stimate di engine e callback. La stessa draw list viene composta nei percorsi
 Software, Vulkan e OpenGL; il frontend non crea un proprio messaggio OSD.
 L'opzione si aggiorna immediatamente; il cambio di timing richiede il
 riavvio del contenuto perché modifica le informazioni A/V dichiarate al frontend.
+
+On 2026-10-07, isolated VF2 replays in RetroArch completed 2300 callbacks
+with nonzero PCM, valid SRAM and a gameplay screenshot in Software 60 Hz,
+Vulkan 60 Hz, and Native Software modes. Vulkan used RetroArch Nightly 1.22.2
+with the existing MoltenVK runtime. These runs establish frontend operation;
+they do not measure subjective sound continuity or display pacing.
+The current Linux x86_64 build also completed 2300 frames in an isolated
+Batocera 43.1 RetroArch run at 60 Hz with OpenGL Core 4.6, a gameplay
+screenshot, nonzero 44.1 kHz PCM, valid SRAM and exit code 0. The test used
+the marked `/userdata/system/codex-core-tests/` area and left the installed
+core and global configuration untouched. macOS OpenGL cannot supply the
+required 4.3 functions, as documented in `GPU.md`.
 
 ## Enhancement dei renderer GPU
 
@@ -867,18 +975,53 @@ Vulkan e OpenGL non sono interessati dall'opzione.
 
 ## Enhanced Audio Balance
 
-La categoria Audio espone un unico interruttore globale `Enhanced Audio
-Balance`, Enabled per default. Quando è attivo, il core applica automaticamente
-a ogni gioco supportato i coefficienti SCSP di SM2-Emu 0.9.7; VF2 classifica
-inoltre gli slot attivi come musica, effetti, annunciatore o voci. Disabled
-ripristina immediatamente unity gain per tutti gli slot e conserva l'output
-emulato senza il mastering aggiuntivo.
+The Audio category exposes **Enhanced Audio Balance**, **Enabled by default**.
+With each source Gain set to **Auto** (also the default), the core applies the
+current upstream game profile. Disabled makes Auto use unity gain. Manual Gain
+percentages replace the profile for that source, while Mute silences its output.
+Fixed hardware mixer routes, the SCSP master register and Music Volume remain
+applicable. VF2 now uses upstream's flat profile; the previous slot-based
+music/effects/announcer/voice rebalance is removed. See
+`Docs/UPSTREAM_AUDIO_BALANCE_PACKAGE_2026-10-08.md` for exact imports and tests.
 
 `Music Volume` è un controllo globale separato, modellato sull'opzione del core
 Supermodel. Offre 0–200% a passi di 10 con default 100% e scala esclusivamente
 l'audio MPEG prodotto dalle schede DSB/DSB2 prima che venga sommato all'SCSP.
 Interessa le famiglie STCC e Top Skater; effetti, voci e giochi privi di una
 scheda musicale separata restano invariati. La variazione è immediata.
+
+The Audio menu uses the TGPulse source Gain convention: Auto (default), Mute,
+then 10% through 100% in steps of 10. Auto is stored as `auto`, Mute as `0`,
+and percentages as bare numbers. Source labels follow the shared convention: `MultiPCM 1
+Gain`, `MultiPCM 2 Gain`, `FM (YM3438) Gain`
+and `DSB (MPEG) Gain`; Model 2 also has `SCSP Gain`.
+Auto and manual 100% are distinct: Auto follows the enabled upstream profile,
+while manual 100% uses the source's unprofiled reference level. Manual numeric
+values remain readable, including saved 110–200% and textual mute values; only
+an active legacy value is temporarily added to the selector. New configurations
+show the canonical choices. Configuration files remain frontend-owned.
+These controls scale output while chips, timers and voices keep advancing.
+Music Volume and DSB Gain both affect the separate MPEG board. The optional
+SCSP output low-pass filter remains independent of these level controls.
+Subjective listening checks remain open.
+
+On 2026-10-07, a separate RetroArch 1.21.0 replay of Virtua Cop with
+`sm2_multipcm1_gain = "0"` completed 2300 frames using a split device BIOS.
+The 0–10 second PCM segment fell from 1270.8 RMS at the default 100% to zero;
+the 10–20 second segment fell from 2213.5 to 1030.4 RMS and remained nonzero.
+This verifies the output control on the original Model 2 sound board without
+claiming a subjective listening result. Setting MultiPCM 1 on VF2 made no
+change, as expected because VF2 uses the SCSP board; its menu must hide that
+source. The isolated runner accepts repeatable `--source-gain SOURCE=PERCENT`.
+
+A separate isolated RetroArch Nightly 1.22.2 menu inspection loaded Virtua
+Cop with MultiPCM 1 initially at `0`. The Audio category showed only the
+three present sources (MultiPCM 1, MultiPCM 2 and YM3438), displayed `Mute`
+for MultiPCM 1, and ordered its choices as Mute, 10%, 20%, and onward. A
+live menu selection of 100% was shown immediately and persisted as `100` in
+the isolated per-core `.opt` file; the game resumed and the runner exited
+normally. This verifies frontend selection and persistence, while listening
+quality remains for a manual check.
 
 Due replay isolati in RetroArch macOS hanno verificato entrambe le schede. Su
 STCC il picco PCM è passato da 21073 a 100% a 10087 a 0%; su Top Skater da
@@ -901,13 +1044,25 @@ fino agli ultimi dieci secondi di 2300 frame, senza campioni saturati.
 ## Gamepad Rumble
 
 La categoria Input espone `Gamepad Rumble`, Enabled per default.
-L'implementazione adatta il decoder drive-board upstream 0.9.9 all'interfaccia
-rumble Libretro. Conserva tutte le scritture del frame e distingue i protocolli
-Daytona, STCC e Sega Rally; questo evita di perdere i byte effetto di Indy 500 e
-di trattare le forze continue di STCC o Sega Rally come urti Daytona. Nei giochi
-di guida gli effetti `Push` e `Vibrate` non continui producono brevi colpi
-sul motore strong, accompagnati a metà intensità dal motore weak; lo
-scostamento dello sterzo produce una vibrazione più leggera. Gli altri giochi
+The shared decoder now matches upstream `868dce7`, including its prerequisite
+Daytona and Sega Rally corrections. It preserves every drive-board write in
+frame order and distinguishes Daytona, Indy, STCC and Sega Rally protocols.
+Indy 500 and Over Rev parents/clones use the later Indy board; parameter bytes
+retain the preceding effect, while step-zero pushes release it. Daytona's
+step-zero push remains a real force, motor-off uses `0x1x`, and `0x4x` is a
+center-relative Kick. Noncontinuous Push/Kick effects produce brief strong
+motor jolts with the weak motor at half intensity; steering deflection adds
+lighter synthesized cornering vibration. The existing 12-frame rumble tail
+remains, so release stops renewing an impact rather than cutting its tail.
+Over Rev drive-board effects require **HARDWARE TYPE = SEGA STCC** in its
+operator menu or NVRAM Settings. Since 2026-10-09, SEGA STCC is the core's
+Hardware Type default and Automatic Initial NVRAM Setup override for Over Rev
+and its two clones. Automatic setup changes only newly seeded NVRAM; existing
+frontend/native saves retain precedence, and an explicitly saved Hardware Type
+remains selectable and respected when NVRAM Settings is enabled. The acquired
+native template still records NORMAL (2in1). See
+`Docs/OVER_REV_HARDWARE_DEFAULT_2026-10-09.md` for verification.
+Synthesized cornering vibration is independent of drive-board effects. Gli altri giochi
 restano silenziosi. Il core genera questi rapporti sulla scala normalizzata;
 `Input Rumble Gain` di RetroArch è l'unico controllo dell'intensità complessiva.
 
@@ -919,56 +1074,74 @@ integrazione futura.
 
 ## Save State Libretro
 
-Il core implementa `retro_serialize_size`, `retro_serialize` e
-`retro_unserialize` usando la serializzazione frontend-neutral introdotta
-dall'upstream 0.9.8 per tutte le quattro varianti Model 2. RetroArch possiede
-slot e file: il core non importa l'interfaccia standalone né crea una propria
-directory degli stati.
+The core implements `retro_serialize_size`, `retro_serialize` and
+`retro_unserialize` using frontend-neutral machine serialization. RetroArch owns
+slots and state files; the core does not import the standalone state UI.
 
-La dimensione dichiarata è fissa a 9 MiB ed è disponibile già prima del
-caricamento del gioco, requisito pratico di RetroArch 1.22.2. L'immagine contiene
-magic, versione, nome del set e tipo di scheda; stati di un altro gioco o board,
-intestazioni errate e payload troncati sono rifiutati. Il caricamento troncato è
-transazionale e lascia intatta la macchina corrente. Il payload macchina usa il
-formato upstream versione 4; una coda Libretro separata e versionata conserva
-soltanto lo stato runtime del frontend, senza introdurre dipendenze nella macchina.
-Non è promessa compatibilità con altre revisioni del core.
+The declared buffer is fixed at **9 MiB (9,437,184 bytes)** and available before
+content load. It includes a separate **96-byte frontend tail**. The machine
+currently writes **format 10** and reads **formats 4 through 10**. Loading a
+legacy file does not rewrite it; the next successful save uses format 10.
+Older cores reject formats they do not support. Actual RetroArch files may be
+larger because the frontend adds its own wrapper and optional replay data.
 
-Il core usa inoltre la più recente negoziazione pubblica Libretro
-`RETRO_ENVIRONMENT_SET_SERIALIZATION_QUIRKS` per dichiarare che il formato è
-dipendente da piattaforma ed endianness. I frontend che non implementano il
-comando lo ignorano e continuano a usare gli stessi tre callback standard; non
-sono richieste estensioni private di RetroArch.
+Magic, supported version, game identity and board are checked before applying
+the machine image. Truncated/invalid machine payloads trigger rollback to the
+previous snapshot. Compatibility preserves these version-specific rules:
 
-Dopo un caricamento vengono invalidate le risorse derivate del renderer e
-azzerate le code audio e il rumble. Cadenza, cambio, controlli relativi e stato
-del puntatore vengono invece ripristinati dalla coda Libretro: il loro precedente
-azzeramento causava in Daytona una divergenza di cinque byte dopo tre frame.
-I test ABI con ROM reali hanno verificato round-trip byte-identico e
-riesecuzione deterministica su Daytona USA, VF2, Indy 500 e STCC, oltre al
-rifiuto senza effetti di stati corrotti e di VF2 caricato in Daytona. Venti
-cicli per ciascuna board coprono sia il pattern run-ahead, con esecuzione
-speculativa e ripristino, sia una sequenza di stati ricaricata in ordine inverso
-come rewind. Daytona supera la stessa prova anche con timing frontend a 60 Hz.
-RetroArch Nightly 1.22.2 su
-macOS ha caricato lo stesso stato VF2 dal proprio replay sia con Software sia
-con Vulkan, completando 2300 frame con screenshot, audio e SRAM validi. Il
-runner `scripts/test-retroarch-savestate.py` conserva una verifica separata del
-percorso file e slot del frontend e ora usa `PAUSE_TOGGLE`; rifiuta confronti
-casuali tra frame animati e permette di omettere il replay, incompatibile con il
-caricamento di uno stato esterno durante la riproduzione.
+- Format 4: convert the published sound scheduler fields when reading.
+- Format 6: preserve SCSP filter history and DSB2 playback/loop state; old
+  missing history uses the documented fallback. The frontend tail also keeps
+  output DC-filter history.
+- Format 7: preserve persistent geometry registers and RAM. Older snapshots
+  cannot reconstruct geometry data absent from their archives.
+- Format 8: preserve pending local communication frames and overflow. Loading
+  older snapshots clears future queued frames; their original queue is absent.
+- Format 9: preserve the selected sound ROM bank, optional Deluxe Model 1 audio
+  board and resampler history. Missing ROMs required by a snapshot cause a
+  rejected load and rollback. Older Manx TT states restore their original set
+  sound bank; the new cabinet-audio policy is reapplied on Resume, resetting
+  audio if it requires a different bank. They contain no supplemental-board
+  history, so sample-exact legacy Manx TT audio continuation is not promised.
 
-La build Linux x86_64 del worktree corrente ha ripetuto su Batocera 43.1 la
-prova Daytona con 20 cicli: round-trip, replay deterministico, pattern run-ahead,
-ricarica in ordine inverso come rewind e rifiuto degli stati corrotti sono tutti
-superati. Questa prova qualifica il formato e la coda Libretro anche sul target
-Linux; file e slot grafici restano responsabilità di RetroArch.
+The core declares platform and endianness dependence through
+`RETRO_ENVIRONMENT_SET_SERIALIZATION_QUIRKS`. Older frontends may ignore that
+negotiation and retain the standard callbacks. Cross-platform state-file
+portability is not promised. Musashi host pointers are rebound on loading;
+raw state-file equality across processes is not a semantic comparison.
 
-Save/load è disabilitato durante `Linked Cabinets`: la communication board
-interna è serializzabile, la sessione Netpacket esterna no. Rewind e run-ahead
-sono qualificati su macOS per tutte le quattro board e su Batocera per Daytona;
-le altre combinazioni di piattaforma e board estendono la matrice senza cambiare
-il formato.
+After a load, derived renderer resources and queued audio are invalidated and
+rumble is stopped. Cadence, audio delivery remainder, input runtime,
+gun-flash state and output DC history are restored from the frontend tail.
+Save/load is refused while an external **Linked Cabinets** session is active:
+the local machine archive cannot restore the peer Netpacket session.
+
+The retained package checks cover all four boards plus DSB2, format-8
+round-trip/replay, corrupt input rejection, run-ahead/rewind ABI patterns and
+fresh-process reads of formats 4–7. The 2026-10-09 closure adds an actual
+Virtua Cop slot round-trip in RetroArch Nightly 1.22.2 on the current installed
+macOS ARM64 core: exact restored game region, visible advancement/resumption
+and clean exit. The established `scripts/test-retroarch-savestate.py` runner
+verifies pause state, waits for screenshot task completion, and uses three
+comparison steps for geometry cadence and asynchronous presentation latency.
+
+Historical Batocera/other-platform results retain their own artifact/date
+scope; they are not a new frontend qualification of the latest binary.
+See [Save State Compatibility Review](Docs/SAVE_STATE_COMPATIBILITY_REVIEW_2026-10-09.md)
+for the evidence matrix, format transitions and qualification limits.
+
+### Cross-Session 68000 Save States (2026-10-08)
+
+Upstream fix `1a60aff` rebinds Musashi's host pointers when loading a state from
+another process. The layout is unchanged. Old and new state files pass fresh
+process loads on all four boards plus DSB2, with deterministic replay,
+run-ahead and rewind. Use `scripts/smoke-libretro.py --state-output PATH` in a
+producer process and `--state-input PATH` in a later process. See
+[the package report](Docs/UPSTREAM_SAVE_STATE_PACKAGE_2026-10-08.md) for exact
+revisions, comparisons and platform limits. The VF2 frontend slot round-trip also passes on the installed macOS core:
+exact cropped-frame restoration after two controlled frame steps, subsequent
+visible advancement, and clean exit. The runner waits for the screenshot task
+to drain before requesting loading; the report documents the diagnosed race.
 
 ## Limiti
 
@@ -1033,3 +1206,97 @@ La Nightly installata 1.22.2 ha prodotto un'immagine, ma ha mostrato problemi
 nel ciclo di avvio da CLI; la validazione conclusiva usa la Stable indicata.
 Un primo replay incompleto sulla Stable terminava subito e faceva fallire la
 cattura finale del frontend: il test consegnato include tutti gli stati input.
+
+
+## Power Sled Linked Communication — 2026-10-08
+
+Set **Linked Cabinets = 3 Cabinets** on all three instances and load `powsledm`
+(Main), `powsledr` (Relay), and `powsled` (Slave), in that ring order. Disabled
+retains the prior local loopback. The three ROM programs select hardware roles;
+Automatic Network Settings now selects the reviewed Ride color on Main and
+Slave, while the ROM programs retain their native roles. Relay has no color
+selector. NVRAM Settings must be enabled; the core's ANS default is Disabled
+to preserve existing manual Ride choices. This enables the tested topology
+and does not certify gameplay support.
+
+For ordinary interactive use, the generic launcher embeds the roles, assigns
+different pads to local Port 1 and arranges Main / Slave above Relay:
+
+```sh
+python3 scripts/launch-linked-cabinets.py \
+  --game powsledm:2,powsled:1,powsledr:relay --controllers 0,1,2
+```
+
+The recommended Power Sled launch lists all three programs; `--relay` is ignored.
+ANS uses one development convention: `0` Disabled, `1` Master / first color,
+`2` first Slave / second color, subsequent numbers for other cabinets or colors,
+and `relay` for Relay. Power Sled colors are `1` Silver, `2` Red, `3` Black;
+its Relay program offers only `relay` and does not override a color. Virtual
+On's dedicated Relay likewise offers only `relay`, retaining native No Link.
+Old ANS names are not supported or migrated; other option compatibility remains
+unchanged.
+
+`--game NAME` repeats that ROM; `--game NAME1,NAME2` selects each instance's
+ROM; optional `:ANS` suffixes explicitly override saved ANS choices. ROMs
+are passed through without script compatibility checks. Without suffixes, Power Sled
+retains valid session colors, or initially selects Main Red / Slave Silver.
+SRAM and other Core Options persist. No Test/Service sequence is run.
+See `Docs/LINKED_CABINET_LAUNCHER.md` for paths, persistence and limitations.
+
+The existing isolated runner accepts:
+
+```sh
+python3 scripts/test-retroarch-netpacket.py \
+  --retroarch /path/to/RetroArch --core /path/to/sm2_libretro.dylib \
+  --rom /path/to/powsledm.zip --relay-rom /path/to/powsledr.zip \
+  --slave-rom /path/to/powsled.zip --set-name powsledm --cabinets 3 \
+  --system-assets /path/to/system/sm2-emu --settle 20 \
+  --service-menu --capture-screenshots --output /path/to/new-result-directory
+```
+
+The example above explicitly requests an operator-menu inspection; it is not
+the normal gameplay launcher. `--automatic-network` can now seed the reviewed
+Main Silver / Slave Red colors. `--service-menu` visits Test Menu and Game
+Assignments without changing values. Power Sled success requires both the
+frontend roster and native board link IDs Main 1/3, Relay program 3/3, Slave 2/3.
+Screenshots still require visual review; process success alone is not menu or
+gameplay proof. See `Docs/POWER_SLED_SERVICE_MENU_CAMPAIGN.md` for the evidence.
+
+
+## Manx TT Cabinet Audio — 2026-10-10
+
+Audio exposes **Manx TT Cabinet Audio**, Enabled / Disabled (Enabled default),
+always visible and a no-op outside Manx TT. Revision C/D uses validated current
+Cabinet Type from NVRAM to select Twin or Deluxe SCSP ROMs. Required sound chips
+are CRC checked in the loaded archive and adjacent Manx TT archives; only audio
+regions are imported. Missing alternate ROMs retain the selected set audio with
+an explanatory notification. Reload content after adding donor archives.
+
+The additional existing M1 sound-board emulation follows Deluxe on Revision
+C/D and is always connected for `manxttdx` when its ROMs are present. It reuses
+the host UART, native clocks and chip Gain controls, with exact-rate output
+resampling and Save State format-9 persistence. Disabling cabinet audio keeps
+the original SCSP ROMs; the additional board still follows the cabinet.
+Production Deluxe now includes an AMS acknowledgement stub on parallel D/E:
+Revision C/D activates it when native NVRAM Cabinet Type is Deluxe; Twin retains
+its original P2 input. The Deluxe-only set always activates it. Reset and cabinet
+transitions clear its response; format 10 preserves an incomplete handshake.
+Formats 4–9 remain readable, with absent AMS state initialized to idle.
+This passes the native boot gate; motors and position feedback are not simulated.
+Both local installed core copies are updated. See
+[implementation and validation](Docs/MANX_TT_CABINET_AUDIO_2026-10-10.md).
+
+
+## Upstream CPU And SCSP Package — 2026-10-10
+
+Imported `760a556` direct instruction/program fetch and coprocessor wait skipping,
+plus `ec9c3ac` SCSP pitch depth-index-3 correction. No new menu values or defaults;
+Gain, EAB, filters, input and NVRAM policies keep their existing conventions.
+State format remains 10 and previous format-10 states continue on all four boards.
+
+Pristine before/after comparisons pass for Daytona, VF2, Sega Rally and HOTD.
+The SCSP change affects only depth 3 in the isolated synthesis reference fixture;
+Sega Rally's changed boot PCM matches pristine upstream. VF2 reaches gameplay in
+RetroArch Nightly 1.22.2. Both local installed core copies are updated and verified.
+See `Docs/UPSTREAM_CPU_SCSP_PACKAGE_2026-10-10.md` for exact revisions, measured
+process-time improvement, reproducible evidence and local qualification limits.

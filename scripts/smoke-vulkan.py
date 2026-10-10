@@ -24,7 +24,10 @@ def main():
     p=argparse.ArgumentParser(description=__doc__)
     for key in ['core','host','system','rom','output']:p.add_argument('--'+key,type=Path,required=True)
     p.add_argument('--frames',type=int,default=1800)
-    p.add_argument('--scale',type=int,choices=range(1,5),default=1)
+    p.add_argument('--initial-nvram-setup',choices=['enabled','disabled'],default='enabled')
+    p.add_argument('--hide-shot-flash',choices=['disabled','enabled'],default='disabled')
+    p.add_argument('--gun-inputs',action='store_true',help='Replay coin, start, aim and lightgun shots')
+    p.add_argument('--scale',type=int,choices=range(1,9),default=1)
     p.add_argument('--texture-filter',choices=['faithful','2','4','8','16'],default='faithful')
     p.add_argument('--upscale-2d',choices=['faithful','xbr','scalefx'],default='faithful')
     p.add_argument('--context-cycle',type=int,default=0,help='Destroy/recreate the real device before this frame')
@@ -42,8 +45,11 @@ def main():
     core.retro_load_game.argtypes=[C.POINTER(Game)];core.retro_load_game.restype=C.c_bool
     core.retro_get_system_av_info.argtypes=[C.POINTER(AV)]
     paths={9:str(a.system.resolve()).encode(),31:str(out/'saves').encode()}
-    options={b'sm2_renderer':b'vulkan',b'sm2_internal_resolution':str(a.scale).encode(),
+    options={b'sm2_hide_shot_flash':a.hide_shot_flash.encode(),
+             b'sm2_gun_input':b'analog' if a.gun_inputs else b'hybrid',b'sm2_crosshairs':b'0' if a.gun_inputs else b'auto',
+             b'sm2_renderer':b'vulkan',b'sm2_internal_resolution':str(a.scale).encode(),
              b'sm2_texture_filter':a.texture_filter.encode(),b'sm2_upscale_2d':a.upscale_2d.encode(),
+             b'sm2_initial_nvram_setup':a.initial_nvram_setup.encode(),
              b'sm2_av_timing':a.av_timing.encode(),b'sm2_timing_overlay':a.timing_overlay.encode()}
     shutdown=False;errors=[];pcm=bytearray();last=b'';frame=0;videos=0;gpu_frames=0;duplicates=0
     statuses=[];context_cycle_hardware_frame=None
@@ -71,8 +77,7 @@ def main():
         if data!=C.c_void_p(-1).value or (w,h,pitch)!=(496*a.scale,384*a.scale,0):
             errors.append('Invalid hardware frame');return
         if a.context_cycle and frame==a.context_cycle:context_cycle_hardware_frame=True
-        # Two adjacent machine frames cannot both be duplicates at this cadence,
-        # so this retains the final presented image even when the last callback repeats.
+        # Capture the final two frames to retain the last presented image.
         capture=frame>=a.frames-2
         if not host.sm2_gpu_frame(w,h,capture):errors.append(host.sm2_gpu_error().decode());return
         if capture:
@@ -87,7 +92,16 @@ def main():
     @POLL
     def poll():pass
     @STATE
-    def state(port,device,index,button):return 0
+    def state(port,device,index,button):
+        if not a.gun_inputs or port: return 0
+        if device == 1:
+            if button == 2 and (800 <= frame < 810 or 820 <= frame < 830): return 1
+            if button == 3 and (870 <= frame < 880 or 950 <= frame < 960 or 1050 <= frame < 1060): return 1
+            if button == 0 and frame > 1100 and frame % 90 < 2: return 1
+        if device == 5 and index == 0 and frame > 1100:
+            if button == 0: return -22000 if (frame//180)%2 == 0 else 22000
+            if button == 1: return -18000 if (frame//240)%2 == 0 else 18000
+        return 0
     for name,cb in [('environment',env),('video_refresh',video),('audio_sample',sample),('audio_sample_batch',audio),('input_poll',poll),('input_state',state)]:
         getattr(core,'retro_set_'+name).argtypes=[type(cb)];getattr(core,'retro_set_'+name)(cb)
     game=Game(str(a.rom.resolve()).encode(),None,0,None)
@@ -96,7 +110,7 @@ def main():
     assert not shutdown
     av=AV();core.retro_get_system_av_info(C.byref(av))
     native_fps=25000000/434600
-    assert abs(av.timing.fps-(60.0 if a.av_timing=='60hz' else native_fps))<1e-9
+    assert abs(av.timing.fps-(60.0 if a.av_timing!='native' else native_fps))<1e-9
     started=time.monotonic()
     for frame in range(a.frames):
         if a.context_cycle and frame==a.context_cycle:
@@ -106,36 +120,25 @@ def main():
         core.retro_run();assert not shutdown and not errors,(frame,errors)
     elapsed=time.monotonic()-started
     assert videos==a.frames and last
+    assert duplicates==0
     if a.av_timing=='60hz':
-        accumulator=60-native_fps
-        repeated=[]
-        for callback in range(a.frames):
-            accumulator+=native_fps
-            advance=accumulator>=60
-            if advance:accumulator-=60
-            repeated.append(not advance)
-        # Recreating the context on a repeated callback forces one replacement
-        # image because the previous device's image no longer exists.
-        replaced=bool(a.context_cycle and repeated[a.context_cycle])
-        expected=sum(repeated)-int(replaced)
-        assert duplicates==expected,(duplicates,expected,replaced)
         assert abs(len(pcm)//4-a.frames*av.timing.rate/60)<av.timing.rate/native_fps+2
-    else:assert duplicates==0
     overlays=[entry for entry in statuses if entry]
     if a.timing_overlay!='disabled':assert not overlays
     if a.context_cycle:assert context_cycle_hardware_frame is True
     (out/'native_frame.ppm').write_bytes(last)
     with wave.open(str(out/'audio.wav'),'wb') as w:
         w.setparams((2,2,int(av.timing.rate),0,'NONE','none'));w.writeframes(pcm)
+    nvram=api['capture_save_ram'](core,a.rom.stem,out/'saves')
     host.sm2_gpu_stop();core.retro_unload_game()
     shutil.copytree(out/'saves',out/'baseline-nvram')
-    report={'frames':a.frames,'gpu_frames':gpu_frames,'duplicated_frames':duplicates,
+    report={'hide_shot_flash':a.hide_shot_flash,'gun_inputs':a.gun_inputs,'initial_nvram_setup':a.initial_nvram_setup,'frames':a.frames,'gpu_frames':gpu_frames,'duplicated_frames':duplicates,
         'scale':a.scale,'texture_filter':a.texture_filter,'upscale_2d':a.upscale_2d,
         'av_timing':a.av_timing,'timing_overlay':a.timing_overlay,
         'overlay_updates':len(overlays),'context_cycle':a.context_cycle,
         'context_cycle_hardware_frame':context_cycle_hardware_frame,'sync_masks':[7,15,7],
         'gpu_seconds':elapsed,'audio_frames':len(pcm)//4,
-        'video_sha256':sha(last),'audio_sha256':sha(pcm),'nvram':files(out/'saves')}
+        'video_sha256':sha(last),'audio_sha256':sha(pcm),'nvram':nvram}
     if a.reference:
         expected=json.loads((a.reference/'result.json').read_text())
         report['comparison']={key:report[key]==expected[key] for key in ['video_sha256','audio_sha256','nvram']}
