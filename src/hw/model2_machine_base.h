@@ -113,6 +113,7 @@ struct Inputs {
 
     /// Air Walkers players 3 and 4. Its port-F matrix selects either in1/in2
     /// or this second pair on the same two physical I/O lanes.
+    /// Power Sled also uses in3 for its port-E cabinet inputs.
     u8 in3 = 0xff;
     u8 in4 = 0xff;
 

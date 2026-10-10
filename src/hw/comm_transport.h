@@ -26,6 +26,8 @@
 #include <span>
 #include <vector>
 
+namespace sm2 { class Archive; }
+
 namespace sm2::hw {
 
 /// The seam M2Comm sends and receives whole frames through. A frame is an id
@@ -61,6 +63,9 @@ class LoopbackTransport final : public CommTransport {
 public:
     /// Queue depth before a send is refused, standing in for the socket buffer.
     static constexpr std::size_t kDepth = 64;
+
+    /// Local pending frames are part of deterministic single-cabinet state.
+    void serialize(Archive& ar);
 
     void send(std::span<const u8> frame) override
     {

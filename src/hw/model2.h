@@ -17,6 +17,7 @@
 #include "core/types.h"
 #include "cpu/bus.h"
 #include "cpu/i960/i960.h"
+#include "hw/model2_area_timing.h"
 #include "hw/copro_tgp.h"
 #include "hw/geometrizer.h"
 #include "hw/eeprom_93c46.h"
@@ -25,6 +26,7 @@
 #include "hw/m2comm.h"
 #include "hw/model2_machine_base.h"
 #include "hw/model2_sound.h"
+#include "hw/manxtt_ams.h"
 #include "hw/model2_video.h"
 #include "hw/sega_315_5838_comp.h"
 #include "hw/sega_315_5881_crypt.h"
@@ -282,6 +284,7 @@ public:
     u8  read8(u32 address) override;
     u16 read16(u32 address) override;
     u32 read32(u32 address) override;
+    u32 fetch32(u32 address) override;
     void write8(u32 address, u8 value) override;
     void write16(u32 address, u16 value) override;
     void write32(u32 address, u32 value) override;
@@ -376,6 +379,7 @@ private:
     [[nodiscard]] u8 io_port_b_read();
     [[nodiscard]] u8 io_port_c_read();
     [[nodiscard]] u8 io_port_d_read();
+    [[nodiscard]] bool manxtt_ams_enabled();
     [[nodiscard]] u8 lightgun_mux_read();
     void             lightgun_mux_write(u8 value);
     [[nodiscard]] u8 lightgun_data_read(u8 offset) const;
@@ -448,6 +452,12 @@ private:
     std::vector<u16> m_framebuffer_b;
     std::vector<u8>  m_nvram;         ///< 16 KB battery-backed SRAM at 0x01d00000
     std::vector<u8>  m_cpu_control;   ///< 0x38 bytes of wait-state registers
+    bool             m_fetching = false;  ///< Set while fetch32 reads, which pays no area waits.
+
+    void charge_area(u32 address)
+    {
+        if (!m_fetching) m_cpu.add_wait_cycles(area_wait_cycles(address, m_cpu_control));
+    }
     std::vector<u8>  m_comm_ram;      ///< 16 KB link board shared RAM
 
     /// DOA protection chip's RAM window at 0x01d80000, matching MAME's
@@ -505,6 +515,7 @@ private:
     /// Last byte latched to the drive board. Nothing consumes it yet; the games
     /// that need one only require the write to be accepted.
     u8 m_drive_board_latch = 0;
+    ManxTtAms m_manxtt_ams;
     bool m_palette_dirty  = true;
 
     /// Toggled on every read of the DOA protection chip's busy-flag stub at

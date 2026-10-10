@@ -55,16 +55,22 @@ constexpr u32 kScspAddressMask = 0x000fffff;
 /// 68000 clock over host clock, exactly. 45.1584 MHz / 4 over 25 MHz reduces to
 /// 7056/15625, and 5^6 shares no factor with 2^4 * 3^2 * 7^2, so this is lowest
 /// terms and the remainder has to be carried rather than rounded away.
-/// Note: MAME applies a 1-cycle wait state to every RAM and SCSP register
-/// access, effectively halving the 68000's throughput. The numerator here
-/// accounts for that.
-constexpr u64 kCpuClockNumerator   = 3528;  // 7056 / 2
+constexpr u64 kCpuClockNumerator   = 7056;
 constexpr u64 kCpuClockDenominator = 15625;
 
-/// Sample rate over host clock, exactly: 44100/25000000 reduces to 441/250000,
-/// and 3^2 * 7^2 shares no factor with 2^4 * 5^6.
-constexpr u64 kSampleNumerator   = 441;
-constexpr u64 kSampleDenominator = 250000;
+/// The 68000 and the SCSP share the 45.1584 MHz crystal, so one 44100 Hz sample
+/// is exactly 256 68000 cycles.
+constexpr u64 kCyclesPerSample = 256;
+
+/// Wait states on a 68000 access to RAM or the SCSP: a fixed two, plus up to
+/// kContentionCycles more as the SCSP's own sample fetches take the RAM bus.
+/// The contention term is fitted to a board capture of House of the Dead. The
+/// fixed two keep the music near the hardware's tempo: House of the Dead's
+/// attract music runs +0.5% against a cabinet recording with them, +1.33%
+/// without; Sega Rally's +0.48% against its soundtrack with them, +1.45%
+/// without.
+constexpr u32 kBusWaitCycles    = 2;
+constexpr u32 kContentionCycles = 12;
 
 /// The SCSP is clocked at half the 45.1584 MHz crystal on the video board, which
 /// divided by 512 is 44100 Hz exactly.
@@ -105,6 +111,53 @@ void Model2Sound::attach(std::span<const u8> program_rom, std::span<const u8> sa
 {
     m_program_rom = program_rom;
     m_samples     = samples;
+    m_configurations[0] = {program_rom, samples};
+    m_configuration = 0;
+}
+
+void Model2Sound::set_configuration(unsigned bank, std::span<const u8> program,
+                                    std::span<const u8> samples)
+{
+    if (bank > 0 && bank < m_configurations.size())
+        m_configurations[bank] = {program, samples};
+}
+
+bool Model2Sound::select_configuration(unsigned bank)
+{
+    if (bank >= m_configurations.size() || m_configurations[bank].program.empty()
+        || m_configurations[bank].samples.empty()) return false;
+    if (m_configuration != bank) {
+        m_configuration = bank;
+        m_program_rom = m_configurations[bank].program;
+        m_samples = m_configurations[bank].samples;
+        reset();
+    }
+    return true;
+}
+
+void Model2Sound::attach_m1(std::span<const u8> program, std::span<const u8> samples)
+{
+    if (program.empty() || samples.empty()) return;
+    m_m1 = std::make_unique<M1Audio>();
+    m_m1->attach(program, samples, {});  // Deluxe populates only one MultiPCM.
+    m_m1->set_rxd_handler(m_midi_out_handler);
+    m_m1->reset();
+}
+
+void Model2Sound::reset_m1_mixer()
+{
+    // A small fixed delay accommodates independently quantised sound slices.
+    m_m1_samples.assign(32, 0);
+    m_m1_phase = 0;
+}
+
+void Model2Sound::set_m1_enabled(bool enabled)
+{
+    enabled = enabled && m_m1 && m_m1->present();
+    if (enabled == m_m1_enabled) return;
+    m_m1_enabled = enabled;
+    m_m1->reset();
+    reset_m1_mixer();
 }
 
 void Model2Sound::attach_dsb(std::span<const u8> dsb_program, std::span<const u8> dsb_mpeg)
@@ -119,6 +172,8 @@ void Model2Sound::attach_dsb2(std::span<const u8> dsb_program, std::span<const u
 
 void Model2Sound::set_midi_out_handler(Scsp::MidiOutHandler handler)
 {
+    m_midi_out_handler = handler;
+    if (m_m1) m_m1->set_rxd_handler(handler);
     m_scsp.set_midi_out_handler(std::move(handler));
 }
 
@@ -129,6 +184,7 @@ void Model2Sound::midi_in(u8 value)
     m_scsp.midi_in(value);
     m_dsb.write_txd(value);
     m_dsb2.write_txd(value);
+    if (m_m1_enabled) m_m1->write_txd(value);
 }
 
 void Model2Sound::reset()
@@ -139,14 +195,16 @@ void Model2Sound::reset()
     m_bank5_offset = 0x600000;
 
     m_cycle_debt      = 0;
-    m_cycle_overshoot = 0;
-    m_sample_debt     = 0;
+    m_cycle_budget   = 0;
+    m_sample_phase   = kCyclesPerSample;
     m_counters        = Counters{};
     m_pending.clear();
 
     m_scsp.reset();
     m_dsb.reset();
     m_dsb2.reset();
+    if (m_m1) m_m1->reset();
+    reset_m1_mixer();
 
     // Seed the vector table. Without this the 68000 would fetch its stack
     // pointer and entry point out of cleared RAM and immediately run off into
@@ -161,6 +219,27 @@ void Model2Sound::reset()
 
 void Model2Sound::serialize(Archive& ar)
 {
+    if (ar.format_version() >= 9) {
+        unsigned bank = m_configuration;
+        ar.raw(bank);
+        if (ar.loading()) {
+            if (bank >= m_configurations.size()
+                || (bank && m_configurations[bank].program.empty())) {
+                ar.invalidate();
+                return;
+            }
+            m_configuration = bank;
+            m_program_rom = m_configurations[bank].program;
+            m_samples = m_configurations[bank].samples;
+        }
+    } else if (ar.loading()) {
+        m_configuration = 0;
+        m_program_rom = m_configurations[0].program;
+        m_samples = m_configurations[0].samples;
+        m_m1_enabled = false;
+        if (m_m1) m_m1->reset();
+        reset_m1_mixer();
+    }
     ar.bytes(m_ram.data(), m_ram.size());
     m_cpu.serialize(ar);
     m_scsp.serialize(ar);
@@ -176,8 +255,46 @@ void Model2Sound::serialize(Archive& ar)
     ar.raw(m_bank4_offset);
     ar.raw(m_bank5_offset);
     ar.raw(m_cycle_debt);
-    ar.raw(m_cycle_overshoot);
-    ar.raw(m_sample_debt);
+    if (ar.loading() && ar.format_version() == 4) {
+        // Version 4 used a half-rate CPU and an independent sample accumulator.
+        u64 overshoot = 0, sample_debt = 0;
+        ar.raw(overshoot);
+        ar.raw(sample_debt);
+        if (m_cycle_debt >= kCpuClockDenominator || overshoot > 1'000'000
+            || sample_debt >= 250'000) {
+            ar.invalidate();
+            return;
+        }
+        m_cycle_budget = -static_cast<s64>(overshoot * 2);
+        m_cycle_debt *= 2;
+        m_cycle_budget += static_cast<s64>(m_cycle_debt / kCpuClockDenominator);
+        m_cycle_debt %= kCpuClockDenominator;
+        m_sample_phase = kCyclesPerSample - sample_debt * kCyclesPerSample / 250'000;
+    } else {
+        ar.raw(m_cycle_budget);
+        ar.raw(m_sample_phase);
+        if (ar.loading() && (m_cycle_debt >= kCpuClockDenominator
+            || m_cycle_budget < -1'000'000 || m_cycle_budget > 1'000'000
+            || m_sample_phase > 1'000'000)) ar.invalidate();
+    }
+    if (ar.loading() && !ar.failed()) configure_balance(m_balance_game_name);
+    if (ar.format_version() >= 9) {
+        bool auxiliary = m_m1 != nullptr;
+        ar.raw(auxiliary);
+        if (auxiliary) {
+            if (!m_m1) { ar.invalidate(); return; }
+            ar.raw(m_m1_enabled);
+            m_m1->serialize(ar);
+            ar.deque_u32(m_m1_samples);
+            ar.raw(m_m1_phase);
+            if (ar.loading() && (m_m1_samples.size() > 128
+                || m_m1_phase >= u64{560} * sample_rate())) ar.invalidate();
+        } else if (ar.loading()) {
+            m_m1_enabled = false;
+            if (m_m1) m_m1->reset();
+            reset_m1_mixer();
+        }
+    }
 }
 
 void Model2Sound::run(u32 host_cycles)
@@ -190,54 +307,28 @@ void Model2Sound::run(u32 host_cycles)
         return;
     }
 
-    // Audio first, then the CPU. The SCSP's timers advance with the samples, so
-    // generating this interval's audio before running the 68000 over the same
-    // interval means a timer interrupt is visible to the program within the same
-    // slice rather than the next one. MAME gets the same effect from the other
-    // direction, by catching the stream up whenever the program touches a
-    // register.
-    generate_audio(host_cycles);
-
     m_cycle_debt += static_cast<u64>(host_cycles) * kCpuClockNumerator;
-    u64 wanted = m_cycle_debt / kCpuClockDenominator;
+    m_cycle_budget += static_cast<s64>(m_cycle_debt / kCpuClockDenominator);
     m_cycle_debt %= kCpuClockDenominator;
 
-    // Instructions are not interruptible, so the last one of a slice runs past
-    // the end of it. Left uncorrected that overshoot compounds: at one call per
-    // scanline it made the board run nearly three percent fast, which is a
-    // quarter-tone sharp and audible. Paying it back out of the next slice keeps
-    // the long-run rate exact.
-    if (m_cycle_overshoot >= wanted) {
-        m_cycle_overshoot -= wanted;
-        return;
-    }
-    wanted -= m_cycle_overshoot;
-    m_cycle_overshoot = 0;
 
-    const s32 used = m_cpu.run(static_cast<s32>(wanted));
-    if (used > 0 && static_cast<u64>(used) > wanted) {
-        m_cycle_overshoot = static_cast<u64>(used) - wanted;
-    }
-}
-
-void Model2Sound::generate_audio(u32 host_cycles)
-{
-    m_sample_debt += static_cast<u64>(host_cycles) * kSampleNumerator;
-    const u64 frames = m_sample_debt / kSampleDenominator;
-    m_sample_debt %= kSampleDenominator;
-
-    if (frames == 0) {
-        return;
-    }
-
-    update_balance_gains();
-
-    // Nothing draining the buffer means a headless run. The SCSP still has to be
-    // stepped, because that is where its timers and envelopes advance, so the
-    // samples are generated and then the oldest are dropped.
+    // The 68000 runs a sample at a time with the SCSP one sample ahead, so a
+    // timer interrupts at the start of the sample it expires in and a reload
+    // counts from the next one. The sequencers' tempo depends on it.
     const usize offset = m_pending.size();
-    m_pending.resize(offset + static_cast<usize>(frames) * 2);
-    m_scsp.generate(m_pending.data() + offset, static_cast<u32>(frames));
+    while (m_cycle_budget > 0) {
+        if (m_sample_phase >= kCyclesPerSample) {
+            generate_sample();
+            m_sample_phase -= kCyclesPerSample;
+            continue;
+        }
+        const s64 slice = std::min<s64>(m_cycle_budget,
+                                        static_cast<s64>(kCyclesPerSample - m_sample_phase));
+        const s32 used = m_cpu.run(static_cast<s32>(slice));
+        m_sample_phase += static_cast<u64>(used);
+        m_cycle_budget -= used;
+    }
+    const u32 frames = static_cast<u32>((m_pending.size() - offset) / 2);
 
     // The DSB (music board, DSB titles only) runs its Z80 over the same host
     // interval and mixes its decoded MPEG audio into the frames the SCSP just
@@ -245,13 +336,14 @@ void Model2Sound::generate_audio(u32 host_cycles)
     if (m_dsb.present()) {
         m_dsb.run(host_cycles);
         m_dsb.mix(m_pending.data() + offset, static_cast<u32>(frames),
-                  m_scsp.sample_rate(), m_music_volume_percent);
+                  m_scsp.sample_rate(), m_music_volume_percent * m_dsb_output_gain / 100);
     }
     if (m_dsb2.present()) {
         m_dsb2.run(host_cycles);
         m_dsb2.mix(m_pending.data() + offset, static_cast<u32>(frames),
-                   m_scsp.sample_rate(), m_music_volume_percent);
+                   m_scsp.sample_rate(), m_music_volume_percent * m_dsb_output_gain / 100);
     }
+    if (m_m1_enabled) mix_m1(offset, host_cycles);
 
     const usize limit = kMaxPendingFrames * 2;
     if (m_pending.size() > limit) {
@@ -259,6 +351,49 @@ void Model2Sound::generate_audio(u32 host_cycles)
         m_counters.samples_dropped += excess / 2;
         m_pending.erase(m_pending.begin(),
                         m_pending.begin() + static_cast<std::ptrdiff_t>(excess));
+    }
+}
+
+void Model2Sound::mix_m1(usize offset, u32 host_cycles)
+{
+    m_m1->run(host_cycles);
+    const auto input = m_m1->pending_samples();
+    for (usize i = 0; i + 1 < input.size(); i += 2)
+        m_m1_samples.push_back(u32{static_cast<u16>(input[i])}
+            | (u32{static_cast<u16>(input[i + 1])} << 16));
+    m_m1->clear_pending_samples();
+    // Exact native rate is 25 MHz / 560, not the rounded rate reported by M1.
+    const u64 denominator = u64{560} * sample_rate();
+    for (usize i = offset; i + 1 < m_pending.size(); i += 2) {
+        if (m_m1_samples.size() < 2) break;
+        for (unsigned channel = 0; channel < 2; ++channel) {
+            const unsigned shift = channel * 16;
+            const s64 first = static_cast<s16>(m_m1_samples[0] >> shift);
+            const s64 second = static_cast<s16>(m_m1_samples[1] >> shift);
+            const s64 value = first + (second - first) * static_cast<s64>(m_m1_phase)
+                / static_cast<s64>(denominator);
+            m_pending[i + channel] = static_cast<s16>(std::clamp<s64>(
+                m_pending[i + channel] + value, -32768, 32767));
+        }
+        m_m1_phase += 25'000'000;
+        while (m_m1_phase >= denominator) {
+            m_m1_phase -= denominator;
+            if (!m_m1_samples.empty()) m_m1_samples.pop_front();
+        }
+    }
+}
+
+void Model2Sound::generate_sample()
+{
+    const usize offset = m_pending.size();
+    m_pending.resize(offset + 2);
+    m_scsp.generate(m_pending.data() + offset, 1);
+    if (m_scsp_output_gain != 100) {
+        for (usize i = offset; i < m_pending.size(); ++i) {
+            const s32 scaled = static_cast<s32>(m_pending[i])
+                * static_cast<s32>(m_scsp_output_gain) / 100;
+            m_pending[i] = static_cast<s16>(std::clamp(scaled, -32768, 32767));
+        }
     }
 }
 
@@ -310,6 +445,15 @@ Model2Sound::Window Model2Sound::resolve(u32 address)
     return {};
 }
 
+void Model2Sound::bus_wait(u32 address)
+{
+    if (address < kRamBase + kRamSize
+        || (address >= kScspBase && address < kScspBase + kScspSize)) {
+        const u32 contention = (kContentionCycles * m_scsp.active_slots() + 16) / 32;
+        m_cpu.stall(static_cast<s32>(kBusWaitCycles + contention));
+    }
+}
+
 void Model2Sound::snd_ctrl_write(u16 value)
 {
     ++m_counters.snd_ctrl_writes;
@@ -340,6 +484,7 @@ void Model2Sound::snd_ctrl_write(u16 value)
 u16 Model2Sound::read16(u32 address)
 {
     address &= kAddressMask;
+    bus_wait(address);
 
     if (const Window window = resolve(address); window.base != nullptr) {
         if (address >= kSamplesBase) {
@@ -377,56 +522,71 @@ void Model2Sound::apply_flat_gain(u16 gain)
 
 void Model2Sound::configure_balance(const std::string& game_name)
 {
-    // Upstream 0.9.7 per-set SCSP gain, in 1/256 units (256 == unity).
-    // This is a home-listening balance against Daytona, not a hardware claim.
+    m_balance_game_name = game_name;
     static const std::unordered_map<std::string, u16> kFlatGain = {
-        {"airwlkrs", 793}, {"bel", 1521}, {"desert", 254},
-        {"doa", 254}, {"doaa", 254}, {"doaab", 254}, {"doaae", 254}, {"doab", 254},
-        {"dynabb", 3019}, {"dynabb97", 1296},
-        {"dynamcop", 1792}, {"dynamcopb", 1792}, {"dynamcopc", 1792},
-        {"dyndeka2", 1792}, {"dyndeka2b", 1792},
+        {"airwlkrs", 793},
+        {"bel", 902},
+        {"desert", 254},
+        {"doa", 500}, {"doaa", 500}, {"doaab", 500}, {"doaae", 500}, {"doab", 500},
+        {"dynabb", 1751},
+        {"dynabb97", 1029},
+        {"dynamcop", 705}, {"dynamcopb", 705}, {"dynamcopc", 705},
+        {"dyndeka2", 705}, {"dyndeka2b", 705},
         {"fvipers", 403}, {"fvipersa", 403}, {"fvipersb", 403},
-        {"gunblade", 1050}, {"hotd", 2735}, {"hotdo", 2735}, {"hotdp", 2735},
-        {"hpyagu98", 1275},
-        {"indy500", 2602}, {"indy500d", 2602}, {"indy500to", 2602},
-        {"lastbrnx", 2736}, {"lastbrnxj", 2736}, {"lastbrnxu", 2736},
+        {"gunblade", 1000},
+        {"hotd", 1400}, {"hotdo", 1400}, {"hotdp", 1100},
+        {"hpyagu98", 925},
+        {"indy500", 2110}, {"indy500d", 2110}, {"indy500to", 2110},
+        {"lastbrnx", 2095}, {"lastbrnxj", 2095}, {"lastbrnxu", 2095},
         {"manxtt", 799}, {"manxttc", 799}, {"manxttdx", 799},
-        {"motoraid", 1632}, {"motoraiddx", 1632},
+        {"motoraid", 1239}, {"motoraiddx", 1239},
         {"overrev", 3892}, {"overrevb", 4022}, {"overrevba", 3852},
-        {"pltkids", 2770}, {"pltkidsa", 2770},
-        {"rchase2", 745}, {"rchase2a", 745}, {"schamp", 403}, {"sfight", 403},
-        {"segawski", 1353}, {"sgt24h", 6907}, {"skisuprg", 1323}, {"skytargt", 1592},
+        {"pltkids", 2673}, {"pltkidsa", 2673},
+        {"rchase2", 745}, {"rchase2a", 745},
+        {"schamp", 403}, {"sfight", 403},
+        {"segawski", 1095},
+        {"sgt24h", 2319},
+        {"skisuprg", 953},
+        {"skytargt", 927},
         {"srallyc", 739}, {"srallycb", 739}, {"srallycc", 739},
         {"srallycdx", 739}, {"srallycdxa", 739},
         {"stcc", 384}, {"stcca", 384}, {"stccb", 384}, {"stcco", 384},
         {"topskatr", 232}, {"topskatrj", 232}, {"topskatru", 232}, {"topskatruo", 232},
-        {"vcop", 321}, {"vcopa", 321}, {"vcop2", 641},
-        {"von", 1195}, {"vonj", 1195}, {"vonr", 1195}, {"vonu", 1195},
-        {"vstriker", 1576}, {"vstrikero", 1576}, {"waverunr", 1181},
-        {"zerogun", 1984}, {"zerogunj", 1984},
-        {"zeroguna", 2931}, {"zerogunaj", 2931},
+        {"vcop", 321}, {"vcopa", 321},
+        {"vcop2", 641},
+        {"vf2", 840}, {"vf2a", 840}, {"vf2b", 840}, {"vf2o", 840},
+        {"von", 1042}, {"vonj", 1042}, {"vonr", 1042}, {"vonu", 1042},
+        {"vstriker", 899}, {"vstrikero", 899},
+        {"waverunr", 1181},
+        {"zerogun", 1912}, {"zerogunj", 1912},
+        {"zeroguna", 2824}, {"zerogunaj", 2824},
     };
-
-    m_balance_profile_active = game_name == "vf2" || game_name == "vf2a"
-                            || game_name == "vf2b" || game_name == "vf2o";
-    if (m_balance_profile_active) {
-        constexpr float kVf2FamilyGain = 840.0f / 256.0f;
-        m_music_gain     = static_cast<u16>(51  * kVf2FamilyGain);
-        m_sfx_gain       = static_cast<u16>(256 * kVf2FamilyGain);
-        m_announcer_gain = static_cast<u16>(333 * kVf2FamilyGain);
-        m_voice_gain     = static_cast<u16>(410 * kVf2FamilyGain);
-    }
 
     const auto it = kFlatGain.find(game_name);
     m_flat_gain = it == kFlatGain.end() ? 256 : it->second;
-    apply_flat_gain(m_audio_balance_enabled ? m_flat_gain : u16{256});
+    m_dsb_balance_gain = game_name == "topskatr" || game_name == "topskatrj"
+        || game_name == "topskatru" || game_name == "topskatruo" ? 64 : 256;
+    m_balance_profile_active = false;
+    m_music_gain = m_sfx_gain = m_announcer_gain = m_voice_gain = 256;
+    apply_balance();
+}
+
+void Model2Sound::apply_balance()
+{
+    apply_flat_gain(m_audio_balance_enabled && m_scsp_gain_automatic ? m_flat_gain : u16{256});
+    m_dsb2.set_gain(m_audio_balance_enabled && m_dsb_gain_automatic ? m_dsb_balance_gain : u16{256});
 }
 
 void Model2Sound::set_audio_balance_enabled(bool enabled)
 {
-    if (m_audio_balance_enabled == enabled) return;
     m_audio_balance_enabled = enabled;
-    apply_flat_gain(enabled ? m_flat_gain : u16{256});
+    if (m_m1) m_m1->set_audio_balance_enabled(enabled);
+    apply_balance();
+}
+
+void Model2Sound::set_output_low_pass_enabled(bool enabled)
+{
+    m_scsp.set_output_low_pass_enabled(enabled);
 }
 
 void Model2Sound::set_music_volume_percent(unsigned percent)
@@ -434,34 +594,35 @@ void Model2Sound::set_music_volume_percent(unsigned percent)
     m_music_volume_percent = std::min(percent, 200u);
 }
 
-void Model2Sound::update_balance_gains()
+bool Model2Sound::has_audio_source(AudioSource source) const
 {
-    if (!m_audio_balance_enabled || !m_balance_profile_active) return;
+    return source == AudioSource::Scsp ? present()
+        : source == AudioSource::Dsb ? (m_dsb.present() || m_dsb2.present())
+        : source != AudioSource::MultiPcm2 && m_m1 && m_m1->has_audio_source(source);
+}
 
-    constexpr u32 kTable   = 0x2800;
-    constexpr u16 kSfxLo   = 0x100, kSfxHi = 0x13f;
-    constexpr u16 kAnnLo   = 0x140, kAnnHi = 0x161;
-    constexpr u16 kVoiceLo = 0x200, kVoiceHi = 0x26f;
-
-    u16 gains[32];
-    std::fill(std::begin(gains), std::end(gains), u16{256});
-    for (int entry = 0; entry < 32; ++entry) {
-        const u32 base = kTable + static_cast<u32>(entry) * 0x10;
-        if (base + 8 > m_ram.size() || m_ram[base + 2] == 0) continue;
-        const u32 slot = (u16(m_ram[base] << 8) | m_ram[base + 1]) / 0x20;
-        if (slot >= 32) continue;
-        const u16 sound = u16(m_ram[base + 6] << 8) | m_ram[base + 7];
-        if (sound >= kAnnLo && sound <= kAnnHi) gains[slot] = m_announcer_gain;
-        else if (sound >= kSfxLo && sound <= kSfxHi) gains[slot] = m_sfx_gain;
-        else if (sound >= kVoiceLo && sound <= kVoiceHi) gains[slot] = m_voice_gain;
-        else gains[slot] = m_music_gain;
+void Model2Sound::set_audio_source_gain(AudioSource source, unsigned percent, bool automatic)
+{
+    if (!has_audio_source(source)) return;
+    if (m_m1 && m_m1->has_audio_source(source)) {
+        m_m1->set_audio_source_gain(source, percent, automatic);
+        return;
     }
-    m_scsp.set_slot_gains(gains);
+    if (source == AudioSource::Scsp) {
+        m_scsp_output_gain = automatic ? 100 : std::min(percent, 200u);
+        m_scsp_gain_automatic = automatic;
+    }
+    if (source == AudioSource::Dsb) {
+        m_dsb_output_gain = automatic ? 100 : std::min(percent, 200u);
+        m_dsb_gain_automatic = automatic;
+    }
+    apply_balance();
 }
 
 void Model2Sound::write16(u32 address, u16 value)
 {
     address &= kAddressMask;
+    bus_wait(address);
 
     if (const Window window = resolve(address); window.base != nullptr) {
         if (!window.writable) {
@@ -500,6 +661,7 @@ u8 Model2Sound::read8(u32 address)
 void Model2Sound::write8(u32 address, u8 value)
 {
     const u32 masked = address & kAddressMask;
+    bus_wait(masked);
 
     // Plain memory takes the byte directly; anything with side effects has to be
     // told which lane was driven, because a byte write to a 16-bit register must

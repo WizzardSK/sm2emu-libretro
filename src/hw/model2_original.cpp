@@ -98,6 +98,8 @@ constexpr u32 kCpuControl      = 0x00e00000;  // 0x38 bytes of wait-state regist
 constexpr u32 kIrqRegs         = 0x00e80000;
 constexpr u32 kTimerRegs       = 0x00f00000;
 constexpr u32 kTileRam         = 0x01000000;  // 64 KB, mirror 0x110000
+/// Tile RAM wait states; Virtual On relies on its slow clear spanning a vblank.
+constexpr s32 kTileRamWaitCycles = 16;
 constexpr u32 kCharRam         = 0x01080000;  // 512 KB, mirror 0x100000
 constexpr u32 kPaletteRam      = 0x01800000;  // 16 KB
 constexpr u32 kColorXlat       = 0x01810000;  // 48 KB
@@ -150,6 +152,9 @@ bool Model2Original::init(const rom::GameSpec& game, rom::RomSet roms)
     }
 
     m_work_ram.assign(0x100000, 0);
+    // i960 instruction fetch straight from ROM and work RAM (the hot_read windows).
+    m_cpu.bind_fetch_window(0, kRomMainCpu, m_rom_maincpu.data(), m_rom_maincpu.size(), 0x200000);
+    m_cpu.bind_fetch_window(1, kWorkRam, m_work_ram.data(), m_work_ram.size(), 0x100000);
     m_scratch_ram.assign(0x20000, 0);
     m_buffer_ram.assign(0x20000 / 4, 0);
     m_tile_ram.assign(0x10000, 0);
@@ -253,6 +258,7 @@ bool Model2Original::init(const rom::GameSpec& game, rom::RomSet roms)
     // which is the whole connection.
     m_m1audio.attach(m_roms.region("m1audio:sndcpu"), m_roms.region("m1audio:pcm1"),
                      m_roms.region("m1audio:pcm2"));
+    m_m1audio.configure_balance(m_game.name);
     m_uart.set_tx_handler([this](u8 value) { m_m1audio.write_txd(value); });
     m_m1audio.set_rxd_handler([this](u8 value) { m_uart.write_rxd(value); });
     m_uart.set_ready_handler([this] { sound_ready_w(); });
@@ -662,6 +668,7 @@ Model2Original::Window Model2Original::resolve(u32 address)
         return window(m_buffer_ram, address & 0x1ffff, true, cpu::kBusFlagBurst);
     }
     if (in_mirrored(address, kTileRam, 0x10000, 0x110000)) {
+        m_cpu.add_wait_cycles(kTileRamWaitCycles);
         return window(m_tile_ram, address & 0xffff, true, cpu::kBusFlagBurst,
                       Notify::TileRam);
     }
@@ -1123,6 +1130,7 @@ u8* Model2Original::hot_write(u32 address, u32 width)
 
 u8 Model2Original::read8(u32 address)
 {
+    charge_area(address);
     if (has_maxx_pic() && address >= kMaxxPic && address < kMaxxPic + 0x10000) {
         return static_cast<u8>(maxx_read(address, 1));
     }
@@ -1136,6 +1144,7 @@ u8 Model2Original::read8(u32 address)
 
 u16 Model2Original::read16(u32 address)
 {
+    charge_area(address);
     if (has_maxx_pic() && address >= kMaxxPic && address < kMaxxPic + 0x10000) {
         return static_cast<u16>(maxx_read(address, 2));
     }
@@ -1151,8 +1160,17 @@ u16 Model2Original::read16(u32 address)
     return static_cast<u16>(register_read(address, 2) & 0xffff);
 }
 
+u32 Model2Original::fetch32(u32 address)
+{
+    m_fetching = true;
+    const u32 value = read32(address);
+    m_fetching = false;
+    return value;
+}
+
 u32 Model2Original::read32(u32 address)
 {
+    charge_area(address);
     if (has_maxx_pic() && address >= kMaxxPic && address < kMaxxPic + 0x10000) {
         return maxx_read(address, 4);
     }
@@ -1179,6 +1197,7 @@ u32 Model2Original::read32(u32 address)
 // read_dword_flags.
 std::pair<u8, u16> Model2Original::read8_flags(u32 address)
 {
+    charge_area(address);
     if (has_maxx_pic() && address >= kMaxxPic && address < kMaxxPic + 0x10000) {
         return {static_cast<u8>(maxx_read(address, 1)), cpu::kBusFlagNone};
     }
@@ -1222,6 +1241,7 @@ u16 Model2Original::write8_flags(u32 address, u8 value)
 
 std::pair<u32, u16> Model2Original::read32_flags(u32 address)
 {
+    charge_area(address);
     if (has_maxx_pic() && address >= kMaxxPic && address < kMaxxPic + 0x10000) {
         return {maxx_read(address, 4), cpu::kBusFlagNone};
     }
@@ -1246,6 +1266,7 @@ std::pair<u32, u16> Model2Original::read32_flags(u32 address)
 
 void Model2Original::write8(u32 address, u8 value)
 {
+    charge_area(address);
     if (u8* p = hot_write(address, 1)) {
         *p = value;
         return;
@@ -1264,6 +1285,7 @@ void Model2Original::write8(u32 address, u8 value)
 
 void Model2Original::write16(u32 address, u16 value)
 {
+    charge_area(address);
     if (u8* p = hot_write(address, 2)) {
         std::memcpy(p, &value, sizeof(value));
         return;
@@ -1282,6 +1304,7 @@ void Model2Original::write16(u32 address, u16 value)
 
 void Model2Original::write32(u32 address, u32 value)
 {
+    charge_area(address);
     if (u8* p = hot_write(address, 4)) {
         std::memcpy(p, &value, sizeof(value));
         return;
@@ -1300,6 +1323,7 @@ void Model2Original::write32(u32 address, u32 value)
 
 u16 Model2Original::write32_flags(u32 address, u32 value)
 {
+    charge_area(address);
     if (u8* p = hot_write(address, 4)) {
         std::memcpy(p, &value, sizeof(value));
         return cpu::kBusFlagBurst;

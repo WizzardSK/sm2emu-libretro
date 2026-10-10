@@ -79,7 +79,7 @@ bool load_state_from_buffer(const u8* data, usize size, const std::string& game,
         serialize(save_ar);
     }
 
-    Archive load_ar(data + payload_offset, size - payload_offset);
+    Archive load_ar(data + payload_offset, size - payload_offset, parsed.version);
     serialize(load_ar);
     if (load_ar.failed()) {
         SM2_ERROR("save-state: image is truncated or corrupt — rolling back");

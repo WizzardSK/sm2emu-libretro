@@ -19,7 +19,9 @@
 #include "rom/rom_set.h"
 
 #include <optional>
+#include <span>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace sm2::rom {
@@ -34,27 +36,39 @@ struct LoadResult {
 /// Reads a zip archive and assembles the ROM regions for whichever game it
 /// holds.
 ///
-/// By default games are identified by the CRC32 of their contents rather than
-/// by the archive's filename. That makes merged sets work: an archive holding
-/// several revisions resolves to whichever one it can satisfy completely, and
-/// a set renamed by the user still loads. Diagnostic callers may explicitly
-/// disable CRC verification and match chip filenames instead.
+/// Games are identified by CRC32-checked chips. A known archive name selects
+/// its set when all declared main-program chips match, even if other regions
+/// need a split parent. Unknown/renamed archives use the best whole-set score.
+/// Diagnostic callers may disable CRC verification and match filenames instead.
 class RomLoader {
 public:
+    /// Load only the requested regions, with every declared chip required.
+    /// Search the selected archive first, then the supplied sibling sets.
+    /// Used for optional alternate hardware without changing game identity.
+    [[nodiscard]] static std::optional<RomSet> load_regions(
+        const GameSpec& game, const std::string& archive_path,
+        std::span<const std::string_view> regions,
+        std::span<const std::string_view> sibling_sets);
+
     /// Assemble the ROMs in `archive_path`.
     ///
     /// When `preferred_game` is non-empty only that set is considered, which is
     /// how a specific revision inside a merged archive is selected. Otherwise
-    /// every definition is tried and the best match wins.
+    /// a known archive name with matching main-program chips takes precedence;
+    /// otherwise every definition is tried and the best whole-set match wins.
     ///
     /// Parent ROMs missing from a clone's archive are looked for in
     /// `<parent>.zip` beside it, matching the usual split-set layout.
+    /// Device archives may additionally be read from `device_directory` before
+    /// the sibling directory; the standalone default keeps the sibling-only
+    /// search. The path is supplied by the caller, not inferred from a frontend.
     /// `verify_crc=false` is a diagnostic fallback; ordinary callers retain
     /// the verified default.
     [[nodiscard]] static std::optional<LoadResult> load(const GameDatabase& database,
                                                         const std::string&  archive_path,
                                                         const std::string&  preferred_game = {},
-                                                        bool verify_crc = true);
+                                                        bool verify_crc = true,
+                                                        const std::string& device_directory = {});
 
     /// Assemble one region from already-extracted file contents.
     ///

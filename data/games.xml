@@ -81,7 +81,7 @@
   rather than buttons (MAME's daytona_gearbox_r). `start_gear` selects the
   initial gate position, from 0 (neutral) to 4. `drive_board="true"` marks one
   that latches force-feedback commands on port E. `drive_protocol` says how to
-  read them: "daytona" (the default), "stcc" or "rally".
+  read them: "daytona" (the default), "indy", "stcc" or "rally".
 
   `shift_buttons="true"` marks a title that shifts with two momentary buttons,
   Shift Up on IN1 0x10 and Shift Down on IN1 0x20, rather than the 0x70 gate
@@ -847,6 +847,9 @@
     <version>Revision A</version>
     <manufacturer>Sega</manufacturer>
     <year>1994</year>
+    <devices>
+      <device name="model1io"/>
+    </devices>
 
     <inputs>
       <input type="common"/>
@@ -860,8 +863,8 @@
       <channel index="2" control="brake" rest="0x00"/>
     </analog>
 
-    <!-- Model 1 I/O board Z80 firmware. Bundled into this archive (the
-         ioboard region below), so no separate device set is needed. -->
+    <!-- Model 1 I/O board Z80 firmware. Available in the game's archive or
+         in model1io.zip for a split set. -->
     <roms>
       <region name="ioboard" size="0x10000">
         <file name="epr-14869c.25" offset="0x000000" crc="0x24b68e64"/>
@@ -1266,6 +1269,9 @@
     <title>Desert Tank</title>
     <manufacturer>Sega / Martin Marietta</manufacturer>
     <year>1994</year>
+    <devices>
+      <device name="model1io"/>
+    </devices>
 
     <inputs>
       <input type="common"/>
@@ -1280,8 +1286,8 @@
       <channel index="2" control="sticky" rest="0x80"/>
     </analog>
 
-    <!-- Model 1 I/O board Z80 firmware. Bundled into this archive (the
-         ioboard region below), so no separate device set is needed. -->
+    <!-- Model 1 I/O board Z80 firmware. Available in the game's archive or
+         in model1io.zip for a split set. -->
     <roms>
       <region name="ioboard" size="0x10000">
         <file name="epr-14869c.25" offset="0x000000" crc="0x24b68e64"/>
@@ -2257,8 +2263,8 @@
 
     <!-- Lightgun calibration, from MAME's hotd input ports. The guns are 10-bit and arrive over RS-422
          channel 2, not through the analogue mux. -->
-    <!-- P2 trigger on IN2 (stock two-player layout), unlike Virtua Cop / Rail Chase which put it on IN1 bit 1. From MAME hotd input ports. -->
-    <lightgun p2_trigger="in2">
+    <!-- P2 trigger uses IN1 bit 1, corrected by upstream fa88f95. -->
+    <lightgun>
       <axis name="p1y" min="0x057" max="0x17c" rest="0x0e9"/>
       <axis name="p1x" min="0x0ad" max="0x254" rest="0x180"/>
       <axis name="p2y" min="0x057" max="0x17c" rest="0x0e9"/>
@@ -2542,7 +2548,7 @@
   </game>
 
 
-  <game name="indy500" drive_board="true" shift_buttons="true" board="model2b" start1="0x40" vr_buttons="in1:0x01,in1:0x02">
+  <game name="indy500" drive_board="true" drive_protocol="indy" shift_buttons="true" board="model2b" start1="0x40" vr_buttons="in1:0x01,in1:0x02">
     <title>INDY 500 Twin</title>
     <manufacturer>Sega</manufacturer>
     <year>1995</year>
@@ -3326,7 +3332,7 @@
   </game>
 
 
-  <game name="overrev" board="model2c" start1="0x40" shift_buttons="true" vr_buttons="in1:0x01,in1:0x02">
+  <game name="overrev" drive_board="true" drive_protocol="indy" board="model2c" start1="0x40" shift_buttons="true" vr_buttons="in1:0x01,in1:0x02">
     <title>Over Rev</title>
     <manufacturer>Jaleco</manufacturer>
     <year>1997</year>
@@ -3336,6 +3342,8 @@
       <input type="vehicle"/>
     </inputs>
 
+    <!-- Drive-board commands require HARDWARE TYPE = SEGA STCC in the
+         operator menu's Foundational Setting. NORMAL (2in1) has no force feedback. -->
     <!-- Analogue mux wiring, from MAME's model2c_state::overrev2c. -->
     <analog>
       <channel index="0" control="steer" rest="0x80"/>
@@ -5083,8 +5091,8 @@
       <axis name="p2x" min="0x080" max="0x273" rest="0x179"/>
     </lightgun>
 
-    <!-- Model 1 I/O board (type 2) Z80 firmware. Bundled into this
-         archive (the ioboard region below); no device set needed. -->
+    <!-- Model 1 I/O board (type 2) Z80 firmware. Available in the game's
+         archive or in model1io2.zip for a split set. -->
     <roms>
       <region name="ioboard" size="0x10000">
         <file name="epr-17181.6" offset="0x000000" crc="0x1add2b82"/>
@@ -5198,7 +5206,7 @@
   </game>
 
 
-  <game name="von" board="model2b">
+  <game name="von" board="model2b" texture_wait="37">
     <title>Cyber Troopers Virtual-On - Twin</title>
     <manufacturer>Sega</manufacturer>
     <year>1995</year>
@@ -5705,6 +5713,288 @@
       <region name="samples" size="0x400000" stride="2" chunk="2" byte_swap="true">
         <file name="mpr-20303.32" offset="0x000000" crc="0xc040973f"/>
         <file name="mpr-20304.33" offset="0x200000" crc="0x6decfe83"/>
+      </region>
+    </roms>
+  </game>
+
+
+
+  <game name="powsled" board="model2b" preliminary="true">
+    <title>Power Sled</title>
+    <manufacturer>Sega</manufacturer>
+    <year>1996</year>
+
+    <inputs>
+      <input type="common"/>
+    </inputs>
+
+    <!-- MAME's powsled machine config: each rider has a right and a left
+         handlebar on the analogue mux (P1 on 1 and 3, P2 on 5 and 7; 0 and 2
+         are the motion base). Each rider uses its own RetroPad triggers. -->
+    <analog>
+      <channel index="1" control="accel" rest="0x00"/>
+      <channel index="3" control="brake" rest="0x00"/>
+      <channel index="5" control="handlebar2_right" rest="0x00"/>
+      <channel index="7" control="handlebar2_left" rest="0x00"/>
+    </analog>
+
+    <roms>
+      <region name="maincpu" size="0x200000" stride="4" chunk="2">
+        <file name="epr-19470a.15" offset="0x000000" crc="0x8f28cc09"/>
+        <file name="epr-19471a.16" offset="0x000002" crc="0x01a013e3"/>
+        <!-- Reconstructed Main publishes its Ride color separately from role
+             0x0200. All Power Sled peers use it for the rider roster, both
+             cabinet counts and rider-packet mapping; command lookup retains
+             the native Main/Relay identities. Helpers use verified empty ROM
+             space. See Docs/POWER_SLED_MASTER_COLOR_2026-10-10.md. -->
+        <patch offset="0x14f90" value="0x81db370"/>
+        <patch offset="0x14ffc" value="0x81db344"/>
+        <patch offset="0x24a14" value="0x81cb7ec"/>
+        <patch offset="0xcd404" value="0x8122e3c"/>
+        <patch offset="0xcd45c" value="0x8122e24"/>
+        <patch offset="0x1f0200" value="0x80a56008"/>
+        <patch offset="0x1f0204" value="0x8e34820"/>
+        <patch offset="0x1f0240" value="0x885d1000"/>
+        <patch offset="0x1f0244" value="0x304ae00c"/>
+        <patch offset="0x1f0248" value="0x80a52008"/>
+        <patch offset="0x1f024c" value="0x8edd1bc"/>
+        <patch offset="0x1f0250" value="0x5ca0160b"/>
+        <patch offset="0x1f0254" value="0x8edd1b4"/>
+        <patch offset="0x1f0280" value="0x885d1000"/>
+        <patch offset="0x1f0284" value="0x304ae00c"/>
+        <patch offset="0x1f0288" value="0x80a52008"/>
+        <patch offset="0x1f028c" value="0x8edd1d4"/>
+        <patch offset="0x1f0290" value="0x5ca0160b"/>
+        <patch offset="0x1f0294" value="0x8edd1cc"/>
+        <patch offset="0x1f0300" value="0x885d5000"/>
+        <patch offset="0x1f0304" value="0x304ae00c"/>
+        <patch offset="0x1f0308" value="0x80a56008"/>
+        <patch offset="0x1f030c" value="0x8e24c88"/>
+        <patch offset="0x1f0310" value="0x5ca0160b"/>
+        <patch offset="0x1f0314" value="0x8e24c80"/>
+        <patch offset="0x1f0340" value="0x885d5000"/>
+        <patch offset="0x1f0344" value="0x304ae00c"/>
+        <patch offset="0x1f0348" value="0x80a56008"/>
+        <patch offset="0x1f034c" value="0x8e24cb4"/>
+        <patch offset="0x1f0350" value="0x5ca0160b"/>
+        <patch offset="0x1f0354" value="0x8e24cac"/>
+      </region>
+      <region name="main_data" size="0x2000000" stride="4" chunk="2">
+        <file name="fpr-19468.11" offset="0x000000" crc="0x56fae4e2"/>
+        <file name="fpr-19469.12" offset="0x000002" crc="0x5579c922"/>
+      </region>
+      <region name="polygons" size="0x1000000" stride="4" chunk="2">
+        <file name="fpr-19455.17" offset="0x000000" crc="0x165ee345"/>
+        <file name="fpr-19456.21" offset="0x000002" crc="0xc3b2e2c5"/>
+      </region>
+      <region name="textures" size="0x800000" stride="4" chunk="2">
+        <file name="fpr-19458.27" offset="0x000000" crc="0xf24acca2"/>
+        <file name="fpr-19457.25" offset="0x000002" crc="0x79d7e6fa"/>
+      </region>
+      <region name="copro_data" size="0x800000" stride="4" chunk="2" required="false"/>
+      <region name="audiocpu" size="0x80000" stride="2" chunk="2" byte_swap="true">
+        <file name="epr-19466.31" offset="0x000000" crc="0xc42892a5"/>
+      </region>
+      <region name="samples" size="0x800000" stride="2" chunk="2" byte_swap="true">
+        <file name="fpr-19459.32" offset="0x000000" crc="0xa424743f"/>
+      </region>
+    </roms>
+  </game>
+
+  <game name="powsledm" parent="powsled" board="model2b" preliminary="true">
+    <title>Power Sled</title>
+    <version>Main, hack of Relay</version>
+    <manufacturer>Sega</manufacturer>
+    <year>1996</year>
+
+    <inputs>
+      <input type="common"/>
+    </inputs>
+
+    <roms>
+      <region name="maincpu" size="0x200000" stride="4" chunk="2">
+        <file name="epr-19472a.15" offset="0x000000" crc="0x7a947eb7"/>
+        <file name="epr-19473a.16" offset="0x000002" crc="0x165d77ae"/>
+        <!-- MAME's init_powsledm: the Main unit was never dumped, so the Relay
+             program is switched to Main mode with node ID 0x200. -->
+        <patch offset="0x1571c" value="0x5ce81e01"/>
+        <patch offset="0x1584c" value="0x58a81989"/>
+        <patch offset="0x1585c" value="0xfffffdff"/>
+        <!-- Main's native role is 0x200. Its two identity captions must select
+             the operator's Ride color (settings byte 8), as Slave does, while
+             retaining the Main role for communication and operator commands. -->
+        <patch offset="0x152d4" value="0x80a03000"/>
+        <patch offset="0x152d8" value="0x01d00008"/>
+        <patch offset="0x245ac" value="0x80a03000"/>
+        <patch offset="0x245b0" value="0x01d00008"/>
+        <!-- The mode-selection drawing task also needs the operator's Ride
+             color: native role 0x200 otherwise selects no scene callback. -->
+        <patch offset="0x33790" value="0x80a03000"/>
+        <patch offset="0x33794" value="0x01d00008"/>
+        <!-- Main's first-person resources follow settings byte 8. The color
+             identity extension below now also makes its local race index
+             follow that Ride ID while preserving its native command role.
+             This byte-load helper occupies the original 12-byte zero gap. -->
+        <patch offset="0x3fae8" value="0x0900008c"/>
+        <patch offset="0x3fb0c" value="0x09000068"/>
+        <patch offset="0x3fb30" value="0x09000044"/>
+        <patch offset="0x3fb74" value="0x80a03000"/>
+        <patch offset="0x3fb78" value="0x01d00008"/>
+        <patch offset="0x3fb7c" value="0x0a000000"/>
+        <!-- Reconstructed Main publishes its Ride color separately from role
+             0x0200. All Power Sled peers use it for the rider roster, both
+             cabinet counts and rider-packet mapping; command lookup retains
+             the native Main/Relay identities. Helpers use verified empty ROM
+             space. See Docs/POWER_SLED_MASTER_COLOR_2026-10-10.md. -->
+        <patch offset="0x28b0" value="0x91ed750"/>
+        <patch offset="0x28b4" value="0x5ca81615"/>
+        <patch offset="0x14f90" value="0x81db370"/>
+        <patch offset="0x14ffc" value="0x81db344"/>
+        <patch offset="0x15844" value="0x80a03000"/>
+        <patch offset="0x15848" value="0x1d00008"/>
+        <patch offset="0x15868" value="0x5ca01614"/>
+        <patch offset="0x24a24" value="0x81cb7dc"/>
+        <patch offset="0xcd414" value="0x8122e2c"/>
+        <patch offset="0xcd46c" value="0x8122e14"/>
+        <patch offset="0x1f0000" value="0x80a03000"/>
+        <patch offset="0x1f0004" value="0x1d00008"/>
+        <patch offset="0x1f0008" value="0x8ca83000"/>
+        <patch offset="0x1f000c" value="0x434d0000"/>
+        <patch offset="0x1f0010" value="0x58a54394"/>
+        <patch offset="0x1f0014" value="0x92a03000"/>
+        <patch offset="0x1f0018" value="0x1a02008"/>
+        <patch offset="0x1f001c" value="0x88a83000"/>
+        <patch offset="0x1f0020" value="0x5293f0"/>
+        <patch offset="0x1f0024" value="0xa000000"/>
+        <patch offset="0x1f0200" value="0x80a56008"/>
+        <patch offset="0x1f0204" value="0x8e34830"/>
+        <patch offset="0x1f0240" value="0x885d1000"/>
+        <patch offset="0x1f0244" value="0x304ae00c"/>
+        <patch offset="0x1f0248" value="0x80a52008"/>
+        <patch offset="0x1f024c" value="0x8edd1cc"/>
+        <patch offset="0x1f0250" value="0x5ca0160b"/>
+        <patch offset="0x1f0254" value="0x8edd1c4"/>
+        <patch offset="0x1f0280" value="0x885d1000"/>
+        <patch offset="0x1f0284" value="0x304ae00c"/>
+        <patch offset="0x1f0288" value="0x80a52008"/>
+        <patch offset="0x1f028c" value="0x8edd1e4"/>
+        <patch offset="0x1f0290" value="0x5ca0160b"/>
+        <patch offset="0x1f0294" value="0x8edd1dc"/>
+        <patch offset="0x1f0300" value="0x885d5000"/>
+        <patch offset="0x1f0304" value="0x304ae00c"/>
+        <patch offset="0x1f0308" value="0x80a56008"/>
+        <patch offset="0x1f030c" value="0x8e24c88"/>
+        <patch offset="0x1f0310" value="0x5ca0160b"/>
+        <patch offset="0x1f0314" value="0x8e24c80"/>
+        <patch offset="0x1f0340" value="0x885d5000"/>
+        <patch offset="0x1f0344" value="0x304ae00c"/>
+        <patch offset="0x1f0348" value="0x80a56008"/>
+        <patch offset="0x1f034c" value="0x8e24cb4"/>
+        <patch offset="0x1f0350" value="0x5ca0160b"/>
+        <patch offset="0x1f0354" value="0x8e24cac"/>
+        <!-- Native panorama offsets also follow Main's rider color. -->
+        <patch offset="0x18c50" value="0x80a03000"/>
+        <patch offset="0x18c54" value="0x1d00008"/>
+        <patch offset="0x18c80" value="0x80a03000"/>
+        <patch offset="0x18c84" value="0x1d00008"/>
+        <patch offset="0x18cbc" value="0x80a03000"/>
+        <patch offset="0x18cc0" value="0x1d00008"/>
+      </region>
+      <region name="main_data" size="0x2000000" stride="4" chunk="2">
+        <file name="fpr-19468.11" offset="0x000000" crc="0x56fae4e2"/>
+        <file name="fpr-19469.12" offset="0x000002" crc="0x5579c922"/>
+      </region>
+      <region name="polygons" size="0x1000000" stride="4" chunk="2">
+        <file name="fpr-19455.17" offset="0x000000" crc="0x165ee345"/>
+        <file name="fpr-19456.21" offset="0x000002" crc="0xc3b2e2c5"/>
+      </region>
+      <region name="textures" size="0x800000" stride="4" chunk="2">
+        <file name="fpr-19458.27" offset="0x000000" crc="0xf24acca2"/>
+        <file name="fpr-19457.25" offset="0x000002" crc="0x79d7e6fa"/>
+      </region>
+      <region name="copro_data" size="0x800000" stride="4" chunk="2" required="false"/>
+      <!-- Main mode sends rider commands absent from the Relay sound tables.
+           Use the matched Slave sound pair: local chips first, parent fallback.
+           See Docs/POWER_SLED_MAIN_AUDIO_DIAGNOSIS_2026-10-09.md. -->
+      <region name="audiocpu" size="0x80000" stride="2" chunk="2" byte_swap="true">
+        <file name="epr-19466.31" offset="0x000000" crc="0xc42892a5"/>
+      </region>
+      <region name="samples" size="0x800000" stride="2" chunk="2" byte_swap="true">
+        <file name="fpr-19459.32" offset="0x000000" crc="0xa424743f"/>
+      </region>
+    </roms>
+  </game>
+
+  <game name="powsledr" parent="powsled" board="model2b" preliminary="true">
+    <title>Power Sled</title>
+    <version>Relay, Revision A</version>
+    <manufacturer>Sega</manufacturer>
+    <year>1996</year>
+
+    <inputs>
+      <input type="common"/>
+    </inputs>
+
+    <roms>
+      <region name="maincpu" size="0x200000" stride="4" chunk="2">
+        <file name="epr-19472a.15" offset="0x000000" crc="0x7a947eb7"/>
+        <file name="epr-19473a.16" offset="0x000002" crc="0x165d77ae"/>
+        <!-- Reconstructed Main publishes its Ride color separately from role
+             0x0200. All Power Sled peers use it for the rider roster, both
+             cabinet counts and rider-packet mapping; command lookup retains
+             the native Main/Relay identities. Helpers use verified empty ROM
+             space. See Docs/POWER_SLED_MASTER_COLOR_2026-10-10.md. -->
+        <patch offset="0x14f90" value="0x81db370"/>
+        <patch offset="0x14ffc" value="0x81db344"/>
+        <patch offset="0x24a24" value="0x81cb7dc"/>
+        <patch offset="0xcd414" value="0x8122e2c"/>
+        <patch offset="0xcd46c" value="0x8122e14"/>
+        <patch offset="0x1f0200" value="0x80a56008"/>
+        <patch offset="0x1f0204" value="0x8e34830"/>
+        <patch offset="0x1f0240" value="0x885d1000"/>
+        <patch offset="0x1f0244" value="0x304ae00c"/>
+        <patch offset="0x1f0248" value="0x80a52008"/>
+        <patch offset="0x1f024c" value="0x8edd1cc"/>
+        <patch offset="0x1f0250" value="0x5ca0160b"/>
+        <patch offset="0x1f0254" value="0x8edd1c4"/>
+        <patch offset="0x1f0280" value="0x885d1000"/>
+        <patch offset="0x1f0284" value="0x304ae00c"/>
+        <patch offset="0x1f0288" value="0x80a52008"/>
+        <patch offset="0x1f028c" value="0x8edd1e4"/>
+        <patch offset="0x1f0290" value="0x5ca0160b"/>
+        <patch offset="0x1f0294" value="0x8edd1dc"/>
+        <patch offset="0x1f0300" value="0x885d5000"/>
+        <patch offset="0x1f0304" value="0x304ae00c"/>
+        <patch offset="0x1f0308" value="0x80a56008"/>
+        <patch offset="0x1f030c" value="0x8e24c88"/>
+        <patch offset="0x1f0310" value="0x5ca0160b"/>
+        <patch offset="0x1f0314" value="0x8e24c80"/>
+        <patch offset="0x1f0340" value="0x885d5000"/>
+        <patch offset="0x1f0344" value="0x304ae00c"/>
+        <patch offset="0x1f0348" value="0x80a56008"/>
+        <patch offset="0x1f034c" value="0x8e24cb4"/>
+        <patch offset="0x1f0350" value="0x5ca0160b"/>
+        <patch offset="0x1f0354" value="0x8e24cac"/>
+      </region>
+      <region name="main_data" size="0x2000000" stride="4" chunk="2">
+        <file name="fpr-19468.11" offset="0x000000" crc="0x56fae4e2"/>
+        <file name="fpr-19469.12" offset="0x000002" crc="0x5579c922"/>
+      </region>
+      <region name="polygons" size="0x1000000" stride="4" chunk="2">
+        <file name="fpr-19455.17" offset="0x000000" crc="0x165ee345"/>
+        <file name="fpr-19456.21" offset="0x000002" crc="0xc3b2e2c5"/>
+      </region>
+      <region name="textures" size="0x800000" stride="4" chunk="2">
+        <file name="fpr-19458.27" offset="0x000000" crc="0xf24acca2"/>
+        <file name="fpr-19457.25" offset="0x000002" crc="0x79d7e6fa"/>
+      </region>
+      <region name="copro_data" size="0x800000" stride="4" chunk="2" required="false"/>
+      <region name="audiocpu" size="0x80000" stride="2" chunk="2" byte_swap="true">
+        <file name="epr-19467.31" offset="0x000000" crc="0x5e8b9763"/>
+      </region>
+      <region name="samples" size="0x800000" stride="2" chunk="2" byte_swap="true">
+        <file name="fpr-19460.32" offset="0x000000" crc="0x456967cc"/>
+        <file name="fpr-19461.34" offset="0x400000" crc="0x7b91d65b"/>
       </region>
     </roms>
   </game>

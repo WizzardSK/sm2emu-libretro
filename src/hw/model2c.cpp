@@ -97,6 +97,8 @@ constexpr u32 kCpuControl      = 0x00e00000;
 constexpr u32 kIrqRegs         = 0x00e80000;
 constexpr u32 kTimerRegs       = 0x00f00000;
 constexpr u32 kTileRam         = 0x01000000;  // 64 KB, mirror 0x110000
+/// Tile RAM wait states; Virtual On relies on its slow clear spanning a vblank.
+constexpr s32 kTileRamWaitCycles = 16;
 constexpr u32 kCharRam         = 0x01080000;  // 512 KB, mirror 0x100000
 constexpr u32 kPaletteRam      = 0x01800000;  // 16 KB
 constexpr u32 kColorXlat       = 0x01810000;  // 48 KB
@@ -171,6 +173,8 @@ CoproTgpx4::CoproTgpx4()
 
     m_fifo_out.set_on_full([this] { m_cpu.set_halted(true); });
     m_fifo_out.set_on_unfull([this] { m_cpu.set_halted(false); });
+
+    m_cpu.bind_program(m_program.data());
 }
 
 void CoproTgpx4::attach(std::span<const u32> data_rom, std::span<u32> buffer_ram)
@@ -354,6 +358,9 @@ bool Model2C::init(const rom::GameSpec& game, rom::RomSet roms)
 
     // Allocate RAM.
     m_work_ram.assign(0x100000, 0);
+    // i960 instruction fetch straight from ROM and work RAM (the hot_read windows).
+    m_cpu.bind_fetch_window(0, kRomMainCpu, m_rom_maincpu.data(), m_rom_maincpu.size(), 0x200000);
+    m_cpu.bind_fetch_window(1, kWorkRam, m_work_ram.data(), m_work_ram.size(), 0x100000);
     m_scratch_ram.assign(0x40000, 0);
     m_buffer_ram.assign(0x20000 / 4, 0);
     m_tile_ram.assign(0x10000, 0);
@@ -401,12 +408,6 @@ bool Model2C::init(const rom::GameSpec& game, rom::RomSet roms)
     m_rom_textures = m_roms.region("textures");
     m_geometry.attach(as_words(m_rom_polygons), as_halfwords(m_rom_textures),
                       m_buffer_ram);
-
-    // Top Skater's single-sided character model (ROM word offsets ~0x0013d9..
-    // 0x01bc2d) is exempted from backface culling; the environment starts ~0x022400.
-    if (game.name == "topskatr" || game.parent == "topskatr") {
-        m_geometry.set_double_sided_rom_range(0x00000000u, 0x00020000u);
-    }
 
     // Sound board.
     m_sound.attach(m_roms.region("audiocpu"), m_roms.region("samples"));
@@ -899,6 +900,7 @@ Model2C::Window Model2C::resolve(u32 address)
         return window(m_buffer_ram, address & 0x1ffff, true, cpu::kBusFlagBurst);
     }
     if (in_mirrored(address, kTileRam, 0x10000, 0x110000)) {
+        m_cpu.add_wait_cycles(kTileRamWaitCycles);
         return window(m_tile_ram, address & 0xffff, true, cpu::kBusFlagBurst,
                       Notify::TileRam);
     }
@@ -939,10 +941,12 @@ Model2C::Window Model2C::resolve(u32 address)
     // Plain memory, as on 2B: only the original and 2A boards decode texture RAM
     // through the halfword-packing write handler.
     if (address >= kTextureRam0 && address < kTextureRam0 + 0x200000) {
+        m_cpu.add_wait_cycles(static_cast<s32>(m_game.texture_wait));
         return window(m_texture_ram0, address - kTextureRam0, true, cpu::kBusFlagBurst,
                       Notify::TextureRam);
     }
     if (address >= kTextureRam1 && address < kTextureRam1 + 0x200000) {
+        m_cpu.add_wait_cycles(static_cast<s32>(m_game.texture_wait));
         return window(m_texture_ram1, address - kTextureRam1, true, cpu::kBusFlagBurst,
                       Notify::TextureRam);
     }
@@ -1329,6 +1333,7 @@ u8* Model2C::hot_write(u32 address, u32 width)
 
 u8 Model2C::read8(u32 address)
 {
+    charge_area(address);
     if (const u8* p = hot_read(address, 1)) return *p;
     const Window w = resolve(address);
     if (w.base != nullptr) return *w.base;
@@ -1337,6 +1342,7 @@ u8 Model2C::read8(u32 address)
 
 u16 Model2C::read16(u32 address)
 {
+    charge_area(address);
     if (const u8* p = hot_read(address, 2)) {
         u16 v;
         std::memcpy(&v, p, sizeof(v));
@@ -1347,8 +1353,17 @@ u16 Model2C::read16(u32 address)
     return static_cast<u16>(register_read(address, 2) & 0xffff);
 }
 
+u32 Model2C::fetch32(u32 address)
+{
+    m_fetching  = true;
+    const u32 v = read32(address);
+    m_fetching  = false;
+    return v;
+}
+
 u32 Model2C::read32(u32 address)
 {
+    charge_area(address);
     if (const u8* p = hot_read(address, 4)) {
         u32 v;
         std::memcpy(&v, p, sizeof(v));
@@ -1370,6 +1385,7 @@ u32 Model2C::read32(u32 address)
 // read_dword_flags.
 std::pair<u8, u16> Model2C::read8_flags(u32 address)
 {
+    charge_area(address);
     if (const u8* p = hot_read(address, 1)) return {*p, cpu::kBusFlagBurst};
     const Window w = resolve(address);
     if (w.base != nullptr) {
@@ -1410,6 +1426,7 @@ u16 Model2C::write8_flags(u32 address, u8 value)
 
 std::pair<u32, u16> Model2C::read32_flags(u32 address)
 {
+    charge_area(address);
     if (const u8* p = hot_read(address, 4)) {
         u32 v;
         std::memcpy(&v, p, sizeof(v));
@@ -1427,6 +1444,7 @@ std::pair<u32, u16> Model2C::read32_flags(u32 address)
 
 void Model2C::write8(u32 address, u8 value)
 {
+    charge_area(address);
     if (u8* p = hot_write(address, 1)) {
         *p = value;
         return;
@@ -1443,6 +1461,7 @@ void Model2C::write8(u32 address, u8 value)
 
 void Model2C::write16(u32 address, u16 value)
 {
+    charge_area(address);
     if (u8* p = hot_write(address, 2)) {
         std::memcpy(p, &value, sizeof(value));
         return;
@@ -1459,6 +1478,7 @@ void Model2C::write16(u32 address, u16 value)
 
 void Model2C::write32(u32 address, u32 value)
 {
+    charge_area(address);
     if (u8* p = hot_write(address, 4)) {
         std::memcpy(p, &value, sizeof(value));
         return;
@@ -1475,6 +1495,7 @@ void Model2C::write32(u32 address, u32 value)
 
 u16 Model2C::write32_flags(u32 address, u32 value)
 {
+    charge_area(address);
     if (u8* p = hot_write(address, 4)) {
         std::memcpy(p, &value, sizeof(value));
         return cpu::kBusFlagBurst;

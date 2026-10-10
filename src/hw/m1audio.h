@@ -67,6 +67,8 @@ public:
                 std::span<const u8> pcm1,
                 std::span<const u8> pcm2);
 
+    void configure_balance(const std::string& game_name);
+    void set_audio_balance_enabled(bool enabled) override { m_audio_balance_enabled = enabled; }
     void reset();
 
     /// Advance the board by the equivalent of `host_cycles` of the host i960's
@@ -91,6 +93,8 @@ public:
     [[nodiscard]] u32  sample_rate() const override;
     [[nodiscard]] bool present() const override { return !m_program_rom.empty(); }
     [[nodiscard]] u32  active_voices() const override;
+    [[nodiscard]] bool has_audio_source(AudioSource source) const override;
+    void set_audio_source_gain(AudioSource source, unsigned percent, bool automatic = false) override;
 
     // -- cpu::Bus ------------------------------------------------------------
     //
@@ -170,6 +174,10 @@ private:
     u64 m_cycle_overshoot = 0;
 
     std::vector<s16> m_pending;
+    unsigned m_source_gain[3] = {100, 100, 100};
+    bool m_source_automatic[3] = {true, true, true};
+    bool m_audio_balance_enabled = true;
+    s32 m_balance_gain = 256;
 
     Counters m_counters;
     bool     m_warned_no_program = false;

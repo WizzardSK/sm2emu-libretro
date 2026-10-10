@@ -30,6 +30,22 @@ constexpr int kMaxFrame = 0x1000;
 
 }  // namespace
 
+void LoopbackTransport::serialize(Archive& ar)
+{
+    u32 count = static_cast<u32>(m_queue.size());
+    ar.raw(count);
+    if (count > kDepth || ar.failed()) { ar.invalidate(); return; }
+    if (ar.loading()) m_queue.clear();
+    for (u32 i = 0; i < count; ++i) {
+        u32 size = ar.saving() ? static_cast<u32>(m_queue[i].size()) : 0;
+        ar.raw(size);
+        if (size > kMaxFrame || ar.failed()) { ar.invalidate(); return; }
+        if (ar.loading()) m_queue.emplace_back(size);
+        ar.bytes(m_queue[i].data(), size);
+    }
+    ar.raw(m_overflowed);
+}
+
 M2Comm::M2Comm()
     : m_transport(std::make_unique<LoopbackTransport>())
 {
@@ -79,6 +95,21 @@ void M2Comm::serialize(Archive& ar)
     ar.raw(m_frame_sync);
     ar.raw(m_frame_offset);
     ar.bytes(m_buffer.data(), m_buffer.size());
+    auto* loopback = dynamic_cast<LoopbackTransport*>(m_transport.get());
+    if (ar.format_version() >= 8) {
+        bool local = loopback != nullptr;
+        ar.raw(local);
+        if (ar.loading() && local != (loopback != nullptr)) {
+            ar.invalidate();
+            return;
+        }
+        if (local) loopback->serialize(ar);
+    } else if (ar.loading() && loopback) {
+        // Older states omitted the queue. Discard future messages; its original
+        // contents cannot be reconstructed from the archived registers.
+        loopback->reset();
+    }
+
 }
 
 void M2Comm::cn_write(u8 value)
@@ -168,7 +199,8 @@ void M2Comm::tick()
     // looks at shared[1] and falls back on the flip gate.
     const bool is_master = (m_fg == 0x01 || shared(0x01) == 0x01);
     const bool is_slave  = (m_fg == 0x00 && shared(0x01) == 0x02);
-    const bool is_relay  = (m_fg == 0x00 && shared(0x01) == 0x00);
+    const bool counted_relay = (m_counted_relay && m_fg == 0x00 && shared(0x01) == 0x03);
+    const bool is_relay  = (m_fg == 0x00 && shared(0x01) == 0x00) || counted_relay;
 
     if (m_linkalive == 0x02) {
         set_shared(0, 0xff);
@@ -199,12 +231,12 @@ void M2Comm::tick()
                     m_linkcount = m_buffer[1];
                     m_linktimer = 0x00;
                 } else {
-                    if (is_slave) m_buffer[1]++;
+                    if (is_slave || counted_relay) m_buffer[1]++;
                     send_frame(data_size);
                 }
             } else if (idx == 0xfe) {
                 // Ring size, which is what settles the link.
-                if (is_slave) {
+                if (is_slave || counted_relay) {
                     m_linkid    = m_buffer[1];
                     m_linkcount = m_buffer[2];
                     m_buffer[1]--;
@@ -257,7 +289,10 @@ void M2Comm::tick()
                         set_shared(u32(frame_offset + j), m_buffer[std::size_t(1 + j)]);
                     }
                     m_zfg ^= 0x01;
-                    if (is_slave) {
+                    if (is_slave || counted_relay) {
+                        // A counted Manx TT Relay has its own native status
+                        // slot. Prepend it to the received slot train; pure
+                        // forwarding loses this node during race selection.
                         send_data(m_linkid, kFrameStart, frame_size, data_size);
                     } else if (is_relay) {
                         send_frame(data_size);
@@ -298,7 +333,8 @@ void M2Comm::read_fg()
 
     const bool is_master = (m_fg == 0x01 || shared(0x01) == 0x01);
     const bool is_slave  = (m_fg == 0x00 && shared(0x01) == 0x02);
-    const bool is_relay  = (m_fg == 0x00 && shared(0x01) == 0x00);
+    const bool counted_relay = (m_counted_relay && m_fg == 0x00 && shared(0x01) == 0x03);
+    const bool is_relay  = (m_fg == 0x00 && shared(0x01) == 0x00) || counted_relay;
 
     do {
         int recv = read_frame(data_size);
@@ -309,7 +345,7 @@ void M2Comm::read_fg()
                     set_shared(u32(frame_offset + j), m_buffer[std::size_t(1 + j)]);
                 }
                 m_zfg ^= 0x01;
-                if (is_slave) {
+                if (is_slave || counted_relay) {
                     send_data(m_linkid, kFrameStart, frame_size, data_size);
                 } else if (is_relay) {
                     send_frame(data_size);

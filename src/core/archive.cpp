@@ -27,10 +27,11 @@ static_assert(std::endian::native == std::endian::little,
 
 namespace sm2 {
 
-Archive::Archive(std::vector<u8>& buffer) : m_mode(Mode::Save), m_out(&buffer) {}
+Archive::Archive(std::vector<u8>& buffer, u32 format_version)
+    : m_mode(Mode::Save), m_format_version(format_version), m_out(&buffer) {}
 
-Archive::Archive(const u8* data, usize size)
-    : m_mode(Mode::Load), m_in(data), m_in_size(size)
+Archive::Archive(const u8* data, usize size, u32 format_version)
+    : m_mode(Mode::Load), m_format_version(format_version), m_in(data), m_in_size(size)
 {
 }
 
@@ -136,13 +137,14 @@ bool read_header(const u8* data, usize size, Header& out, usize& payload_offset)
         SM2_ERROR("save-state: truncated header (no version)");
         return false;
     }
-    if (version != kFormatVersion) {
+    if (version != kFormatVersion && version != 9 && version != 8 && version != 7 && version != 6 && version != 5 && version != 4) {
         SM2_ERROR("save-state: format version %u, this build reads %u; the file "
                   "is from a different version and cannot be loaded",
                   version, kFormatVersion);
         return false;
     }
 
+    out.version = version;
     u32 game_len = 0;
     ar.raw(game_len);
     if (ar.failed()) {

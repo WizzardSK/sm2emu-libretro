@@ -35,16 +35,20 @@
 
 namespace sm2 {
 
+namespace state {
+inline constexpr u32 kFormatVersion = 10;
+}
+
 class Archive {
 public:
     enum class Mode { Save, Load };
 
     /// Save mode: writes go into `buffer`, growing it.
-    explicit Archive(std::vector<u8>& buffer);
+    explicit Archive(std::vector<u8>& buffer, u32 format_version = state::kFormatVersion);
 
     /// Load mode: reads come from `data`/`size`, bounds-checked. A read past
     /// the end sets `failed()` and yields zeroes rather than reading OOB.
-    Archive(const u8* data, usize size);
+    Archive(const u8* data, usize size, u32 format_version = state::kFormatVersion);
 
     [[nodiscard]] bool saving() const { return m_mode == Mode::Save; }
     [[nodiscard]] bool loading() const { return m_mode == Mode::Load; }
@@ -80,6 +84,8 @@ public:
     /// every subsequent read is a no-op yielding zeroes, so the top level can
     /// check it once after the whole payload rather than per field.
     [[nodiscard]] bool failed() const { return m_failed; }
+    void invalidate() { m_failed = true; }
+    [[nodiscard]] u32 format_version() const { return m_format_version; }
 
     /// Bytes written so far (Save) or consumed so far (Load).
     [[nodiscard]] usize position() const { return m_pos; }
@@ -88,6 +94,7 @@ private:
     void transfer(void* data, usize num_bytes);
 
     Mode m_mode;
+    u32 m_format_version = state::kFormatVersion;
 
     // Save: the growable output. Load: leave null.
     std::vector<u8>* m_out = nullptr;
@@ -124,13 +131,18 @@ namespace state {
 inline constexpr char     kMagic[8]      = {'S', 'M', '2', 'S', 'T', 'A', 'T', 'E'};
 // Version 4 separates the serial lightgun off-screen status from its coordinates.
 // Version 3 added the Air Walkers P3/P4 input matrix state.
-inline constexpr u32      kFormatVersion = 4;
+// Version 6 adds upstream SCSP filter history and DSB2 loop state.
+// Version 5 changes the sound scheduler fields; version 4 remains readable.
+// Version 9 adds alternate sound ROM-bank identity and optional Model 1 audio
+// board CPU/chips/UART plus its exact-rate output resampler.
+// Version 10 adds the Manx TT Deluxe AMS acknowledgement state on Model 2A.
 
 /// Header fields, in file order. The game name and board are supplied by the
 /// caller so this stays free of the rom layer.
 struct Header {
     std::string game;
     u32         board = 0;
+    u32         version = kFormatVersion;
 };
 
 /// Write the header into `ar` (must be Save mode). Follows with the caller's
@@ -139,10 +151,10 @@ void write_header(Archive& ar, const Header& header);
 
 /// Read and validate a header from a raw file buffer. Returns true and fills
 /// `out` and `payload_offset` (the byte index where the payload begins) only
-/// when the magic and version match; otherwise logs a reason and returns false.
+/// when the magic and a supported version match; otherwise logs a reason and returns false.
 /// Game/board matching against the running machine is the caller's job (it
 /// alone knows them) — this only guarantees the file is a well-formed state of
-/// the current format version.
+/// a supported format version (4 through 10).
 [[nodiscard]] bool read_header(const u8* data, usize size, Header& out,
                                usize& payload_offset);
 

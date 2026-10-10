@@ -33,6 +33,8 @@
 
 namespace sm2::hw {
 
+enum class AudioSource { Scsp, Dsb, MultiPcm1, MultiPcm2, Ym3438 };
+
 class SoundBoard {
 public:
     virtual ~SoundBoard() = default;
@@ -63,6 +65,13 @@ public:
     /// Scale the separate MPEG music board, where present. Other sound boards
     /// have no distinct music path and keep their native output unchanged.
     virtual void set_music_volume_percent(unsigned) {}
+
+    /// Optional output filtering on boards containing an SCSP.
+    virtual void set_output_low_pass_enabled(bool) {}
+
+    /// Frontend output gain. Zero mutes the source while its emulation advances.
+    [[nodiscard]] virtual bool has_audio_source(AudioSource) const { return false; }
+    virtual void set_audio_source_gain(AudioSource, unsigned, bool = false) {}
 };
 
 }  // namespace sm2::hw

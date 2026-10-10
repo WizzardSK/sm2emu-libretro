@@ -33,9 +33,13 @@
 #include "hw/scsp_dsp.h"
 #include "hw/dsbz80.h"
 #include "hw/dsb2.h"
+#include "hw/m1audio.h"
 #include "hw/sound_board.h"
 
 #include <span>
+#include <array>
+#include <deque>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -55,6 +59,18 @@ public:
     /// nothing, which keeps a synthetic machine in the tests usable.
     void attach(std::span<const u8> program_rom, std::span<const u8> samples);
 
+    /// Optional alternate sound ROM banks. Bank zero is the selected set.
+    /// The caller owns ROM storage for the lifetime of the board.
+    void set_configuration(unsigned bank, std::span<const u8> program,
+                           std::span<const u8> samples);
+    [[nodiscard]] bool select_configuration(unsigned bank);
+    [[nodiscard]] unsigned configuration() const { return m_configuration; }
+    void attach_m1(std::span<const u8> program, std::span<const u8> samples);
+    void set_m1_enabled(bool enabled);
+    [[nodiscard]] bool m1_enabled() const { return m_m1_enabled; }
+    [[nodiscard]] const M1Audio* auxiliary_m1() const { return m_m1.get(); }
+    [[nodiscard]] M1Audio* auxiliary_m1() { return m_m1.get(); }
+
     /// Attach the Z80 Digital Sound Board's ROMs, for the sets that carry one
     /// (Sega Touring Car and other DSB titles). The board plays the music as
     /// MPEG audio; its output mixes into this board's stream. Absent for most
@@ -68,10 +84,13 @@ public:
 
     void reset();
 
-    /// Select the upstream 0.9.7 balance profile for this ROM set.
+    /// Select the upstream balance profile for this ROM set.
     void configure_balance(const std::string& game_name);
     void set_audio_balance_enabled(bool enabled) override;
+    void set_output_low_pass_enabled(bool enabled) override;
     void set_music_volume_percent(unsigned percent) override;
+    [[nodiscard]] bool has_audio_source(AudioSource source) const override;
+    void set_audio_source_gain(AudioSource source, unsigned percent, bool automatic = false) override;
 
     /// Advance the board by the sound-clock equivalent of `host_cycles` of the
     /// host i960's 25 MHz clock.
@@ -103,7 +122,9 @@ public:
     /// SCSP slots currently keyed on. The Model 1 board counts MultiPCM channels
     /// instead; neither number means anything precise, they just say whether the
     /// board is making noise.
-    [[nodiscard]] u32 active_voices() const override { return m_scsp.active_slots(); }
+    [[nodiscard]] u32 active_voices() const override {
+        return m_scsp.active_slots() + (m_m1_enabled ? m_m1->active_voices() : 0);
+    }
 
     // -- cpu::Bus ----------------------------------------------------------
     //
@@ -144,8 +165,8 @@ public:
     [[nodiscard]] const Scsp& scsp() const { return m_scsp; }
     [[nodiscard]] std::span<const u8> ram() const { return m_ram; }
 
-    /// Save/restore the whole sound board: the 68000, the SCSP, both MPEG
-    /// boards, the 512 KB work RAM, banking, balance gains and clock carries.
+    /// Save/restore the whole sound board: the 68000, SCSP, MPEG boards,
+    /// optional M1 board/resampler, ROM-bank identity, work RAM and clocks.
     /// The program/sample ROM spans and the pending-sample scratch are
     /// excluded. Between-frames only.
     void serialize(Archive& ar);
@@ -162,15 +183,36 @@ private:
 
     void snd_ctrl_write(u16 value);
 
-    /// Generate the SCSP's share of `host_cycles` worth of samples.
-    void generate_audio(u32 host_cycles);
+    /// Charge RAM/SCSP bus waits to the currently executing 68000 instruction.
+    void bus_wait(u32 address);
 
-    void update_balance_gains();
+    /// Generate the next sample synchronously with the 68000 sample phase.
+    void generate_sample();
+
+    void apply_balance();
     void apply_flat_gain(u16 gain);
+    void reset_m1_mixer();
+    void mix_m1(usize offset, u32 host_cycles);
 
+    struct Configuration { std::span<const u8> program, samples; };
+    std::array<Configuration, 3> m_configurations{};
+    unsigned m_configuration = 0;
+    std::unique_ptr<M1Audio> m_m1;
+    bool m_m1_enabled = false;
+    Scsp::MidiOutHandler m_midi_out_handler;
+    std::deque<u32> m_m1_samples;
+    u64 m_m1_phase = 0;
+
+    std::string m_balance_game_name;  // Metadata, excluded from the archive.
+    bool m_scsp_gain_automatic = true;
+    bool m_dsb_gain_automatic = true;
+    u16 m_dsb_balance_gain = 256;
+    // Legacy archive fields retained for published Save State compatibility.
     bool     m_balance_profile_active = false;
     bool     m_audio_balance_enabled  = true;
     unsigned m_music_volume_percent   = 100;
+    unsigned m_scsp_output_gain        = 100;
+    unsigned m_dsb_output_gain         = 100;
     u16      m_flat_gain              = 256;
     u16      m_music_gain             = 256;
     u16      m_sfx_gain               = 256;
@@ -202,10 +244,11 @@ private:
 
     u64 m_cycle_debt = 0;  ///< Numerator carried between run() calls.
 
-    /// Sound cycles the last slice ran past its allowance, owed to the next one.
-    u64 m_cycle_overshoot = 0;
+    /// Granted cycles; negative after an instruction overruns its slice.
+    s64 m_cycle_budget = 0;
 
-    u64 m_sample_debt = 0;  ///< Numerator for the 44100 Hz sample clock.
+    /// 68000 cycles elapsed in the most recently generated SCSP sample.
+    u64 m_sample_phase = 0;
 
     std::vector<s16> m_pending;
 

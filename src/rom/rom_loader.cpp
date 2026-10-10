@@ -581,10 +581,56 @@ std::optional<std::vector<u8>> RomLoader::assemble_region(
 // Loading
 // ---------------------------------------------------------------------------
 
+std::optional<RomSet> RomLoader::load_regions(
+    const GameSpec& game, const std::string& archive_path,
+    std::span<const std::string_view> regions,
+    std::span<const std::string_view> sibling_sets)
+{
+    ArchiveSet archives;
+    if (!archives.open(archive_path)) return std::nullopt;
+    const auto complete = [&] {
+        return std::all_of(regions.begin(), regions.end(), [&](std::string_view name) {
+            const auto* region = game.region(std::string(name));
+            return region && !region->files.empty()
+                && std::all_of(region->files.begin(), region->files.end(),
+                    [&](const FileSpec& file) { return archives.find(file, true) != nullptr; });
+        });
+    };
+    const auto directory = std::filesystem::path(archive_path).parent_path();
+    for (std::string_view set : sibling_sets) {
+        if (complete()) break;
+        if (set.empty() || set.find_first_of("/\\") != std::string_view::npos) continue;
+        for (const char* extension : {".zip", ".7z"}) {
+            const auto path = directory / (std::string(set) + extension);
+            std::error_code error;
+            if (std::filesystem::is_regular_file(path, error)
+                && path != std::filesystem::path(archive_path)) {
+                if (!archives.open(path.string())) return std::nullopt;
+                break;
+            }
+        }
+    }
+    if (!complete()) return std::nullopt;
+    RomSet result;
+    for (std::string_view name : regions) {
+        const auto& region = *game.region(std::string(name));
+        std::vector<std::vector<u8>> contents(region.files.size());
+        for (usize i = 0; i < region.files.size(); ++i) {
+            const auto* entry = archives.find(region.files[i], true);
+            if (!entry || !archives.extract(*entry, &contents[i])) return std::nullopt;
+        }
+        auto bytes = assemble_region(region, contents);
+        if (!bytes) return std::nullopt;
+        result.add(region.name, std::move(*bytes));
+    }
+    return result;
+}
+
 std::optional<LoadResult> RomLoader::load(const GameDatabase& database,
                                           const std::string&  archive_path,
                                           const std::string&  preferred_game,
-                                          bool verify_crc)
+                                          bool verify_crc,
+                                          const std::string& device_directory)
 {
     std::error_code error;
     if (!std::filesystem::exists(archive_path, error)) {
@@ -612,8 +658,23 @@ std::optional<LoadResult> RomLoader::load(const GameDatabase& database,
     } else {
         const GameSpec* best       = nullptr;
         MatchScore      best_score;
+        const auto archive_name = std::filesystem::path(archive_path).stem().string();
+
+        // A named set with verified main-program chips remains identifiable
+        // when other regions need the split parent archive. In particular Main
+        // and Relay can share program chips but select different patches/audio.
+        const GameSpec* named = database.find(archive_name);
+        const RegionSpec* program = named ? named->region("maincpu") : nullptr;
+        const bool named_program = program && !program->files.empty()
+            && std::all_of(program->files.begin(), program->files.end(),
+                [&](const FileSpec& file) { return archives.find(file, verify_crc) != nullptr; });
+        if (named_program) {
+            best = named;
+            best_score = score_game(archives, *named, verify_crc);
+        }
 
         for (const GameSpec& candidate : database.games()) {
+            if (named_program) break;
             const MatchScore score = score_game(archives, candidate, verify_crc);
             if (score.found == 0) {
                 continue;
@@ -622,11 +683,19 @@ std::optional<LoadResult> RomLoader::load(const GameDatabase& database,
                       score.found, score.missing);
 
             // A complete match always beats an incomplete one; between two of
-            // the same completeness, more matched chips wins.
+            // the same completeness, more matched chips wins. An exact tie
+            // uses the archive name: some sets share all chips but apply
+            // different program patches (Power Sled Main and Relay).
             const bool better = best == nullptr
                              || (score.complete() && !best_score.complete())
                              || (score.complete() == best_score.complete()
-                                 && score.found > best_score.found);
+                                 && score.found > best_score.found)
+                             || (best != nullptr
+                                 && score.complete() == best_score.complete()
+                                 && score.found == best_score.found
+                                 && score.missing == best_score.missing
+                                 && candidate.name == archive_name
+                                 && best->name != archive_name);
             if (better) {
                 best       = &candidate;
                 best_score = score;
@@ -643,7 +712,8 @@ std::optional<LoadResult> RomLoader::load(const GameDatabase& database,
                   "none of the expected names were found.");
             return std::nullopt;
         }
-        if (!best_score.complete()) {
+        // Parent and device archives can supply the missing chips during assembly.
+        if (!best_score.complete() && best->parent.empty() && best->device_sets.empty()) {
             SM2_WARN("'%s' looks like '%s' but %u required file(s) are missing",
                      archive_path.c_str(), best->name.c_str(), best_score.missing);
         }
@@ -652,10 +722,9 @@ std::optional<LoadResult> RomLoader::load(const GameDatabase& database,
 
     // A sibling archive named `stem`, preferring zip but accepting 7z, because
     // either format turns up in the wild for both parent sets and device sets.
-    const auto find_sibling_archive =
-        [&archive_path](const std::string& stem) -> std::optional<std::filesystem::path> {
-        const std::filesystem::path directory =
-            std::filesystem::path(archive_path).parent_path();
+    const auto find_archive =
+        [](const std::filesystem::path& directory,
+           const std::string& stem) -> std::optional<std::filesystem::path> {
         for (const char* extension : {".zip", ".7z"}) {
             std::error_code exists_error;
             const std::filesystem::path candidate = directory / (stem + extension);
@@ -664,6 +733,11 @@ std::optional<LoadResult> RomLoader::load(const GameDatabase& database,
             }
         }
         return std::nullopt;
+    };
+    const std::filesystem::path sibling_directory =
+        std::filesystem::path(archive_path).parent_path();
+    const auto find_sibling_archive = [&](const std::string& stem) {
+        return find_archive(sibling_directory, stem);
     };
 
     // -- open the parent archive if needed ---------------------------------
@@ -686,21 +760,31 @@ std::optional<LoadResult> RomLoader::load(const GameDatabase& database,
     }
 
     // -- open any device ROM sets ------------------------------------------
-    // Unlike the parent archive these are opened unconditionally: the firmware
-    // in them belongs to a device the board carries, so it is never present in
-    // the game's own archive and scoring the game would not reveal the need.
+    // Prefer frontend-supplied system firmware, then sibling device archives,
+    // even when the game embeds a copy. Embedded firmware remains the fallback.
+    ArchiveSet device_archives;
     for (const std::string& device_set : chosen->device_sets) {
-        if (const auto device_path = find_sibling_archive(device_set)) {
+        std::optional<std::filesystem::path> device_path;
+        if (!device_directory.empty())
+            device_path = find_archive(device_directory, device_set);
+        if (!device_path) device_path = find_sibling_archive(device_set);
+        if (device_path) {
             SM2_INFO("'%s' needs the '%s' device set; also reading %s",
                      chosen->name.c_str(), device_set.c_str(),
                      device_path->string().c_str());
-            if (!archives.open(device_path->string())) {
+            if (!device_archives.open(device_path->string())) {
                 return std::nullopt;
             }
-        } else {
-            SM2_WARN("'%s' needs the '%s' device ROM set, but no %s.zip or %s.7z "
-                     "was found beside the archive", chosen->name.c_str(),
-                     device_set.c_str(), device_set.c_str(), device_set.c_str());
+        } else if (!score_game(archives, *chosen, verify_crc).complete()) {
+            if (device_directory.empty())
+                SM2_WARN("'%s' needs the '%s' device ROM set, but no %s.zip or %s.7z "
+                         "was found beside the archive", chosen->name.c_str(),
+                         device_set.c_str(), device_set.c_str(), device_set.c_str());
+            else
+                SM2_WARN("'%s' needs the '%s' device ROM set, but no %s.zip or %s.7z "
+                         "was found in the device directory or beside the archive",
+                         chosen->name.c_str(), device_set.c_str(),
+                         device_set.c_str(), device_set.c_str());
         }
     }
 
@@ -730,7 +814,14 @@ std::optional<LoadResult> RomLoader::load(const GameDatabase& database,
 
         for (usize index = 0; index < region.files.size(); ++index) {
             const FileSpec& file  = region.files[index];
-            const ZipEntry* entry = archives.find(file, verify_crc);
+            // A selected device archive takes precedence over an embedded
+            // copy; the game and parent archives remain its fallback.
+            const ZipEntry* entry = device_archives.find(file, verify_crc);
+            ArchiveSet* source = &device_archives;
+            if (entry == nullptr) {
+                entry = archives.find(file, verify_crc);
+                source = &archives;
+            }
 
             if (entry == nullptr) {
                 if (region.required) {
@@ -747,7 +838,7 @@ std::optional<LoadResult> RomLoader::load(const GameDatabase& database,
                 }
                 continue;
             }
-            if (!archives.extract(*entry, &contents[index])) {
+            if (!source->extract(*entry, &contents[index])) {
                 return std::nullopt;
             }
         }

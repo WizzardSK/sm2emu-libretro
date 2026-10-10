@@ -101,6 +101,8 @@ constexpr u32 kCpuControl      = 0x00e00000;  // 0x38 bytes of wait-state regist
 constexpr u32 kIrqRegs         = 0x00e80000;
 constexpr u32 kTimerRegs       = 0x00f00000;
 constexpr u32 kTileRam         = 0x01000000;  // 64 KB, mirror 0x110000
+/// Tile RAM wait states; Virtual On relies on its slow clear spanning a vblank.
+constexpr s32 kTileRamWaitCycles = 16;
 constexpr u32 kCharRam         = 0x01080000;  // 512 KB, mirror 0x100000
 constexpr u32 kPaletteRam      = 0x01800000;  // 16 KB
 constexpr u32 kColorXlat       = 0x01810000;  // 48 KB
@@ -163,6 +165,9 @@ bool Model2::init(const rom::GameSpec& game, rom::RomSet roms)
     }
 
     m_work_ram.assign(0x100000, 0);
+    // i960 instruction fetch straight from ROM and work RAM (the hot_read windows).
+    m_cpu.bind_fetch_window(0, kRomMainCpu, m_rom_maincpu.data(), m_rom_maincpu.size(), 0x200000);
+    m_cpu.bind_fetch_window(1, kWorkRam, m_work_ram.data(), m_work_ram.size(), 0x100000);
     m_scratch_ram.assign(0x40000, 0);
     m_buffer_ram.assign(0x20000 / 4, 0);
     m_tile_ram.assign(0x10000, 0);
@@ -199,6 +204,9 @@ bool Model2::init(const rom::GameSpec& game, rom::RomSet roms)
     // The link board's 16 KB is the same storage the i960 reaches at
     // 0x01a00000; the board keeps it so the access stays a burst window.
     m_comm.attach_shared(m_comm_ram);
+    // Manx TT's native boot check accepts only IDs 1..count, including Relay.
+    m_comm.set_counted_relay(m_game.name == "manxtt" || m_game.name == "manxttc"
+                            || m_game.name == "manxttdx");
 
     // The coprocessor reads the CPU board's mathematical tables and the game's own
     // data ROM, and writes its results into the display list buffer.
@@ -309,6 +317,7 @@ void Model2::reset()
     m_gear_selected  = 0;
 
     m_io.reset();
+    m_manxtt_ams.reset();
     m_doa_comp.reset();
     m_doa_unk_toggle = false;
     m_crypt.reset();
@@ -344,6 +353,11 @@ void Model2::reset()
     // Daytona and the Indy 500 family; every other title leaves it unconnected.
     if (m_game.drive_board) {
         m_io.set_output(4, [this](u8 value) { drive_board_write(value); });
+    }
+    if (m_game.name == "manxtt" || m_game.name == "manxttc" || m_game.name == "manxttdx") {
+        m_io.set_output(4, [this](u8 value) {
+            if (manxtt_ams_enabled()) m_manxtt_ams.write(value);
+        });
     }
 
     // The lightgun interface board hangs off RS-422 channel 2 rather than the
@@ -668,8 +682,18 @@ u8 Model2::io_port_c_read()
 
 u8 Model2::io_port_d_read()
 {
+    if (manxtt_ams_enabled()) return m_manxtt_ams.read();
     return m_inputs.player_port(
         m_game.name == "airwlkrs" && m_airwlkrs_second_pair ? 3 : 1);
+}
+
+bool Model2::manxtt_ams_enabled()
+{
+    // Revision C/D use the native EEPROM Cabinet Type: 0 Deluxe, 1 Twin.
+    // The original Deluxe-only program has no cabinet selector.
+    return m_manxtt_ams.select(m_game.name == "manxttdx"
+        || ((m_game.name == "manxtt" || m_game.name == "manxttc")
+            && m_eeprom.bytes()[0x0a] == 0));
 }
 
 // ---------------------------------------------------------------------------
@@ -780,6 +804,7 @@ Model2::Window Model2::resolve(u32 address)
         return window(m_buffer_ram, address & 0x1ffff, true, cpu::kBusFlagBurst);
     }
     if (in_mirrored(address, kTileRam, 0x10000, 0x110000)) {
+        m_cpu.add_wait_cycles(kTileRamWaitCycles);
         return window(m_tile_ram, address & 0xffff, true, cpu::kBusFlagBurst,
                       Notify::TileRam);
     }
@@ -1324,6 +1349,7 @@ u8* Model2::hot_write(u32 address, u32 width)
 
 u8 Model2::read8(u32 address)
 {
+    charge_area(address);
     if (const u8* p = hot_read(address, 1)) return *p;
     const Window w = resolve(address);
     if (w.base != nullptr) {
@@ -1334,6 +1360,7 @@ u8 Model2::read8(u32 address)
 
 u16 Model2::read16(u32 address)
 {
+    charge_area(address);
     if (const u8* p = hot_read(address, 2)) {
         u16 v;
         std::memcpy(&v, p, sizeof(v));
@@ -1346,8 +1373,17 @@ u16 Model2::read16(u32 address)
     return static_cast<u16>(register_read(address, 2) & 0xffff);
 }
 
+u32 Model2::fetch32(u32 address)
+{
+    m_fetching  = true;
+    const u32 v = read32(address);
+    m_fetching  = false;
+    return v;
+}
+
 u32 Model2::read32(u32 address)
 {
+    charge_area(address);
     if (const u8* p = hot_read(address, 4)) {
         u32 v;
         std::memcpy(&v, p, sizeof(v));
@@ -1371,6 +1407,7 @@ u32 Model2::read32(u32 address)
 // read_dword_flags.
 std::pair<u8, u16> Model2::read8_flags(u32 address)
 {
+    charge_area(address);
     if (const u8* p = hot_read(address, 1)) return {*p, cpu::kBusFlagBurst};
     const Window w = resolve(address);
     if (w.base != nullptr) {
@@ -1414,6 +1451,7 @@ u16 Model2::write8_flags(u32 address, u8 value)
 
 std::pair<u32, u16> Model2::read32_flags(u32 address)
 {
+    charge_area(address);
     if (const u8* p = hot_read(address, 4)) {
         u32 v;
         std::memcpy(&v, p, sizeof(v));
@@ -1438,6 +1476,7 @@ std::pair<u32, u16> Model2::read32_flags(u32 address)
 
 void Model2::write8(u32 address, u8 value)
 {
+    charge_area(address);
     if (u8* p = hot_write(address, 1)) {
         *p = value;
         return;
@@ -1461,6 +1500,7 @@ void Model2::write8(u32 address, u8 value)
 
 void Model2::write16(u32 address, u16 value)
 {
+    charge_area(address);
     if (u8* p = hot_write(address, 2)) {
         std::memcpy(p, &value, sizeof(value));
         return;
@@ -1482,6 +1522,7 @@ void Model2::write16(u32 address, u16 value)
 
 void Model2::write32(u32 address, u32 value)
 {
+    charge_area(address);
     if (u8* p = hot_write(address, 4)) {
         std::memcpy(p, &value, sizeof(value));
         return;
@@ -1503,6 +1544,7 @@ void Model2::write32(u32 address, u32 value)
 
 u16 Model2::write32_flags(u32 address, u32 value)
 {
+    charge_area(address);
     if (u8* p = hot_write(address, 4)) {
         std::memcpy(p, &value, sizeof(value));
         return cpu::kBusFlagBurst;
@@ -1767,6 +1809,7 @@ void Model2::serialize(Archive& ar)
     ar.raw(m_copro_debt);
     ar.raw(m_inputs);
     ar.raw(m_airwlkrs_second_pair);
+    m_manxtt_ams.serialize(ar);
 }
 
 bool Model2::save_state(const std::string& path) const

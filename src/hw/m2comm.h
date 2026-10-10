@@ -64,6 +64,9 @@ public:
 
     void attach_shared(std::span<u8> shared) { m_shared = shared; }
     void set_frame_offset(u16 offset) { m_frame_offset = offset; }
+    /// Some host programs require a positive ID for shared role 3 while the
+    /// node supplies its status slot while retaining the other nodes' data.
+    void set_counted_relay(bool enabled) { m_counted_relay = enabled; }
 
     /// Swap the frame transport (takes ownership); nullptr restores the default
     /// loopback. A LAN transport (comm_udp.h) is injected when linking is on.
@@ -96,6 +99,8 @@ public:
     [[nodiscard]] u8   link_id() const { return m_linkid; }
     [[nodiscard]] u8   link_count() const { return m_linkcount; }
     [[nodiscard]] bool enabled() const { return m_linkenable != 0; }
+    /// Side-effect-free inputs used by the simulated board's role predicates.
+    [[nodiscard]] std::array<u8, 2> role_inputs() const { return {m_fg, shared(1)}; }
 
     /// Whether the underlying transport still believes it can carry frames.
     /// Always true for the loopback; a socket transport reports the peer state.
@@ -103,8 +108,8 @@ public:
 
     /// Save/restore the link registers and frame-assembly buffer. The shared
     /// RAM span is excluded (serialized once at the machine level and re-bound);
-    /// the transport is excluded (any queued cross-cabinet frame does not
-    /// survive a load, which is acceptable for a single cabinet).
+    /// local loopback frames are included from format 8. External transport
+    /// sessions remain outside the machine archive.
     void serialize(Archive& ar);
 
 private:
@@ -146,6 +151,8 @@ private:
 
     u8  m_frame_sync   = 0;
     u16 m_frame_offset = kDefaultFrameOffset;
+    // Game configuration, re-established at load; not mutable machine state.
+    bool m_counted_relay = false;
 
     /// MAME's m_buffer0, the frame being assembled or examined.
     std::array<u8, 0x1000> m_buffer{};

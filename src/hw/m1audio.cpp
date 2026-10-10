@@ -107,6 +107,30 @@ u32 M1Audio::active_voices() const
     return m_pcm[0].active_voices() + m_pcm[1].active_voices();
 }
 
+bool M1Audio::has_audio_source(AudioSource source) const
+{
+    return present() && (source == AudioSource::MultiPcm1
+        || source == AudioSource::MultiPcm2 || source == AudioSource::Ym3438);
+}
+
+void M1Audio::configure_balance(const std::string& game_name)
+{
+    m_balance_gain = game_name == "daytona" || game_name == "daytona93"
+        || game_name == "daytonam" || game_name == "daytonas" || game_name == "daytonase" ? 117
+        : game_name == "desert" ? 111
+        : game_name == "vcop" || game_name == "vcopa" ? 181 : 256;
+}
+
+void M1Audio::set_audio_source_gain(AudioSource source, unsigned percent, bool automatic)
+{
+    const unsigned index = source == AudioSource::MultiPcm1 ? 0
+        : source == AudioSource::MultiPcm2 ? 1 : 2;
+    if (has_audio_source(source)) {
+        m_source_gain[index] = automatic ? 100 : std::min(percent, 200u);
+        m_source_automatic[index] = automatic;
+    }
+}
+
 void M1Audio::set_rxd_handler(std::function<void(u8)> handler)
 {
     m_rxd_handler = std::move(handler);
@@ -344,18 +368,22 @@ void M1Audio::generate_audio(u32 host_cycles)
 
     // Mixed in 32 bits so the three gained streams can sum past full scale and be
     // clamped once at the end, which is where MAME's speaker clamps.
-    static thread_local std::vector<s32> accum;
+    static thread_local std::vector<s32> accum, manual;
     accum.assign(static_cast<usize>(frames) * 2, 0);
-
-    m_pcm[0].generate(accum.data(), static_cast<u32>(frames), kGainPcm);
-    m_pcm[1].generate(accum.data(), static_cast<u32>(frames), kGainPcm);
-    m_ym.generate(accum.data(), static_cast<u32>(frames), kGainYm);
+    manual.assign(accum.size(), 0);
+    m_pcm[0].generate(m_source_automatic[0] ? accum.data() : manual.data(), static_cast<u32>(frames),
+                      kGainPcm * static_cast<s32>(m_source_gain[0]) / 100);
+    m_pcm[1].generate(m_source_automatic[1] ? accum.data() : manual.data(), static_cast<u32>(frames),
+                      kGainPcm * static_cast<s32>(m_source_gain[1]) / 100);
+    m_ym.generate(m_source_automatic[2] ? accum.data() : manual.data(), static_cast<u32>(frames),
+                  kGainYm * static_cast<s32>(m_source_gain[2]) / 100);
+    const s32 gain = m_audio_balance_enabled ? m_balance_gain : 256;
 
     const usize before = m_pending.size();
     m_pending.resize(before + static_cast<usize>(frames) * 2);
     for (usize i = 0; i < static_cast<usize>(frames) * 2; ++i) {
         m_pending[before + i] =
-            static_cast<s16>(std::clamp(accum[i], -32768, 32767));
+            static_cast<s16>(std::clamp((accum[i] * gain >> 8) + manual[i], -32768, 32767));
     }
 
     // Nothing is draining in a headless run, so drop the oldest rather than grow.
