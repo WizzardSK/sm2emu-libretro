@@ -65,6 +65,13 @@ def visible_rows(data, catalog)
   positioned.sort_by { |row| row["visible_position"] }.each do |row|
     ordinary.insert(row["visible_position"].to_i - 1, row)
   end
+  if (extension = data["ride_color_extension"])
+    # Preserve the pinned historical menu inventory while comparing the current
+    # independently documented four-color selector against the live catalogue.
+    ordinary = ordinary.map do |row|
+      row["key"] == "ride_id" ? row.merge("values" => extension.fetch("values")) : row
+    end
+  end
   ordinary
 end
 

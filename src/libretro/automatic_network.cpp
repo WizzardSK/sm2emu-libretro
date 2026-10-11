@@ -39,7 +39,7 @@ std::vector<Choice> choices(std::string_view catalog, unsigned max_cabinets)
     if (catalog == "powsledr" || catalog == "vonr")
         return {{"relay", "Relay"}};
     if (catalog == "powsled" || catalog == "powsledm")
-        return {{"1", "Silver"}, {"2", "Red"}, {"3", "Black"},
+        return {{"1", "Silver"}, {"2", "Red"}, {"3", "Black"}, {"4", "Yellow"},
                 {"0", "Disabled"}};
     const unsigned limit = playable_limit(catalog, max_cabinets);
     std::vector<Choice> result;
@@ -65,6 +65,7 @@ std::vector<ManagedValue> managed_values(std::string_view catalog,
         if (preset == "1") return {{"ride_id", "silver"}};
         if (preset == "2") return {{"ride_id", "red"}};
         if (preset == "3") return {{"ride_id", "black"}};
+        if (preset == "4") return {{"ride_id", "yellow"}};
         return {};
     }
     unsigned number = 1;

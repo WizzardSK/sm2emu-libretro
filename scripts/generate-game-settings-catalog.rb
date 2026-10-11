@@ -417,9 +417,9 @@ clones = games.reject { |_name, game| game[:parent].nil? }
 # Power Sled retains independent campaign evidence and deferred interpretations.
 # Preserve their independent evidence and unresolved field interpretations.
 PENDING_CAMPAIGNS = {
-  "powsled" => "Reviewed Checkpoints, Motion Angle and Ride ID implemented; independent initial template integrated. Country and conditional ID assignment remain deferred; linked gameplay remains unverified.",
-  "powsledm" => "Reviewed Checkpoints, Motion Angle and Ride ID implemented; independent initial template integrated. Country and conditional ID assignment remain deferred; linked gameplay remains unverified.",
-  "powsledr" => "Reviewed Checkpoints and Motion Angle implemented; independent initial template integrated. Country and hidden Ride byte remain deferred; linked gameplay remains unverified."
+  "powsled" => "Reviewed Checkpoints, Motion Angle and four-color Ride ID implemented; independent initial template retained. Country interpretation and factory ID assignment remain deferred. Bounded linked-race evidence is documented separately.",
+  "powsledm" => "Reviewed Checkpoints, Motion Angle and four-color Ride ID implemented; Master role is independent of color. Independent initial template retained; Master archive is optional through CRC-checked Relay/Slave fallbacks. Country interpretation and factory ID assignment remain deferred.",
+  "powsledr" => "Reviewed Checkpoints, Motion Angle and manual four-color Ride ID implemented at the user's request; Relay role remains fixed and ANS offers only relay. Independent initial template retained. Country interpretation remains deferred."
 }.freeze
 POWER_SLED_SCREEN_ROOT = ROOT / "build-libretro-gpu/validation/power-sled-service-menu-20261008"
 
@@ -633,19 +633,19 @@ PENDING_CAMPAIGNS.each do |name, status|
   screens = Dir[POWER_SLED_SCREEN_ROOT.join(name, "screenshots/*.png")].sort
   links = screens.map { |path| "[#{File.basename(path, '.png')}](<#{path}>)" }
   lines << "- **Navigation Evidence:** #{links.join(', ')}" unless links.empty?
-  lines << "- **Documentation:** `Docs/POWER_SLED_SERVICE_MENU_CAMPAIGN.md`; each set verified separately in linked MAME. Calibration listed only. Country/Ride ID expose no Use Default action; fresh invalid values are not defaults."
+  lines << "- **Documentation:** `Docs/POWER_SLED_SERVICE_MENU_CAMPAIGN.md`; historical base inventory in linked MAME, current four-color extension independently documented and acquired in SM2-Emu Libretro/RetroArch. Calibration listed only. Country/Ride ID expose no Use Default action; fresh invalid values are not defaults."
   lines << ""
   lines << "| # | Setting | Native Default | Allowed Values |"
   lines << "| --- | --- | --- | --- |"
   rows = [["Country", "—", "Export"],
-          ["Ride ID (Color)", "—", name == "powsledr" ? "Relay" : "Silver Ride, Red Ride, Black Ride"]]
+          ["Ride ID (Color)", "—", "Silver Ride, Red Ride, Black Ride, Yellow Ride"]]
   [49, 35, 35, 30, 30].each_with_index { |value, i| rows << ["Checkpoint #{i}", value.to_s, "5–99 Seconds (Step 1)"] }
   rows << ["Motion Angle", "38.0", "10.0–45.0 Degrees (Step 0.5)"]
   rows.each_with_index { |values, i| lines << "| #{i+1} | #{values.join(' | ')} |" }
   lines << ""
-  lines << "- **Conditional Availability:** Reference seeds initialize both Main and Slave to the same color; the matrix does not establish Main-only causality. Main/Slave color mapping 0/1/2 is verified in the core; further ID logic is deferred. Relay displays role 0x100 independently of its stored byte."
+  lines << "- **Current Selector:** Narrow menu patches make all four colors available independently of detected rider count on Main, Slave and Relay. Native mapping 0/1/2/3 is verified in all three settings copies. Main/Relay preserve their dedicated roles on commit; Relay now displays its stored color. Factory conditional ID assignment remains a separate deferred question."
   lines << "- **Native Integrity:** Three 28-byte settings copies and three 52-byte bookkeeping copies use whole-block agreement and ROM defaults on disagreement; no native checksum for these groups. See `Docs/POWER_SLED_NVRAM_INTEGRITY_2026-10-09.md`."
-  lines << "- **Phase 2:** 49 RetroArch stages / 147 program records validate operator field samples and fresh reload. Native recovery and three complete independent initial images are verified by 11 additional RetroArch trials / 33 program records. The approved fields and initial templates are implemented; no automatic color assignment or Country override is introduced. See `Docs/POWER_SLED_NVRAM_OPTIONS_2026-10-09.md`."
+  lines << "- **Phase 2:** The historical 49 RetroArch stages / 147 records remain field evidence; native recovery and independent initial images have 11 trials / 33 records. The current four-color extension adds eight native commit/reload stages / 24 records after its complete Phase 1 cycles. Initial templates are unchanged. ANS 1/2/3/4 manages colors only on Main/Slave; Relay ANS remains relay. Country is not overridden. See `Docs/POWER_SLED_YELLOW_AND_MASTER_ARCHIVE_REVIEW_2026-10-10.md`."
   lines << ""
 end
 

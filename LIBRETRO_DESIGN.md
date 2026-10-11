@@ -38,7 +38,7 @@ MB86235 program-RAM fetch and settled coprocessor wait skipping. Machine init
 binds the existing allocations; reset and state loading retain those allocations.
 Host fetch pointers are excluded from serialization, with bus fallback outside
 the bounded windows. No Libretro dependency enters CPU/machine code and the
-state format stays 10. The SCSP depth-index-3 correction is an upstream synthesis
+state format stayed 10 for that package. The SCSP depth-index-3 correction is an upstream synthesis
 change. See `Docs/UPSTREAM_CPU_SCSP_PACKAGE_2026-10-10.md` for reference revisions,
 pointer/state checks and platform limits.
 La milestone 2 aggiunge `src/libretro/` e due agganci CMake (opzione e
@@ -640,8 +640,9 @@ retains its native Relay identity and has no color selector. This reuses
 communication protocol, hardware role or unreviewed field is modified.
 
 Power Sled Port 2 now supplies independent P2 Entry/Call and analog
-handlebars. MAME defines P1 on mux 1/3 and P2 on 5/7. P1 bindings, its P2
-button aliases and Test/Service conventions are retained. Appended neutral
+handlebars. MAME defines P1 on mux 1/3 and P2 on 5/7. P1 bindings and Test/Service conventions are retained. P1 West (RetroPad Y)
+and North (RetroPad X) supply secondary P2 Entry/Call as requested on
+2026-10-11, including when Port 2 is disabled. Appended neutral
 `AnalogControl` identifiers and metadata parsing activate the existing machine
 I/O callbacks for 5/7; no Libretro callback is added to machine code.
 P2 is a rider in the same cabinet, not the Slave network instance. Save State
@@ -810,3 +811,282 @@ Main Silver / Slave Red and the inverse order qualify in bounded RetroArch races
 No generic machine/renderer change, new option or binding is required. These
 patches extend an undumped-Main reconstruction and do not authenticate factory
 firmware or mixed old/new peer programs. See `Docs/POWER_SLED_MASTER_COLOR_2026-10-10.md`.
+
+### Power Sled Four-Color Menus And Optional Master Archive — 2026-10-10
+
+The ROM database supplies narrow i960 Service Menu patches for Main, Slave
+and Relay. The Ride selector always cycles Silver / Red / Black / Yellow,
+independently of detected rider count. Main and Relay commit their selected
+color to native NVRAM while retaining command roles `0x0200` and `0x0100`.
+Relay's value line displays its stored color rather than its fixed role label.
+All three per-game NVRAM menus use the same four values; ANS adds `4` Yellow
+for Main and Slave only. Relay still offers only ANS `relay`.
+
+The production Power Sled transport accepts one Main, one to three Slaves and
+an optional final Relay, with two to five total instances and at most four
+riders. The role tags and existing wire format are unchanged. The runner checks
+the actual native total instead of assuming three. Existing non-Power-Sled
+registration and transport rules remain unchanged.
+
+Frontend-neutral `GameSpec::rom_fallback` names an adjacent donor archive.
+The database declares `powsledm` fallback `powsledr`, retaining parent `powsled`.
+`RomLoader` preserves primary-chip precedence, opens the donor only for missing
+data, then uses parent fallback. Required regions/chips and CRC checks remain
+mandatory. A declared fallback fixes the requested game identity even when its
+primary archive is absent; ordinary file/CRC identification is unchanged.
+Invalid existing archives still fail. Valid empty ZIP entries are recognized.
+The Libretro launcher supplies an owned empty content entry when RetroArch
+needs an existing file; machine code has no frontend dependency.
+
+Phase 1 documents four-value cycles independently for all three programs;
+Phase 2 uses the existing complete, resumable RetroArch recipe and validates
+every discrete commit and fresh reload before generating the extended options.
+Calibration is not acquired. Details and evidence are retained in
+`Docs/POWER_SLED_YELLOW_AND_MASTER_ARCHIVE_REVIEW_2026-10-10.md`.
+
+### Optional Power Sled Master Music — 2026-10-10
+
+`src/libretro/power_sled_audio.*` owns the Power-Sled-family-only, Disabled-default
+Relay Audio selector, CRC donor lookup, guarded in-memory i960 patches and
+native music-task activation. Only Master content is affected; reload is
+required. Original rider/camera/network construction is retained. Generic
+`Model2Sound` adds a second existing SCSP/68000 board, tagged serial routing and
+an exact-clock PCM mixer, without Libretro headers or frontend callbacks.
+EAB and the output filter propagate to the additional board. The adapter
+applies an independent Relay Audio Gain after primary SCSP Gain configuration.
+Native state writer 11 stores both boards, routing and queue; formats 4–10 stay
+readable without the added board. The frontend rejects Master states from a
+mismatched Relay Audio setting before mutation. Disabled old/new output and
+format-10 continuations match exactly; Enabled ABI replay and a linked RetroArch
+race with music pass. Boarding silence follows the original Relay stop/start
+sequence and was confirmed by the user. Missing donors/unsupported patch guards
+retain original rider audio. See `Docs/POWER_SLED_MASTER_MUSIC_EXPERIMENT_2026-10-10.md`
+for the native addresses, qualified recordings, deployment and fidelity limits.
+
+### Experimental Power Sled Standalone Mode — 2026-10-10
+
+The Relay extension keeps native role `0x0100`, runs continuous Attract with
+four local native actors and an inert Master status view, and never requests
+selection or racing. Its local link initiates a one-node ring independently of
+the program role. Guarded Test/Exit support returns to native Attract.
+The isolated Relay B_CRX diagnostic counts its single real board after setting
+the Relay-presence flag; it does not fabricate rider peers. This guarded
+adaptation applies only to Relay Standalone with Linked Cabinets Disabled. See
+`Docs/POWER_SLED_RELAY_ATTRACT_2026-10-11.md` for failed candidates, native
+addresses, final normal-core verification and deployment boundaries.
+
+`src/libretro/power_sled_standalone.*` contains an adapter-owned, guarded
+Master gameplay reconstruction and a separate Relay continuous-Attract
+adaptation for one-node loopback. Its family-only System selector defaults to
+Enabled and applies only with Linked Cabinets Disabled. Slave and linked
+sessions are unchanged; Relay Audio On Master remains independent. The Master
+reconstruction rotates four native ownership entries, adapts every race-count
+case and maps four self-published competitor records. It redirects the reduced
+one-node race dispatcher to the full native constructor, includes all four
+owners in attract physics and recognizes local Silver ownership during startup.
+The boarding/countdown constructor allocates all four local color tasks instead
+of halving the field; this restores Black/Yellow camera and countdown updates.
+Native human, AI and physics tasks supply movement; no frontend position
+simulation or synthetic Slave packets are used. Only HUD/finish-order filters
+include AI as competitors; physical human-node count stays one.
+A guarded Standalone-only Exit detour at `0x1c4a0` clears the outgoing Test
+command at `0x5293f4`, replays the displaced phase load and resumes native Exit
+at `0x1c4a8`. Helper space and instruction/operand guards are checked before
+mutation. This prevents one-node loopback from reopening Test after restart;
+native cleanup and linked programs retain their original path. A matched
+isolated RetroArch replay confirms return to attract.
+Content reload is required to switch the patched program or enter linked play;
+active standalone retains one-node transport until that reload. Frontend state
+flag bit 8 rejects mismatched Standalone configurations before mutation. ABI checks pass;
+corrected Red runtime confirms advancing scenes, timer/time extension and
+AI-aware ranks, result and GAME OVER. Yellow's normal-core capture confirms
+course rendering, 3 / 2 / 1 / GO and an advancing race. The normal installed core
+is updated with backup/hash checks; dev remains absent. Yellow also reaches
+a 4th result, GAME OVER and moving attract again, with valid persisted color/CRC
+and clean process shutdown. An audible repeat confirms native Relay race music
+in recorded PCM. Bounded experimental integration is complete; physical devices,
+every color/difficulty and factory camera/title fidelity remain unqualified.
+See `Docs/POWER_SLED_STANDALONE_EXPERIMENT_2026-10-10.md` for guarded addresses,
+retained failed candidates, runtime evidence and deployment status.
+
+
+### Power Sled Standalone Camera Boundary
+
+The recently installed experimental override branches from `0x18c30` to
+`0x18c40`, forcing native camera value 1 for every Ride color. This must not be
+called an original single-screen mode. The controlled four-color comparison
+confirms the prior color-specific panorama and shows that the override removes
+that distinction. The user approves this uniform intro, identified as Silver, for every
+Standalone Ride color. This is the accepted port presentation; the installed
+binary is retained. Ordinary linked programs and Disabled mode
+retain their existing panorama path. See
+`Docs/POWER_SLED_COLOR_CAMERA_REVIEW_2026-10-10.md` for evidence and limits.
+
+### Experimental Power Sled Relay Commands On Master — 2026-10-11
+
+`src/libretro/power_sled_commands.*` owns the guarded Master-only operator
+remap. System option visible for the Power Sled family only defaults to Enabled and requires reload;
+Standalone and Relay Audio remain independent. Native Coin/Start opens selection,
+Entry confirms and the original departure sound-task completion emits boarding
+command 4 after the model motion ends. Pre-race Entry/Start emits native race
+command 5. Call emits Emergency Stop `0x100`; Coin/Start recovers through native
+command 1 before reopening selection. The existing Test ownership guard and
+native receivers remain. Helpers use verified empty program space; no production
+RAM scan, frontend delay or machine-to-Libretro dependency is introduced. Save
+State flag bit 9 rejects mismatched command modes before mutation. See
+`Docs/POWER_SLED_RELAY_COMMANDS_ON_MASTER_2026-10-11.md` for native addresses,
+replay evidence and limits.
+
+### Power Sled System Visibility And Auxiliary SCSP Gain
+
+Explicit user exception: Master (`powsledm`) shows all four Power Sled System
+switches; Relay (`powsledr`) shows only Standalone Mode; Slave (`powsled`) and
+other sets show none. NVRAM Settings and ANS retain their existing rules. The new Audio option
+`sm2_power_sled_relay_audio_gain` uses Auto / Mute (`0`) / 10%..100% and the
+usual visible/no-op convention. After configuring primary sound sources, the
+adapter applies this separate gain only to the auxiliary SCSP. A frontend-neutral
+mutable auxiliary-board accessor mirrors the existing const accessor; no Libretro
+headers or callbacks enter the machine. Relay balance is configured from
+`powsledr`. Mixer routing, native sound commands, timers and serialization layout
+are unchanged. Current bindings are listed in
+`Docs/POWER_SLED_CONTROLS_2026-10-11.md`.
+
+### Standalone B_CRX Diagnostic Reconciliation
+
+The native physical-board scan excludes Master/Relay packet headers. In
+Standalone, Master also hosts the human rider; the guarded branch at 0x24e8c
+retains Master presence and counts this existing board once. Relay and the
+three local AI are not additional physical boards. Native zero/excess-count
+errors remain possible. The original review retained the native linked program when Standalone
+is Disabled. See the startup diagnostic section of
+`Docs/POWER_SLED_STANDALONE_EXPERIMENT_2026-10-10.md` for RetroArch evidence.
+
+### Power Sled Single-Rider Attract Records — 2026-10-11
+
+The matched two-rider reference and Main + Relay pair enter the same phase-4
+constructor. A single physical rider has three native field records, whereas
+`0x45400` always creates four visual actors. The fourth null mapping reads ROM
+header bytes as geometry, including `0xfffff980` from address `0x10`.
+Database helpers at `0x1f1200` and `0x1f1280` initialize/publish and map the fourth
+local attract record only in phase 4 with one physical rider. Later phases and
+multi-rider ownership retain native behavior. Master role and announced color
+remain separate. Standalone's existing explicit four-record map already covers
+this access; its additional AI/race changes remain separate.
+
+B_CRX's Main-board count now belongs to the common reconstructed Main program,
+with the Standalone guard expecting that shared word. It counts a real rider
+board after its packet arrives, never a fabricated Slave or local AI board.
+See `Docs/POWER_SLED_POST_RACE_AND_MASTER_RELAY_2026-10-11.md` for failed candidates,
+matched runtime evidence, deployment hashes and remaining qualification limits.
+
+### Power Sled Auxiliary Countdown Routing
+
+The optional Master Relay Audio adapter additionally tags the native countdown
+indices as `A0 62 xx`. `Model2Sound` translates this frontend-neutral routing
+tag to auxiliary `A0 12 xx`; untagged group 12 stays on rider SCSP. No new
+serialization fields or emulation/frontend dependency are introduced. The
+adapter's guarded native callback checks the existing local camera index to
+avoid duplicate Standalone cues and preserves native countdown checkpoints.
+See `Docs/POWER_SLED_PRE_RACE_AUDIO_REVIEW_2026-10-11.md`.
+
+### Power Sled Interrupted Result Sequence Audio
+
+Auxiliary tag `A0 63 xx` maps to native Relay group-zero control. The adapter
+uses `A0 63 03` to stop auxiliary audio sequences before switching scenes.
+Native result playback ignores ordinary note-off; the driver's group-zero
+control ends those one-shot voices without a board reset or gain change.
+The separate Relay program uses the same native command on result return.
+The three-byte packet buffer and state layout are unchanged; rider MIDI
+continues to the primary board. See
+`Docs/POWER_SLED_POST_RACE_AND_MASTER_RELAY_2026-10-11.md`.
+
+### Optional Power Sled AI Finish Speed Fix
+
+The Disabled-default experimental System option bypasses only the known native
+late-course AI speed-clamp branch in all three Power Sled programs. Program
+word guards preserve unknown revisions; the final stop remains unchanged.
+Implementation stays in `src/libretro/power_sled_standalone.cpp`, applied once
+to the assembled program at load. It introduces no machine/frontend coupling,
+archive change or mutable runtime patch. The explicit family-only visibility
+exception covers this Power Sled-specific switch.
+
+Per-rider finish/control sound stops remain on the primary rider board. Only
+scene-wide stops are adapted to stop the optional auxiliary Relay board.
+
+Result music on the auxiliary board uses a two-callback native stop/start
+handoff: retry the stop until accepted, then retry only the start. This keeps
+accepted stop packets from starving the start under queue pressure; no
+frontend delay, hardware reset or prerecorded music is used.
+
+### Reference ANS Visibility And Power Sled Defaults — 2026-10-11
+
+The user's latest instruction aligns ANS with the current TGPulse-Next
+reference: register reviewed per-set ANS only for networking titles, and
+hide it when NVRAM Settings is Disabled. Exactly the loaded network title's
+entry is visible. This supersedes the briefly requested generic non-network
+no-op; that candidate was removed and is not deployed. All playable network
+sets default to raw 1; fixed-role Relay sets retain their only permitted
+value, relay. Existing raw keys and saved selections are preserved.
+
+Current TGPulse-Next code gates ANS by NVRAM Settings and restores offline
+fields with Linked Cabinets OFF. Supermodel documents ANS as pending in its
+roadmap. Existing SM2 offline policy is retained; Power Sled ANS selects Ride
+color independently of its fixed program role.
+
+Power Sled System order is Standalone, Relay Audio On Master, Relay Commands
+On Master, AI Finish Speed Fix, followed by NVRAM Settings. All four default
+Enabled and remain family-only under the explicit user visibility exception.
+Standalone is ignored in linked sessions. Explicit saved Disabled values are
+not rewritten. Relay Audio On Master remains user-controlled with a separate
+Relay; mute/disable one source if both instances would otherwise play music.
+
+### Reference Help Text Alignment — 2026-10-11
+
+ANS and NVRAM Settings help now reuse the applicable TGPulse-Next wording for
+managed selectors, NVRAM gating, return-to-game application and automatic reset
+when persisted values change. SM2's `apply_pending_option` already resets the
+machine after a Changed result; this is a description correction, not a new
+reset policy. Power Sled help retains its distinct program-selected role and
+color selection even with Linked Cabinets Disabled. Fixed Relay help retains
+the manual Power Sled Ride ID and Virtual On No Link behavior. Supermodel's
+current NVRAM description requires restart and its ANS implementation is pending;
+those lifecycle claims are not copied into SM2. The manifesto now explicitly
+includes descriptions/help text in mandatory reference comparisons. This
+review covers ANS and NVRAM Settings; it does not certify every Core Option's
+help text across all projects.
+
+Verification: normal core rebuilt, save-RAM checks passed and only
+`sm2_libretro.dylib` deployed with backup/hash verification. Installed SHA-256
+`57de11b44496abe3436e30ace2277d9e959b4ad690046b6521c54462f0598850`.
+No emulation behavior changed and no new gameplay run was needed for this
+text-only correction. Usage meter remains 5% (integer-rounded).
+
+### Upstream Gun Mapping Integration (2026-10-11)
+
+The shared AnalogChannel point schema/parser and standalone interpolation follow upstream `b4c0931`; Model 2C removes the old BEL calibration seed rather than retaining frontend-specific RAM overrides. The Libretro adapter adds optional RC2 and HOTDP mappings with Custom (SM2-Emu) default and Linear (MAME) selectable, as approved. These frontend selectors do not alter machine code. BEL initial-template calibration is generated separately from source provenance in `data/bel-calibration-defaults.json`; valid saves remain authoritative. See `Docs/GUN_MAPPING_INTEGRATION_2026-10-11.md`.
+
+### Country Default Priority (2026-10-11)
+
+For reviewed Country/Nation selectors, choose the first supported region in this order: Export, Europe, U.S.A.; preserve the existing default if none is supported. Automatic Initial NVRAM Setup uses the same Option default. Preserve native value encodings/order and explicit saved selections. `scripts/update-country-defaults.py` reapplies this policy after regenerating older diagnostic-derived option data; the catalog audit enforces it. This changes Over Rev (including both inherited clones) and Super GT 24h from USA to Europe.
+
+## Ski Super G Drive Board Acknowledgements — 2026-10-11
+
+Ski-specific command/response wiring belongs in Model2C, independent of the
+frontend. PE stores the command in the existing archived drive-board latch;
+PD returns the stationary startup acknowledgement (`CE` for zero, `FF` for
+nonzero). Reset clears this latch for Ski. Other games keep their previous
+callbacks and rumble handling. No archive fields or version changes are needed.
+The adapter's obsolete timed Test injection and its Core Option are removed.
+See `Docs/SKI_SUPER_G_DRIVE_BOARD_STUB_2026-10-11.md` for program evidence,
+qualification and limits; this is not mechanical or full firmware emulation.
+
+## Cornering Rumble Frontend Deadzone — 2026-10-11
+
+Synthetic cornering vibration now consumes the frontend-processed steering
+callback with a deliberate 5% rumble-only onset threshold requested in the
+subsequent user review. Remaining travel is rescaled to preserve peak strength. It retains its existing full
+travel intensity and left/right symmetry, with signed endpoint clamping.
+Native impact/kick decoding and its own direction threshold are unchanged;
+12-frame tail, disable/reset/unload stops and archive layout are preserved.
+No frontend settings query or new Core Option is introduced. See
+`Docs/RUMBLE_FRONTEND_DEADZONE_INTERCHANGE_2026-10-11.md`.

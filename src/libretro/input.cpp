@@ -382,9 +382,20 @@ u8 tune_steering(u8 value, const DrivingAnalogOptions& options)
     return static_cast<u8>(std::clamp(
         0x80 + ((target - 0x80) * output_range) / 100, 0, 0xff));
 }
-u8 scale_fraction(const rom::AnalogChannel& channel, float fraction)
+u8 scale_fraction(const rom::AnalogChannel& channel, float fraction, bool use_points = true)
 {
     fraction = std::clamp(fraction, 0.0f, 1.0f);
+    if (use_points && channel.point_count >= 2) {
+        size_t next = 1;
+        while (next + 1 < channel.point_count && fraction > channel.points[next].at)
+            ++next;
+        const auto& a = channel.points[next - 1];
+        const auto& b = channel.points[next];
+        const float t = std::clamp((fraction - a.at) / (b.at - a.at), 0.0f, 1.0f);
+        const float value = std::lerp(static_cast<float>(a.value),
+                                      static_cast<float>(b.value), t);
+        return static_cast<u8>(value + 0.5f);
+    }
     if (channel.reverse) fraction = 1.0f - fraction;
     const float span = static_cast<float>(channel.maximum - channel.minimum);
     return static_cast<u8>(static_cast<float>(channel.minimum) + fraction * span + 0.5f);
@@ -425,11 +436,11 @@ void set_analog_control(hw::Inputs& inputs, const rom::GameSpec& game,
     }
 }
 void set_analog_fraction(hw::Inputs& inputs, const rom::GameSpec& game,
-                         rom::AnalogControl control, float fraction)
+                         rom::AnalogControl control, float fraction, bool use_points = true)
 {
     for (size_t channel = 0; channel < game.analog.size(); ++channel)
         if (game.analog[channel].control == control)
-            inputs.analog[channel] = scale_fraction(game.analog[channel], fraction);
+            inputs.analog[channel] = scale_fraction(game.analog[channel], fraction, use_points);
 }
 }
 InputProfile recognize_profile(const rom::GameSpec& game)
@@ -505,15 +516,15 @@ const char* profile_name(InputProfile profile)
     case InputProfile::Driving4SpeedVR1Handbrake: return "Driving: 4-Speed + VR1 + Handbrake";
     case InputProfile::DrivingSequentialVR2: return "Driving: Sequential + VR2";
     case InputProfile::DrivingSequentialVR1: return "Driving: Sequential + VR1";
-    case InputProfile::DrivingSequentialManxTT: return "Driving: Sequential (Manx TT Superbike)";
-    case InputProfile::DrivingSequentialMotorRaid: return "Driving: Sequential (Motor Raid)";
-    case InputProfile::JoystickAnalogSkyTarget: return "Joystick (Analog): Sky Target";
+    case InputProfile::DrivingSequentialManxTT: return "Driving: Sequential + VR1 (Manx TT Superbike)";
+    case InputProfile::DrivingSequentialMotorRaid: return "Driving: Sequential + VR1 (Motor Raid)";
+    case InputProfile::JoystickAnalogSkyTarget: return "Joystick (Analog): Sky Target + VR1";
     case InputProfile::BaseballDynamite: return "Joystick (Standard): Baseball (Dynamite Baseball)";
     case InputProfile::SpecialPowerSled: return "Special: Power Sled";
     case InputProfile::SpecialWaterSki: return "Special: Water Ski";
     case InputProfile::SpecialSkiSuperG: return "Special: Ski Super G";
     case InputProfile::SpecialTopSkater: return "Special: Top Skater";
-    case InputProfile::SpecialWaveRunner: return "Special: Wave Runner";
+    case InputProfile::SpecialWaveRunner: return "Special: Wave Runner + VR1";
     case InputProfile::BasketballAirWalkers: return "Joystick (Standard): Basketball (Air Walkers)";
     case InputProfile::HorseRacingRoyalAscotII: return "Joystick (Standard): Horse Racing (Royal Ascot II)";
     case InputProfile::SpecialDesertTank: return "Joystick (Analog): Desert Tank + VR3";
@@ -599,12 +610,11 @@ std::vector<retro_input_descriptor> descriptors(
                 || profile == InputProfile::DrivingSequentialMotorRaid ? "Start / VR"
                 : profile == InputProfile::SpecialWaterSki ? "Start / Select Down"
                 : "Start");
-        if (service_enabled(devices[p])) {
+        if (service_enabled(devices[p])
+            && (profile != InputProfile::SpecialPowerSled || p == 0)) {
             add(RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L3,
-                profile == InputProfile::SpecialPowerSled ? "Service B / Select" : "Service A");
+                profile == InputProfile::SpecialPowerSled ? "Service A / Select" : "Service A");
             add(RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R3, "Test A");
-            if (profile == InputProfile::SpecialPowerSled)
-                add(RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_DOWN, "Service A");
         }
         if (!gameplay_port(profile, p)) continue;
         if (gun_profile(profile)) {
@@ -690,25 +700,28 @@ std::vector<retro_input_descriptor> descriptors(
             continue;
         }
         if (profile == InputProfile::SpecialPowerSled) {
-            if (p == 1) {
-                add(RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_B, "P2 Entry");
-                add(RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_A, "P2 Call");
-                add(RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_BUTTON,
-                    RETRO_DEVICE_ID_JOYPAD_R2, "P2 Right Handlebar");
-                add(RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_BUTTON,
-                    RETRO_DEVICE_ID_JOYPAD_L2, "P2 Left Handlebar");
-                continue;
+            add(RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_B,
+                p == 0 ? "P1 Entry" : "P2 Entry");
+            add(RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_A,
+                p == 0 ? "P1 Call" : "P2 Call");
+            add(RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_UP,
+                p == 0 ? "P1 Entry" : "P2 Entry");
+            add(RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_DOWN,
+                p == 0 ? "P1 Entry" : "P2 Entry");
+            add(RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_LEFT,
+                RETRO_DEVICE_ID_ANALOG_Y,
+                p == 0 ? "P1 Left Handlebar" : "P2 Left Handlebar");
+            add(RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_RIGHT,
+                RETRO_DEVICE_ID_ANALOG_Y,
+                p == 0 ? "P1 Right Handlebar" : "P2 Right Handlebar");
+            if (p == 0) {
+                add(RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_Y, "P2 Entry");
+                add(RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_X, "P2 Call");
+            } else {
+                add(RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_X, "Shutdown Button");
+                add(RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L3, "Cancel Error");
+                add(RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R3, "Cancel Network Check");
             }
-            add(RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_B, "P1 Entry");
-            add(RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_A, "P1 Call");
-            add(RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_Y, "P2 Entry");
-            add(RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_X, "P2 Call");
-            add(RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L, "Cancel Error");
-            add(RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R, "Cancel Network Check");
-            add(RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_BUTTON,
-                RETRO_DEVICE_ID_JOYPAD_R2, "P1 Right Handlebar");
-            add(RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_BUTTON,
-                RETRO_DEVICE_ID_JOYPAD_L2, "P1 Left Handlebar");
             continue;
         }
         if (profile == InputProfile::SpecialWaterSki) {
@@ -735,6 +748,8 @@ std::vector<retro_input_descriptor> descriptors(
                 RETRO_DEVICE_ID_ANALOG_X, "Swing");
             add(RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_RIGHT,
                 RETRO_DEVICE_ID_ANALOG_X, "Inclining");
+            add(RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L2, "Inclining Left");
+            add(RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R2, "Inclining Right");
             continue;
         }
         if (profile == InputProfile::SpecialTopSkater) {
@@ -810,6 +825,7 @@ std::vector<retro_input_descriptor> descriptors(
                 add(RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_UP, "VR4 (Green)");
             } else {
                 add(RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_DOWN, "VR1");
+                add(RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_UP, "VR1");
                 add(RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_B, "Handbrake (Analog)");
             }
             continue;
@@ -823,6 +839,8 @@ std::vector<retro_input_descriptor> descriptors(
                     ? RETRO_DEVICE_ID_JOYPAD_DOWN
                     : RETRO_DEVICE_ID_JOYPAD_UP,
                 profile == InputProfile::DrivingSequentialVR1 ? "VR1" : "View 1");
+            if (profile == InputProfile::DrivingSequentialVR1)
+                add(RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_UP, "VR1");
             if (profile == InputProfile::DrivingSequentialVR2)
                 add(RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_DOWN, "View 2");
             add(RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L, "Shift Down");
@@ -831,6 +849,9 @@ std::vector<retro_input_descriptor> descriptors(
             add(RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R2, "Accelerator");
             continue;
         }
+        if (profile == InputProfile::DrivingSequentialManxTT
+            || profile == InputProfile::DrivingSequentialMotorRaid)
+            add(RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_UP, "Start / VR");
         if (profile == InputProfile::DrivingSequentialManxTT) {
             add(RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_DOWN,
                 "Start / VR");
@@ -883,8 +904,8 @@ void poll_input(hw::Inputs& inputs, const rom::GameSpec& game,
     const unsigned port_count = std::max(2u, profile_players(profile));
     for (unsigned p = 0; p < port_count; ++p) {
         if (!joypad_enabled(devices[p])) {
-            if (profile == InputProfile::SpecialPowerSled && p == 1)
-                for (unsigned channel : {5u, 7u})
+            if (profile == InputProfile::SpecialPowerSled)
+                for (unsigned channel : {p == 0 ? 1u : 5u, p == 0 ? 3u : 7u})
                     inputs.analog[channel] = game.analog[channel].rest;
             continue;
         }
@@ -895,8 +916,11 @@ void poll_input(hw::Inputs& inputs, const rom::GameSpec& game,
         }
         const bool start_pressed = pressed(RETRO_DEVICE_ID_JOYPAD_START)
             || (p == 0
-                && profile == InputProfile::DrivingSequentialManxTT
-                && pressed(RETRO_DEVICE_ID_JOYPAD_DOWN));
+                && ((profile == InputProfile::DrivingSequentialManxTT
+                        && pressed(RETRO_DEVICE_ID_JOYPAD_DOWN))
+                    || ((profile == InputProfile::DrivingSequentialManxTT
+                            || profile == InputProfile::DrivingSequentialMotorRaid)
+                        && pressed(RETRO_DEVICE_ID_JOYPAD_UP))));
         if (start_pressed) {
             if (profile == InputProfile::BasketballAirWalkers) {
                 clear(inputs.player_starts, static_cast<u8>(1u << p));
@@ -906,13 +930,13 @@ void poll_input(hw::Inputs& inputs, const rom::GameSpec& game,
                 clear(inputs.in0, p == 0 ? start : 0x20);
             }
         }
-        if (service_enabled(devices[p])) {
+        if (service_enabled(devices[p])
+            && (profile != InputProfile::SpecialPowerSled || p == 0)) {
             const bool bel = profile == InputProfile::GunBehindEnemyLines;
             const bool sled = profile == InputProfile::SpecialPowerSled;
             if (pressed(RETRO_DEVICE_ID_JOYPAD_L3))
                 clear(inputs.in0, sled ? 0x40 : bel ? 0x04 : 0x08);
             if (pressed(RETRO_DEVICE_ID_JOYPAD_R3)) clear(inputs.in0, bel ? 0x08 : 0x04);
-            if (sled && pressed(RETRO_DEVICE_ID_JOYPAD_DOWN)) clear(inputs.in0, 0x08);
         }
         if (!gameplay_port(profile, p)) continue;
         if (gun_profile(profile)) {
@@ -944,7 +968,9 @@ void poll_input(hw::Inputs& inputs, const rom::GameSpec& game,
             const bool lg_reload = lightgun(RETRO_DEVICE_ID_LIGHTGUN_RELOAD) != 0;
             const bool lg_aux = lightgun(RETRO_DEVICE_ID_LIGHTGUN_AUX_A) != 0;
             const bool lg_offscreen = lightgun(RETRO_DEVICE_ID_LIGHTGUN_IS_OFFSCREEN) != 0;
-            const bool lg_action = lg_trigger || lg_reload || lg_aux || lg_offscreen;
+            // Off-screen is a position status, not activity: an idle report
+            // must not prevent Standard from using Mouse or Analog Stick.
+            const bool lg_action = lg_trigger || lg_reload || lg_aux;
             const bool lg_moved = runtime.gun_lightgun_initialized[p]
                 ? lg_x != runtime.gun_lightgun_x[p] || lg_y != runtime.gun_lightgun_y[p]
                 : lg_x != 0 || lg_y != 0;
@@ -1005,7 +1031,7 @@ void poll_input(hw::Inputs& inputs, const rom::GameSpec& game,
                     || y <= mouse_edge || y >= 1.0f - mouse_edge);
             runtime.gun_aim_active[p] = true;
             runtime.gun_aim_offscreen[p] = game.lightgun.present
-                && (lg_offscreen || secondary || mouse_edge_shot);
+                && ((use_lightgun && lg_offscreen) || secondary || mouse_edge_shot);
             if (runtime.gun_aim_offscreen[p])
                 inputs.gun_offscreen |= static_cast<u8>(1u << p);
             if (game.lightgun.present && (secondary || offscreen_shot)) {
@@ -1018,8 +1044,14 @@ void poll_input(hw::Inputs& inputs, const rom::GameSpec& game,
                 clear(inputs.in0, p == 0 ? (game.start1_bit ? game.start1_bit : 0x10) : 0x20);
 
             if (game.lightgun.present) {
-                const auto& gx = p == 0 ? game.lightgun.p1x : game.lightgun.p2x;
-                const auto& gy = p == 0 ? game.lightgun.p1y : game.lightgun.p2y;
+                auto gx = p == 0 ? game.lightgun.p1x : game.lightgun.p2x;
+                auto gy = p == 0 ? game.lightgun.p1y : game.lightgun.p2y;
+                if (game.name == "hotdp" && !special_options.hotd_prototype_upstream) {
+                    gx.minimum = p == 0 ? 173 : 163;
+                    gx.maximum = 596;
+                    gy.minimum = 87;
+                    gy.maximum = 380;
+                }
                 if (p == 0) {
                     inputs.gun_p1x = scale_lightgun(x, gx, runtime.gun_aim_offscreen[p]);
                     inputs.gun_p1y = scale_lightgun(y, gy, runtime.gun_aim_offscreen[p]);
@@ -1029,9 +1061,11 @@ void poll_input(hw::Inputs& inputs, const rom::GameSpec& game,
                 }
             } else {
                 set_analog_fraction(inputs, game,
-                    p == 0 ? rom::AnalogControl::Gun1X : rom::AnalogControl::Gun2X, x);
+                    p == 0 ? rom::AnalogControl::Gun1X : rom::AnalogControl::Gun2X, x,
+                    root_name(game) != "rchase2" || special_options.rail_chase_upstream);
                 set_analog_fraction(inputs, game,
-                    p == 0 ? rom::AnalogControl::Gun1Y : rom::AnalogControl::Gun2Y, y);
+                    p == 0 ? rom::AnalogControl::Gun1Y : rom::AnalogControl::Gun2Y, y,
+                    root_name(game) != "rchase2" || special_options.rail_chase_upstream);
             }
             if (shot) {
                 if (p == 0) clear(inputs.in1, 0x01);
@@ -1074,33 +1108,33 @@ void poll_input(hw::Inputs& inputs, const rom::GameSpec& game,
             continue;
         }
         if (profile == InputProfile::SpecialPowerSled) {
-            // Main/Relay native operator input: command 5 starts the linked race.
-            // Preserve the existing Start line and all Entry/Call bindings.
+            // Main/Relay native operator Start is confined to Port 1.
             if (p == 0 && (game.name == "powsledm" || game.name == "powsledr")
                 && pressed(RETRO_DEVICE_ID_JOYPAD_START)) clear(inputs.in1, 0x10);
-            if (p == 1) {
-                if (pressed(RETRO_DEVICE_ID_JOYPAD_B)) clear(inputs.in1, 0x04);
-                if (pressed(RETRO_DEVICE_ID_JOYPAD_A)) clear(inputs.in1, 0x08);
-                set_analog_control(inputs, game, rom::AnalogControl::Handlebar2Right,
-                    state(p, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_BUTTON,
-                          RETRO_DEVICE_ID_JOYPAD_R2), true);
-                set_analog_control(inputs, game, rom::AnalogControl::Handlebar2Left,
-                    state(p, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_BUTTON,
-                          RETRO_DEVICE_ID_JOYPAD_L2), true);
-                continue;
+            if (pressed(RETRO_DEVICE_ID_JOYPAD_B)
+                || pressed(RETRO_DEVICE_ID_JOYPAD_UP)
+                || pressed(RETRO_DEVICE_ID_JOYPAD_DOWN))
+                clear(inputs.in1, p == 0 ? 0x01 : 0x04);
+            if (pressed(RETRO_DEVICE_ID_JOYPAD_A)) clear(inputs.in1, p == 0 ? 0x02 : 0x08);
+            if (p == 0) {
+                if (pressed(RETRO_DEVICE_ID_JOYPAD_Y)) clear(inputs.in1, 0x04);
+                if (pressed(RETRO_DEVICE_ID_JOYPAD_X)) clear(inputs.in1, 0x08);
+            } else {
+                if (pressed(RETRO_DEVICE_ID_JOYPAD_X)) clear(inputs.in0, 0x08);
+                if (pressed(RETRO_DEVICE_ID_JOYPAD_L3)) clear(inputs.in0, 0x80);
+                if (pressed(RETRO_DEVICE_ID_JOYPAD_R3)) clear(inputs.in3, 0x02);
             }
-            if (pressed(RETRO_DEVICE_ID_JOYPAD_B)) clear(inputs.in1, 0x01);
-            if (pressed(RETRO_DEVICE_ID_JOYPAD_A)) clear(inputs.in1, 0x02);
-            if (pressed(RETRO_DEVICE_ID_JOYPAD_Y)) clear(inputs.in1, 0x04);
-            if (pressed(RETRO_DEVICE_ID_JOYPAD_X)) clear(inputs.in1, 0x08);
-            if (pressed(RETRO_DEVICE_ID_JOYPAD_L)) clear(inputs.in0, 0x80);
-            if (pressed(RETRO_DEVICE_ID_JOYPAD_R)) clear(inputs.in3, 0x02);
-            set_analog_control(inputs, game, rom::AnalogControl::Accel,
-                state(p, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_BUTTON,
-                      RETRO_DEVICE_ID_JOYPAD_R2), true);
-            set_analog_control(inputs, game, rom::AnalogControl::Brake,
-                state(p, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_BUTTON,
-                      RETRO_DEVICE_ID_JOYPAD_L2), true);
+            // Reverse frontend Y travel without wrapping -32768 or moving neutral.
+            const auto handle_axis = [&](unsigned index) {
+                const int raw = state(p, RETRO_DEVICE_ANALOG, index, RETRO_DEVICE_ID_ANALOG_Y);
+                return static_cast<s16>(std::clamp(-raw, -32768, 32767));
+            };
+            set_analog_control(inputs, game,
+                p == 0 ? rom::AnalogControl::Accel : rom::AnalogControl::Handlebar2Right,
+                handle_axis(RETRO_DEVICE_INDEX_ANALOG_RIGHT), false);
+            set_analog_control(inputs, game,
+                p == 0 ? rom::AnalogControl::Brake : rom::AnalogControl::Handlebar2Left,
+                handle_axis(RETRO_DEVICE_INDEX_ANALOG_LEFT), false);
             continue;
         }
         if (profile == InputProfile::SpecialWaterSki) {
@@ -1125,9 +1159,20 @@ void poll_input(hw::Inputs& inputs, const rom::GameSpec& game,
                 0, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_LEFT,
                 RETRO_DEVICE_ID_ANALOG_X);
             set_analog_control(inputs, game, rom::AnalogControl::Swing, swing, false);
+            const auto trigger = [&](unsigned id) {
+                const int value = std::max<int>(0, state(
+                    0, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_BUTTON, id));
+                return value != 0 ? value : (pressed(id) ? 32767 : 0);
+            };
+            const int trigger_inclining = trigger(RETRO_DEVICE_ID_JOYPAD_R2)
+                - trigger(RETRO_DEVICE_ID_JOYPAD_L2);
+            const int stick_inclining = state(0, RETRO_DEVICE_ANALOG,
+                RETRO_DEVICE_INDEX_ANALOG_RIGHT, RETRO_DEVICE_ID_ANALOG_X);
+            const s16 inclining = static_cast<s16>(
+                std::abs(trigger_inclining) > std::abs(stick_inclining)
+                    ? trigger_inclining : stick_inclining);
             set_analog_control(inputs, game, rom::AnalogControl::Inclining,
-                state(0, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_RIGHT,
-                      RETRO_DEVICE_ID_ANALOG_X), false);
+                               inclining, false);
             if (pressed(RETRO_DEVICE_ID_JOYPAD_UP)) clear(inputs.in0, 0x20);
             if (pressed(RETRO_DEVICE_ID_JOYPAD_DOWN)) clear(inputs.in1, 0x01);
             if (pressed(RETRO_DEVICE_ID_JOYPAD_L)) inputs.in2 |= 0xf0;
@@ -1295,7 +1340,8 @@ void poll_input(hw::Inputs& inputs, const rom::GameSpec& game,
                 if (pressed(RETRO_DEVICE_ID_JOYPAD_RIGHT)) press_wheel_button(2);
                 if (pressed(RETRO_DEVICE_ID_JOYPAD_UP)) press_wheel_button(3);
             } else {
-                if (pressed(RETRO_DEVICE_ID_JOYPAD_DOWN)) press_wheel_button(0);
+                if (pressed(RETRO_DEVICE_ID_JOYPAD_DOWN)
+                    || pressed(RETRO_DEVICE_ID_JOYPAD_UP)) press_wheel_button(0);
                 if (pressed(RETRO_DEVICE_ID_JOYPAD_B)) inputs.in2 = 0xff;
             }
 
@@ -1346,9 +1392,9 @@ void poll_input(hw::Inputs& inputs, const rom::GameSpec& game,
                 const auto [port, bit] = game.wheel_button_bits[index];
                 if (port < std::size(ports)) clear(*ports[port], bit);
             };
-            if (pressed(profile == InputProfile::DrivingSequentialVR1
-                            ? RETRO_DEVICE_ID_JOYPAD_DOWN
-                            : RETRO_DEVICE_ID_JOYPAD_UP))
+            if (pressed(RETRO_DEVICE_ID_JOYPAD_UP)
+                || (profile == InputProfile::DrivingSequentialVR1
+                    && pressed(RETRO_DEVICE_ID_JOYPAD_DOWN)))
                 press_wheel_button(0);
             if (profile == InputProfile::DrivingSequentialVR2
                 && pressed(RETRO_DEVICE_ID_JOYPAD_DOWN))

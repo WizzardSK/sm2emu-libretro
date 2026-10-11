@@ -24,9 +24,9 @@ controls:
   cancel_network_check: R
   p1_entry: B
   p1_call: A
-  p2_entry: Y
-  p2_call: X
-  note: Service B / Select maps L3 to IN0 bit 0x40; Service A maps D-Pad Down to IN0 bit 0x08 in the Test/Service profile. P1 Call confirms. Bindings swapped by user request on 2026-10-09; historical captures retain their original manifests.
+  p2_entry: B
+  p2_call: A
+  note: Service B / Select maps L3 to IN0 bit 0x40; Service A maps D-Pad Down to IN0 bit 0x08 in the Test/Service profile. P1 Call confirms. Bindings above use RetroPad names; physical Xbox A is Entry (RetroPad B) and physical Xbox B is Call (RetroPad A) on each rider controller, P1 on controller 1 and P2 on controller 2 (2026-10-11). Service bindings swapped by user request on 2026-10-09; historical captures retain their original manifests.
 menus:
   {
     "game_assignments": {
@@ -655,4 +655,278 @@ core_option_implementation:
     ],
     "review": "Approved By User",
     "documentation": "Docs/POWER_SLED_NVRAM_OPTIONS_2026-10-09.md"
+  }
+
+ride_color_extension:
+  {
+    "status": "service_menu_documented",
+    "values": [
+      "Silver Ride",
+      "Red Ride",
+      "Black Ride",
+      "Yellow Ride"
+    ],
+    "observed_cycle": [
+      1,
+      2,
+      3,
+      0,
+      1
+    ],
+    "native_default": "No Use Default Command",
+    "role_policy": "Master 0x200 / Relay 0x100 Remain Independent Of Color; Slave Uses Its Rider Color",
+    "phase1_evidence": "build-libretro-gpu/validation/power-sled-yellow-20261010/phase1-review.json",
+    "storage_mapping": "Pending Phase 2 Acquisition",
+    "records": [
+      {
+        "set": "powsled",
+        "raw": 0,
+        "label": "silver",
+        "screenshot": "/Users/andrea/dev/sm2-emu-libretro/build-libretro-gpu/validation/power-sled-yellow-20261010/phase1-02/client2/screenshots/silver.png",
+        "sha256": "3d4525d87170a4c61c01da5b2d4d7d8a292b5683eb0f4310f5768f8c013d74ae"
+      },
+      {
+        "set": "powsled",
+        "raw": 1,
+        "label": "red",
+        "screenshot": "/Users/andrea/dev/sm2-emu-libretro/build-libretro-gpu/validation/power-sled-yellow-20261010/phase1-02/client2/screenshots/red.png",
+        "sha256": "b84a008d62d8def8cd62c98299dcc3718b313cadfe3be33788e8375550940a47"
+      },
+      {
+        "set": "powsled",
+        "raw": 2,
+        "label": "black",
+        "screenshot": "/Users/andrea/dev/sm2-emu-libretro/build-libretro-gpu/validation/power-sled-yellow-20261010/phase1-02/client2/screenshots/black.png",
+        "sha256": "7e559b65bc8b979ed2e1b7efbe76f0abe971bda2c316402f06948a8013063fbe"
+      },
+      {
+        "set": "powsled",
+        "raw": 3,
+        "label": "yellow",
+        "screenshot": "/Users/andrea/dev/sm2-emu-libretro/build-libretro-gpu/validation/power-sled-yellow-20261010/phase1-02/client2/screenshots/yellow.png",
+        "sha256": "7695285eec7a7174abd6310a7304dad24e48d63aff455fe087c99169b1641a06"
+      }
+    ]
+  }
+
+# Current Four-Color Native Acquisition; Historical Phase 1 Pins Above Are Retained.
+ride_color_acquisition:
+  {
+    "status": "commits_and_fresh_reloads_validated",
+    "mapping": {
+      "Silver": 0,
+      "Red": 1,
+      "Black": 2,
+      "Yellow": 3
+    },
+    "offsets": [
+      8,
+      264,
+      520
+    ],
+    "evidence": "build-libretro-gpu/validation/power-sled-yellow-20261010/phase2/campaign.json",
+    "evidence_sha256": "18eb6b88c5469856c7ad7d20a94b19053a2a66c238a1e359f4549d3812435e52",
+    "core_sha256": "267c920c46bf57b8662aaa445704b9cd07a7070786813116f6c8b987765c3e13",
+    "records": [
+      {
+        "stage": "commit-silver",
+        "set": "powsled",
+        "raw": 0,
+        "copies": [
+          0,
+          0,
+          0
+        ],
+        "changes_from_baseline": [
+          8,
+          264,
+          520,
+          816,
+          818,
+          1072,
+          1074,
+          1328,
+          1330
+        ],
+        "calibration_unchanged": true,
+        "eeprom_unchanged": true
+      },
+      {
+        "stage": "reload-silver",
+        "set": "powsled",
+        "raw": 0,
+        "copies": [
+          0,
+          0,
+          0
+        ],
+        "changes_from_baseline": [
+          8,
+          264,
+          520,
+          814,
+          816,
+          818,
+          1070,
+          1072,
+          1074,
+          1326,
+          1328,
+          1330
+        ],
+        "calibration_unchanged": true,
+        "eeprom_unchanged": true
+      },
+      {
+        "stage": "commit-red",
+        "set": "powsled",
+        "raw": 1,
+        "copies": [
+          1,
+          1,
+          1
+        ],
+        "changes_from_baseline": [
+          814,
+          816,
+          818,
+          1070,
+          1072,
+          1074,
+          1326,
+          1328,
+          1330
+        ],
+        "calibration_unchanged": true,
+        "eeprom_unchanged": true
+      },
+      {
+        "stage": "reload-red",
+        "set": "powsled",
+        "raw": 1,
+        "copies": [
+          1,
+          1,
+          1
+        ],
+        "changes_from_baseline": [
+          814,
+          816,
+          818,
+          1070,
+          1072,
+          1074,
+          1326,
+          1328,
+          1330
+        ],
+        "calibration_unchanged": true,
+        "eeprom_unchanged": true
+      },
+      {
+        "stage": "commit-black",
+        "set": "powsled",
+        "raw": 2,
+        "copies": [
+          2,
+          2,
+          2
+        ],
+        "changes_from_baseline": [
+          8,
+          264,
+          520,
+          814,
+          816,
+          818,
+          1070,
+          1072,
+          1074,
+          1326,
+          1328,
+          1330
+        ],
+        "calibration_unchanged": true,
+        "eeprom_unchanged": true
+      },
+      {
+        "stage": "reload-black",
+        "set": "powsled",
+        "raw": 2,
+        "copies": [
+          2,
+          2,
+          2
+        ],
+        "changes_from_baseline": [
+          8,
+          264,
+          520,
+          814,
+          816,
+          818,
+          1070,
+          1072,
+          1074,
+          1326,
+          1328,
+          1330
+        ],
+        "calibration_unchanged": true,
+        "eeprom_unchanged": true
+      },
+      {
+        "stage": "commit-yellow",
+        "set": "powsled",
+        "raw": 3,
+        "copies": [
+          3,
+          3,
+          3
+        ],
+        "changes_from_baseline": [
+          8,
+          264,
+          520,
+          814,
+          816,
+          818,
+          1070,
+          1072,
+          1074,
+          1326,
+          1328,
+          1330
+        ],
+        "calibration_unchanged": true,
+        "eeprom_unchanged": true
+      },
+      {
+        "stage": "reload-yellow",
+        "set": "powsled",
+        "raw": 3,
+        "copies": [
+          3,
+          3,
+          3
+        ],
+        "changes_from_baseline": [
+          8,
+          264,
+          520,
+          814,
+          816,
+          818,
+          1070,
+          1072,
+          1074,
+          1326,
+          1328,
+          1330
+        ],
+        "calibration_unchanged": true,
+        "eeprom_unchanged": true
+      }
+    ],
+    "calibration_acquired": false
   }

@@ -11,7 +11,7 @@ if(NOT MSVC)
 endif()
 
 add_library(sm2_libretro SHARED core.cpp crosshair.cpp input.cpp initial_nvram.cpp
-    automatic_network.cpp manxtt_audio.cpp
+    automatic_network.cpp manxtt_audio.cpp power_sled_audio.cpp power_sled_standalone.cpp power_sled_commands.cpp
     netpacket.cpp nvram_settings.cpp rumble.cpp save_ram.cpp timing_overlay.cpp
     ../osd/drive_command.cpp)
 target_include_directories(sm2_libretro PRIVATE include)

@@ -75,6 +75,8 @@ struct DrivingAnalogOptions {
 
 struct SpecialAnalogOptions {
     bool top_skater_progressive = true;
+    bool rail_chase_upstream = true;
+    bool hotd_prototype_upstream = true;
 };
 
 struct InputRuntime {

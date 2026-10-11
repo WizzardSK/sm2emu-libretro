@@ -177,7 +177,50 @@ void Model2Sound::set_midi_out_handler(Scsp::MidiOutHandler handler)
     m_scsp.set_midi_out_handler(std::move(handler));
 }
 
+void Model2Sound::attach_auxiliary_scsp(std::span<const u8> program,
+                                      std::span<const u8> samples)
+{
+    m_aux_scsp = std::make_unique<Model2Sound>();
+    m_aux_scsp->attach(program, samples);
+    m_aux_scsp->reset();
+    m_aux_scsp_samples.assign(32, 0);
+    m_aux_midi_count = 0;
+}
+
 void Model2Sound::midi_in(u8 value)
+{
+    if (!m_aux_scsp) { midi_primary(value); return; }
+    if (!m_aux_midi_count && value != 0xa0 && value != 0xbf) {
+        midi_primary(value);
+        return;
+    }
+    m_aux_midi[m_aux_midi_count++] = value;
+    if (m_aux_midi_count != 3) return;
+    const bool tagged = (m_aux_midi[0] == 0xa0
+        && (m_aux_midi[1] == 0x61 || m_aux_midi[1] == 0x62
+            || m_aux_midi[1] == 0x63))
+        || (m_aux_midi[0] == 0xbf && m_aux_midi[1] == 0x57);
+    if (tagged) {
+        SM2_DEBUG("auxiliary SCSP: %02x %02x %02x", m_aux_midi[0],
+                  m_aux_midi[1] - 0x50, m_aux_midi[2]);
+        if (m_aux_midi[0] == 0xa0 && m_aux_midi[1] == 0x63) {
+            // Native group-zero sequence control; the result track is one-shot
+            // and ignores ordinary note-off. No hardware reset or gain change.
+            m_aux_scsp->midi_in(0xa0);
+            m_aux_scsp->midi_in(0);
+            m_aux_scsp->midi_in(m_aux_midi[2]);
+        } else {
+            m_aux_scsp->midi_in(m_aux_midi[0]);
+            m_aux_scsp->midi_in(static_cast<u8>(m_aux_midi[1] - 0x50));
+            m_aux_scsp->midi_in(m_aux_midi[2]);
+        }
+    } else {
+        for (u8 byte : m_aux_midi) midi_primary(byte);
+    }
+    m_aux_midi_count = 0;
+}
+
+void Model2Sound::midi_primary(u8 value)
 {
     // The host serial link drives both the SCSP's MIDI port and, on the sets
     // that carry one, the DSB. MAME fans the same txd out to both.
@@ -205,6 +248,9 @@ void Model2Sound::reset()
     m_dsb2.reset();
     if (m_m1) m_m1->reset();
     reset_m1_mixer();
+    if (m_aux_scsp) m_aux_scsp->reset();
+    m_aux_scsp_samples.assign(m_aux_scsp ? 32 : 0, 0);
+    m_aux_midi_count = 0;
 
     // Seed the vector table. Without this the 68000 would fetch its stack
     // pointer and entry point out of cleared RAM and immediately run off into
@@ -219,6 +265,22 @@ void Model2Sound::reset()
 
 void Model2Sound::serialize(Archive& ar)
 {
+    if (ar.format_version() >= 11) {
+        bool auxiliary = m_aux_scsp != nullptr;
+        ar.raw(auxiliary);
+        if (ar.loading() && auxiliary != (m_aux_scsp != nullptr)) {
+            ar.invalidate(); return;
+        }
+        if (auxiliary) {
+            m_aux_scsp->serialize(ar);
+            ar.deque_u32(m_aux_scsp_samples);
+            ar.raw(m_aux_midi_count);
+            ar.bytes(m_aux_midi.data(), m_aux_midi.size());
+            if (ar.loading() && (m_aux_scsp_samples.size() > 128 || m_aux_midi_count > 2)) {
+                ar.invalidate(); return;
+            }
+        }
+    } else if (m_aux_scsp) { ar.invalidate(); return; }
     if (ar.format_version() >= 9) {
         unsigned bank = m_configuration;
         ar.raw(bank);
@@ -344,6 +406,7 @@ void Model2Sound::run(u32 host_cycles)
                    m_scsp.sample_rate(), m_music_volume_percent * m_dsb_output_gain / 100);
     }
     if (m_m1_enabled) mix_m1(offset, host_cycles);
+    if (m_aux_scsp) mix_auxiliary_scsp(offset, host_cycles);
 
     const usize limit = kMaxPendingFrames * 2;
     if (m_pending.size() > limit) {
@@ -351,6 +414,25 @@ void Model2Sound::run(u32 host_cycles)
         m_counters.samples_dropped += excess / 2;
         m_pending.erase(m_pending.begin(),
                         m_pending.begin() + static_cast<std::ptrdiff_t>(excess));
+    }
+}
+
+void Model2Sound::mix_auxiliary_scsp(usize offset, u32 host_cycles)
+{
+    m_aux_scsp->run(host_cycles);
+    const auto input = m_aux_scsp->pending_samples();
+    for (usize i = 0; i + 1 < input.size(); i += 2)
+        m_aux_scsp_samples.push_back(u32{static_cast<u16>(input[i])}
+            | (u32{static_cast<u16>(input[i + 1])} << 16));
+    m_aux_scsp->clear_pending_samples();
+    for (usize i = offset; i + 1 < m_pending.size() && !m_aux_scsp_samples.empty(); i += 2) {
+        const u32 pair = m_aux_scsp_samples.front();
+        m_aux_scsp_samples.pop_front();
+        for (unsigned channel = 0; channel < 2; ++channel) {
+            const s32 sample = static_cast<s16>(pair >> (channel * 16));
+            m_pending[i + channel] = static_cast<s16>(std::clamp<s32>(
+                m_pending[i + channel] + sample, -32768, 32767));
+        }
     }
 }
 
@@ -579,6 +661,7 @@ void Model2Sound::apply_balance()
 
 void Model2Sound::set_audio_balance_enabled(bool enabled)
 {
+    if (m_aux_scsp) m_aux_scsp->set_audio_balance_enabled(enabled);
     m_audio_balance_enabled = enabled;
     if (m_m1) m_m1->set_audio_balance_enabled(enabled);
     apply_balance();
@@ -586,6 +669,7 @@ void Model2Sound::set_audio_balance_enabled(bool enabled)
 
 void Model2Sound::set_output_low_pass_enabled(bool enabled)
 {
+    if (m_aux_scsp) m_aux_scsp->set_output_low_pass_enabled(enabled);
     m_scsp.set_output_low_pass_enabled(enabled);
 }
 
@@ -603,6 +687,7 @@ bool Model2Sound::has_audio_source(AudioSource source) const
 
 void Model2Sound::set_audio_source_gain(AudioSource source, unsigned percent, bool automatic)
 {
+    if (m_aux_scsp) m_aux_scsp->set_audio_source_gain(source, percent, automatic);
     if (!has_audio_source(source)) return;
     if (m_m1 && m_m1->has_audio_source(source)) {
         m_m1->set_audio_source_gain(source, percent, automatic);

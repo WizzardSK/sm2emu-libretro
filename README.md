@@ -46,19 +46,39 @@ Save RAM is managed by the frontend as a normal `.srm` file.
 
 - Software rendering plus Vulkan and OpenGL hardware rendering at 1x–4x
   internal resolution.
-- Native Model 2 timing and an optional 60 Hz compatibility mode.
+- 60 Hz (Default) and 57.524 Hz (Native Model 2) timing.
 - Game-aware RetroPad, analog, mouse, and lightgun profiles.
 - Per-game operator settings backed by validated NVRAM layouts.
 - Automatic first-boot NVRAM setup for required cabinet and region defaults.
 - Save RAM and Libretro Save State support.
 - Crosshairs, mouse-edge off-screen reload, gamepad rumble, and service controls.
-- Optional upstream 2D enhancement filters and configurable audio balance.
+- Optional upstream 2D enhancement filters, per-board audio gains, and SCSP low-pass filtering.
 - Experimental linked-cabinet play through the Libretro Netpacket interface.
 - In-frame timing overlay for repeatable performance diagnostics.
 
 Rendering, input, NVRAM, and networking options are exposed through RetroArch's
 Core Options menu. Options that represent operator settings are shown only for
 the loaded game.
+
+## Latest Update — 0.9.13.1
+
+- Power Sled: Relay-derived undumped Master, linked play, experimental Master
+  Standalone and Relay Attract modes, Relay audio/commands on Master, and
+  validated operator settings.
+- Manx TT: cabinet-aware audio selection and Deluxe hardware responses.
+- Behind Enemy Lines: upstream aiming conversion with validated calibration
+  defaults. Rail Chase 2 and House of the Dead prototype offer
+  `Linear (MAME)` and `Custom (SM2-Emu)` aiming.
+- Consistent NVRAM reset notifications, region defaults, single-view-button
+  aliases, and frontend-aware rumble deadzone handling.
+- Generic local linked-cabinet launcher with persistent per-instance settings,
+  independent gamepad assignments, and desktop-sized window layouts.
+
+See the [release notes](Docs/RELEASE_NOTES_0.9.13.1.md) and
+[linked-cabinet launcher guide](Docs/LINKED_CABINET_LAUNCHER.md).
+Experimental Power Sled features reconstruct missing behavior; they do not
+represent a verified dump of the original Master board. Existing saves take
+precedence over first-boot defaults.
 
 ## Platform notes
 

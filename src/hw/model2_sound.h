@@ -66,6 +66,12 @@ public:
     [[nodiscard]] bool select_configuration(unsigned bank);
     [[nodiscard]] unsigned configuration() const { return m_configuration; }
     void attach_m1(std::span<const u8> program, std::span<const u8> samples);
+    /// Optional second SCSP: A0/61 and A0/62 select native groups 11/12,
+    /// BF/57 controls native volume, and A0/63 selects native group-zero control.
+    /// Ordinary commands stay on this board.
+    void attach_auxiliary_scsp(std::span<const u8> program, std::span<const u8> samples);
+    [[nodiscard]] const Model2Sound* auxiliary_scsp() const { return m_aux_scsp.get(); }
+    [[nodiscard]] Model2Sound* auxiliary_scsp() { return m_aux_scsp.get(); }
     void set_m1_enabled(bool enabled);
     [[nodiscard]] bool m1_enabled() const { return m_m1_enabled; }
     [[nodiscard]] const M1Audio* auxiliary_m1() const { return m_m1.get(); }
@@ -193,11 +199,17 @@ private:
     void apply_flat_gain(u16 gain);
     void reset_m1_mixer();
     void mix_m1(usize offset, u32 host_cycles);
+    void midi_primary(u8 value);
+    void mix_auxiliary_scsp(usize offset, u32 host_cycles);
 
     struct Configuration { std::span<const u8> program, samples; };
     std::array<Configuration, 3> m_configurations{};
     unsigned m_configuration = 0;
     std::unique_ptr<M1Audio> m_m1;
+    std::unique_ptr<Model2Sound> m_aux_scsp;
+    std::deque<u32> m_aux_scsp_samples;
+    std::array<u8, 3> m_aux_midi{};
+    unsigned m_aux_midi_count = 0;
     bool m_m1_enabled = false;
     Scsp::MidiOutHandler m_midi_out_handler;
     std::deque<u32> m_m1_samples;

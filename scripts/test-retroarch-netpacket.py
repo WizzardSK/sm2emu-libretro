@@ -16,6 +16,7 @@ import hashlib
 import tomllib
 import binascii
 import json
+import plistlib
 import re
 import os
 import shutil
@@ -24,6 +25,8 @@ import subprocess
 import sys
 import tempfile
 import time
+import zipfile
+import xml.etree.ElementTree as ET
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
@@ -62,9 +65,9 @@ class GameSpec:
 
 
 GAME_SPECS = {
-    "powsledm": GameSpec(3, "powsledm", "power_sled"),
-    "powsledr": GameSpec(3, "powsledr", "power_sled"),
-    "powsled": GameSpec(3, "powsled", "power_sled"),
+    "powsledm": GameSpec(5, "powsledm", "power_sled"),
+    "powsledr": GameSpec(5, "powsledr", "power_sled"),
+    "powsled": GameSpec(5, "powsled", "power_sled"),
     "daytona": GameSpec(8, "daytona", "daytona"),
     "daytonas": GameSpec(8, "daytonas", "daytona"),
     "daytonase": GameSpec(8, "daytona", "daytona"),
@@ -152,7 +155,7 @@ def parse_args() -> argparse.Namespace:
         "--set-name", default="daytona",
         help="First instance ROM set; reviewed metadata supplies automatic presets where available",
     )
-    parser.add_argument("--cabinets", type=int, choices=range(2, 10), default=3)
+    parser.add_argument("--cabinets", type=int, choices=range(1, 10), default=3)
     parser.add_argument("--allow-existing-retroarch", action="store_true",
                         help="Run isolated peers alongside an existing RetroArch process; cleanup owns only launched PIDs")
     parser.add_argument(
@@ -178,6 +181,9 @@ def parse_args() -> argparse.Namespace:
         default="side-by-side",
         help="Arrange isolated RetroArch windows side by side or in a cascade",
     )
+    parser.add_argument("--fit-windows", action="store_true",
+                        help="Reduce equal-sized windows to fit the usable macOS desktop")
+    parser.add_argument("--desktop-size", help="Override usable desktop dimensions as WIDTHxHEIGHT (logical points)")
     parser.add_argument(
         "--window-columns", type=int, default=2,
         help="Number of columns used by the side-by-side layout (default: 2)",
@@ -220,7 +226,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--interactive", action="store_true",
                         help="Keep the cabinets running until one closes or Ctrl+C; no scripted inputs")
     parser.add_argument("--controller-indices",
-                        help="Distinct zero-based physical pad indices in native instance order")
+                        help="Distinct zero-based pad indices or none in native instance order; macOS resolves sorted physical HID names once")
     parser.add_argument("--play-audio", action="store_true",
                         help="Enable native audio without recording PCM")
     return parser.parse_args()
@@ -246,6 +252,35 @@ def local_instance_indices(value: str | None, cabinets: int) -> list[int]:
     return indices
 
 
+def usable_desktop(size: str | None) -> tuple[int, int, int, int]:
+    if size is not None:
+        match = re.fullmatch(r"([1-9][0-9]*)x([1-9][0-9]*)", size)
+        if not match:
+            raise RuntimeError("--desktop-size requires positive WIDTHxHEIGHT dimensions")
+        return 0, 0, int(match[1]), int(match[2])
+    if sys.platform != "darwin":
+        raise RuntimeError("automatic desktop sizing currently requires macOS; use --desktop-size")
+    script = ('ObjC.import("AppKit"); const screen = $.NSScreen.mainScreen; '
+              'const primary = $.NSScreen.screens.objectAtIndex(0).frame; const visible = screen.visibleFrame; '
+              'JSON.stringify([visible.origin.x, primary.size.height - visible.origin.y '
+              '- visible.size.height, visible.size.width, visible.size.height]);')
+    return tuple(map(int, json.loads(subprocess.check_output(
+        ["/usr/bin/osascript", "-l", "JavaScript", "-e", script], text=True))))
+
+
+def fitted_window_size(count: int, columns: int, width: int, height: int) -> tuple[int, int]:
+    columns = min(columns, count)
+    rows = (count + columns - 1) // columns
+    # Preserve native content proportions; reserve measured frame overhead,
+    # inter-window gaps and a margin on all sides. Never enlarge beyond 1x.
+    available_width = width - 48 - (columns - 1) * WINDOW_GAP - columns * 16
+    available_height = height - 48 - (rows - 1) * WINDOW_GAP - rows * 28
+    scale = min(1.0, available_width / (columns * 496), available_height / (rows * 384))
+    if scale <= 0:
+        raise RuntimeError("desktop area is too small for the requested window layout")
+    return max(1, int(496 * scale)), max(1, int(384 * scale))
+
+
 def window_position(index: int, layout: str, columns: int) -> tuple[int, int]:
     if layout == "cascade":
         return WINDOW_ORIGIN_X + index * 60, WINDOW_ORIGIN_Y + index * 40
@@ -258,6 +293,40 @@ def window_position(index: int, layout: str, columns: int) -> tuple[int, int]:
         WINDOW_ORIGIN_X + column * (WINDOW_FRAME_WIDTH + WINDOW_GAP),
         WINDOW_ORIGIN_Y + row * (WINDOW_FRAME_HEIGHT + WINDOW_GAP),
     )
+
+
+def fit_process_window(process: subprocess.Popen[bytes], x: int, y: int,
+                       width: int, height: int, *, apply: bool = True) -> dict[str, int] | None:
+    """Apply and read back the actual outer frame, owned by this process only."""
+    commands = (f'  set size of window 1 to {{{width}, {height}}}\n'
+                f'  set position of window 1 to {{{x}, {y}}}\n') if apply else ""
+    script = (
+        'tell application "System Events" to tell first application process '
+        f'whose unix id is {process.pid}\n'
+        + commands +
+        '  return (position of window 1) & (size of window 1)\n'
+        'end tell'
+    )
+    for attempt in range(3):
+        if process.poll() is not None:
+            if not apply:
+                return None
+            raise RuntimeError("RetroArch exited before its window could be resized")
+        try:
+            raw = subprocess.check_output(
+                ["/usr/bin/osascript", "-e", script], text=True, timeout=5).strip()
+            values = [int(value.strip()) for value in raw.split(",")]
+        except (ValueError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
+            if attempt < 2:
+                time.sleep(0.1)
+                continue
+            if not apply:
+                return None  # A closed/hidden window is no longer measurable.
+            raise RuntimeError("macOS could not read the new RetroArch window frame") from None
+        if len(values) != 4 or any(abs(actual - expected) > 1
+                                  for actual, expected in zip(values, (x, y, width, height))):
+            raise RuntimeError(f"RetroArch window frame differs from requested {(x, y, width, height)}: {values}")
+        return dict(zip(("x", "y", "frame_width", "frame_height"), values))
 
 
 def process_rows() -> list[tuple[int, str]]:
@@ -325,6 +394,56 @@ def write_ignore_state(value: bool | None) -> None:
          "-bool", "true" if value else "false"],
         check=True,
     )
+
+
+def mac_controller_names(indices: list[int | None]) -> list[str | None]:
+    """Resolve the CLI's common pad order before any RetroArch process starts."""
+    if all(index is None for index in indices):
+        return [None] * len(indices)
+    devices = plistlib.loads(subprocess.check_output(
+        ["/usr/sbin/ioreg", "-a", "-r", "-c", "IOHIDDevice"]))
+    names = sorted((item["Product"] for item in devices
+                    if item.get("PrimaryUsagePage") == 1
+                    and item.get("PrimaryUsage") in (4, 5)
+                    and item.get("Transport")
+                    and isinstance(item.get("Product"), str)), key=str.casefold)
+    selected = []
+    for index in indices:
+        if index is None:
+            selected.append(None)
+            continue
+        if index >= len(names):
+            raise RuntimeError(f"controller index {index} is unavailable; connected pads: {names}")
+        name = names[index]
+        if names.count(name) != 1:
+            raise RuntimeError(f"controller name {name!r} is ambiguous; give the pads distinct macOS names")
+        if any(character in name for character in '\"\\\n\r'):
+            raise RuntimeError("controller name cannot be represented in a RetroArch reservation")
+        selected.append(name)
+    return selected
+
+
+def write_controller_config(config: Path, index: int | None, name: str | None) -> None:
+    with config.open("a") as file:
+        # Keep a permutation: RetroArch's reservation swaps assume unique indices.
+        indices = (list(range(16)) if index is None else
+                   [index] + [value for value in range(16) if value != index])
+        for player, pad in enumerate(indices, 1):
+            reserved = name if player == 1 and name is not None else ""
+            file.write(f'input_player{player}_joypad_index = "{pad}"\n')
+            file.write(f'input_player{player}_device_reservation_type = "{2 if reserved else 0}"\n')
+            file.write(f'input_player{player}_reserved_device = "{reserved}"\n')
+        if index is None:
+            # Keep valid indices: -1 crashes this frontend's autoconfiguration.
+            # Disable the Libretro port instead of relying on a null joypad
+            # driver, which this frontend silently replaces with SDL.
+            file.write('input_autodetect_enable = "false"\n')
+        if name is not None:
+            file.write('input_joypad_driver = "hid"\n')
+            file.write('input_autodetect_enable = "true"\n')
+        file.write(f'input_libretro_device_p1 = "{0 if index is None else 1}"\n')
+        for player in range(2, 9):
+            file.write(f'input_libretro_device_p{player} = "0"\n')
 
 
 def write_config(root: Path, assets: Path, base_config: Path, port: int,
@@ -398,6 +517,8 @@ def write_config(root: Path, assets: Path, base_config: Path, port: int,
         "network_cmd_enable": "true",
         "network_cmd_port": str(command_port),
     }
+    if cabinets == 1:
+        values["netplay_enable"] = "false"
     if remote_port is not None:
         values.update(network_remote_enable="true",
                       network_remote_enable_user_p1="true",
@@ -427,6 +548,16 @@ def write_options(
         "sm2_initial_nvram_setup": "enabled",
         "sm2_nvram_settings": "enabled",
     }
+    if cabinets == 1:
+        options[f"sm2_linked_cabinets_{set_name}"] = "disabled"
+        options[f"sm2_automatic_network_{set_name}"] = (
+            "relay" if set_name in {"powsledr", "vonr"} else "0")
+        path = root / "config" / "core-options.cfg"
+        path.write_text(
+            "".join(f"{key} = {json.dumps(value)}\n" for key, value in options.items()),
+            encoding="utf-8",
+        )
+        return
     if spec.nvram_scheme == "power_sled":
         options["sm2_initial_nvram_setup"] = "enabled" if automatic_network else "disabled"
         options["sm2_nvram_settings"] = "enabled" if automatic_network else "disabled"
@@ -543,14 +674,70 @@ def close_instance(process: subprocess.Popen[bytes], command_port: int) -> bool:
             return terminate_instance(process)
 
 
+def recover_unsaved_core_options(root: Path, log: Path) -> dict[str, str]:
+    """Retain queried values lost by a clean native-window quit, per instance.
+
+    A frontend save after the observation is authoritative. Never invent a
+    value for unqueried options or import keys absent from its options file.
+    """
+    path = root / "config/core-options.cfg"
+    if not path.exists() or not log.exists():
+        return {}
+    text = log.read_text(encoding="utf-8", errors="replace")
+    saved_marker = f'Saved core options file to "{path}"'
+    saved_at = text.rfind(saved_marker)
+    current_text = path.read_text()
+    current = dict(re.findall(r'^([^\s=]+) = "([^"\n]*)"$', current_text, re.M))
+    observed = {}
+    for match in re.finditer(r'\[Environ\] GET_VARIABLE: (sm2_[A-Za-z0-9_]+) = "([^"\n]*)"', text):
+        if match.start() > saved_at and match[1] in current:
+            observed[match[1]] = match[2]
+    changed = {key: value for key, value in observed.items() if current[key] != value}
+    if changed:
+        backup = path.with_name("core-options-before-exit-recovery.cfg")
+        shutil.copy2(path, backup)
+        updated = re.sub(r'^([^\s=]+) = "([^"\n]*)"$',
+                         lambda match: f'{match[1]} = {json.dumps(changed[match[1]])}'
+                         if match[1] in changed else match[0], current_text, flags=re.M)
+        path.write_text(updated)
+    return changed
+
+
+def resolve_content(path: Path, assets: Path, staging: Path | None = None) -> Path:
+    """Give RetroArch an empty content entry for an absent declared donor set.
+
+    ROMs remain in the user's directory; the owned run contains sibling links
+    and a 22-byte empty ZIP identifying the reconstructed set, never ROM copies.
+    """
+    path = path.expanduser().resolve()
+    if path.exists():
+        return path
+    game = next((g for g in ET.parse(assets / "games.xml").getroot().findall("game")
+                 if g.get("name") == path.stem), None)
+    if game is None or not game.get("rom_fallback"):
+        raise FileNotFoundError(path)
+    if staging is None:
+        return path
+    staging.mkdir(parents=True, exist_ok=True)
+    for sibling in path.parent.iterdir():
+        if sibling.suffix.lower() in {".zip", ".7z"}:
+            target = staging / sibling.name
+            if not target.exists():
+                target.symlink_to(sibling)
+    entry = staging / path.name
+    with zipfile.ZipFile(entry, "w"):
+        pass
+    return entry
+
+
 def validate_paths(
     args: argparse.Namespace, instance_indices: list[int],
 ) -> tuple[Path, Path, Path, Path, Path, Path | None, Path | None]:
     retroarch = args.retroarch.expanduser().resolve(strict=True)
     core = args.core.expanduser().resolve(strict=True)
-    rom = args.rom.expanduser().resolve(strict=True)
-    base_config = args.base_config.expanduser().resolve(strict=True)
     assets = args.system_assets.expanduser().resolve(strict=True)
+    rom = resolve_content(args.rom, assets)
+    base_config = args.base_config.expanduser().resolve(strict=True)
     relay_rom = args.relay_rom.expanduser().resolve(strict=True) if args.relay_rom else None
     input_replay = (
         args.input_replay.expanduser().resolve(strict=True)
@@ -567,7 +754,7 @@ def validate_paths(
         for game in games:
             if not re.fullmatch(r"[A-Za-z0-9_-]+", game):
                 raise RuntimeError("invalid ROM name in --instance-games")
-            (rom.parent / f"{game}.zip").resolve(strict=True)
+            resolve_content(rom.parent / f"{game}.zip", assets)
         return retroarch, core, rom, base_config, assets, relay_rom, input_replay
     needs_local_von_relay = (
         args.set_name in VIRTUAL_ON_TWIN_SETS
@@ -679,7 +866,7 @@ def main() -> int:
             raise RuntimeError("--input-replay-map requires role-to-path strings")
         replay_map = {role: Path(path).expanduser().resolve(strict=True)
                       for role, path in replay_map.items()}
-    if 0 in instance_indices and not port_available(args.port):
+    if args.cabinets > 1 and 0 in instance_indices and not port_available(args.port):
         raise RuntimeError(f"netplay port {args.port} is already in use")
 
     if args.output:
@@ -687,6 +874,8 @@ def main() -> int:
         output.mkdir(parents=True, exist_ok=False)
     else:
         output = Path(tempfile.mkdtemp(prefix=f"sm2-netpacket-{args.set_name}-"))
+
+    rom = resolve_content(rom, assets, output / "content")
 
     roles = ["host" if index == 0 else f"client{index}" for index in instance_indices]
     if args.instance_roles:
@@ -698,16 +887,24 @@ def main() -> int:
         roles = [names[index] for index in instance_indices]
     controller_indices = None
     if args.controller_indices is not None:
-        controller_indices = [int(value) for value in args.controller_indices.split(",")]
-        if (len(controller_indices) != len(roles) or any(value < 0 or value >= 16 for value in controller_indices)
-                or len(set(controller_indices)) != len(controller_indices)):
-            raise RuntimeError("--controller-indices requires one distinct index 0..15 per local instance")
+        controller_indices = [None if value == "none" else int(value)
+                              for value in args.controller_indices.split(",")]
+        assigned_indices = [value for value in controller_indices if value is not None]
+        if (len(controller_indices) != len(roles) or any(value < 0 or value >= 16 for value in assigned_indices)
+                or len(set(assigned_indices)) != len(assigned_indices)):
+            raise RuntimeError("--controller-indices requires one distinct index 0..15 or none per local instance")
+    controller_names = (mac_controller_names(controller_indices)
+                        if controller_indices is not None and sys.platform == "darwin" else None)
+    if controller_names:
+        for role, index, name in zip(roles, controller_indices, controller_names):
+            label = "No Gamepad" if index is None else f"Gamepad {index + 1}: {name}"
+            print(f"{label} -> {role}", flush=True)
     instance_sets = [args.set_name for _ in roles]
     instance_roms = [rom for _ in roles]
     if args.instance_games:
         games = args.instance_games.split(",")
         instance_sets = [games[index] for index in instance_indices]
-        instance_roms = [(rom.parent / f"{game}.zip").resolve(strict=True)
+        instance_roms = [resolve_content(rom.parent / f"{game}.zip", assets, output / "content")
                          for game in instance_sets]
     elif args.set_name == "powsledm":
         for position, index in enumerate(instance_indices):
@@ -717,7 +914,8 @@ def main() -> int:
         relay_position = instance_indices.index(2)
         instance_sets[relay_position] = "vonr"
         instance_roms[relay_position] = relay_rom
-    power_ring = args.set_name == "powsledm" and set(instance_sets) == {"powsledm", "powsledr", "powsled"}
+    power_ring = args.set_name == "powsledm" and all(
+        game in {"powsledm", "powsledr", "powsled"} for game in instance_sets)
     command_ports = [free_udp_port() for _ in roles]
     if len(set(command_ports)) != len(command_ports) or args.port in command_ports:
         raise RuntimeError("could not allocate distinct RetroArch command ports")
@@ -726,6 +924,17 @@ def main() -> int:
         raise RuntimeError("could not allocate distinct network command/input ports")
     configs: list[Path] = []
     input_replays: list[Path | None] = []
+    desktop = None
+    if args.fit_windows or args.desktop_size:
+        if args.window_layout == "cascade":
+            raise RuntimeError("desktop fitting requires a grid layout")
+        desktop = usable_desktop(args.desktop_size)
+        global WINDOW_WIDTH, WINDOW_HEIGHT, WINDOW_FRAME_WIDTH, WINDOW_FRAME_HEIGHT, WINDOW_ORIGIN_X, WINDOW_ORIGIN_Y
+        columns = 2 if args.window_layout == "power-sled" else args.window_columns
+        WINDOW_WIDTH, WINDOW_HEIGHT = fitted_window_size(args.cabinets, columns, desktop[2], desktop[3])
+        WINDOW_FRAME_WIDTH, WINDOW_FRAME_HEIGHT = WINDOW_WIDTH + 16, WINDOW_HEIGHT + 28
+        WINDOW_ORIGIN_X, WINDOW_ORIGIN_Y = desktop[0] + 24, desktop[1] + 24
+        print(f"Usable desktop: {desktop[2]}x{desktop[3]}; each window: {WINDOW_WIDTH}x{WINDOW_HEIGHT}", flush=True)
     window_positions = [
         window_position(("powsledm", "powsledr", "powsled").index(game)
                         if args.window_layout == "power-sled" else index,
@@ -741,13 +950,8 @@ def main() -> int:
                                     remote_ports[local_index] if remote_ports else None))
         if controller_indices is not None:
             config = root / "netpacket-overrides.cfg"
-            with config.open("a") as file:
-                file.write(f'input_player1_joypad_index = "{controller_indices[local_index]}"\n')
-                file.write('input_player1_device_reservation_type = "0"\ninput_player1_reserved_device = ""\n')
-                file.write('input_libretro_device_p1 = "1"\n')
-                # Prevent the other RetroArch ports from aliasing another cabinet's pad.
-                for player in range(2, 9):
-                    file.write(f'input_libretro_device_p{player} = "0"\n')
+            write_controller_config(config, controller_indices[local_index],
+                                    controller_names[local_index] if controller_names else None)
         replay_source = replay_map.get(role, input_replay)
         local_replay = root / "input.replay" if replay_source else None
         if replay_source and local_replay:
@@ -789,7 +993,7 @@ def main() -> int:
             option_path.write_text("".join(f"{key} = {json.dumps(value)}\n" for key, value in current.items()))
 
     manifest = {
-        "result_scope": "process-lifecycle" if args.instance_games else "linked-network",
+        "result_scope": "process-lifecycle" if args.instance_games or args.cabinets == 1 else "linked-network",
         "retroarch": str(retroarch),
         "core": str(core),
         "core_sha256": hashlib.sha256(core.read_bytes()).hexdigest(),
@@ -814,11 +1018,13 @@ def main() -> int:
         "automatic_network": args.automatic_network,
         "interactive": args.interactive,
         "controller_indices": controller_indices,
+        "controller_devices": controller_names,
         "port": args.port,
         "command_ports": command_ports,
         "roles": roles,
         "window_layout": args.window_layout,
         "window_columns": args.window_columns,
+        "usable_desktop": desktop,
         "capture_screenshots": args.capture_screenshots,
         "screenshot_samples": args.screenshot_samples,
         "screenshot_gap": args.screenshot_gap,
@@ -858,7 +1064,8 @@ def main() -> int:
             log_path = output / f"{role}.log"
             log = log_path.open("wb")
             logs.append(log)
-            netplay = ["-H"] if index == 0 else ["-C", args.connect_host]
+            netplay = ([] if args.cabinets == 1 else
+                       ["-H"] if index == 0 else ["-C", args.connect_host])
             replay = ["-P", str(input_replays[local_index])] if input_replays[local_index] else []
             recording = ["-r", str(output / role / "audio.wav")] if args.record_audio else []
             command = [
@@ -882,6 +1089,17 @@ def main() -> int:
                 # exists. Keep the wait bounded without changing other windows.
                 position_process_window(process, *window_positions[local_index], timeout=15.0)
             wait_while_alive(process, args.startup_wait)
+
+        # Core initialization can overwrite the configured size. Apply outer
+        # frames after every instance has finished its startup wait, and retain
+        # read-back evidence instead of treating config values as actual sizes.
+        if desktop is not None and sys.platform == "darwin":
+            manifest["actual_window_frames"] = [
+                {"role": item.role, **fit_process_window(process, *position,
+                    WINDOW_FRAME_WIDTH, WINDOW_FRAME_HEIGHT)}
+                for item, process, position in zip(results, processes, window_positions)
+            ]
+            (output / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
 
         deadline = time.monotonic() + args.settle
         while time.monotonic() < deadline:
@@ -980,6 +1198,17 @@ def main() -> int:
             exercise_result=exercise(args.network_exercise,processes,results,
                 [output/role for role in roles],command_ports,instance_commands,logs,
                 output,close_instance)
+        # Interactive users can already open menus, minimize or close windows.
+        # Do not turn their UI interaction into a startup/lifecycle failure.
+        if desktop is not None and sys.platform == "darwin" and not args.interactive:
+            observed = []
+            for item, process, position in zip(results, processes, window_positions):
+                frame = fit_process_window(process, *position,
+                    WINDOW_FRAME_WIDTH, WINDOW_FRAME_HEIGHT, apply=False)
+                if frame is not None:
+                    observed.append({"role": item.role, **frame})
+            manifest["final_window_frames"] = observed
+            (output / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
         if args.interactive:
             print(f"Cabinets running. Session: {output}\nClose a cabinet or press Ctrl+C to stop the group.", flush=True)
             try:
@@ -997,6 +1226,13 @@ def main() -> int:
         for log in logs:
             log.close()
 
+        if args.interactive:
+            manifest["recovered_core_options"] = {
+                item.role: recover_unsaved_core_options(output / item.role, Path(item.log))
+                for item in results if item.exit_code == 0 and not item.forced_kill
+            }
+            (output / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
+
         roster_marker = f", {args.cabinets} cabinets"
         for item in results:
             item.roster_ready = (
@@ -1009,8 +1245,8 @@ def main() -> int:
                 native_id = 1 if index == 0 else args.cabinets - index + 1
                 item.native_link_ready = log_contains(Path(item.log),
                     f"Native board {instance_sets[local_index]}: enabled=1 alive=1 "
-                    f"id={native_id} count=3")
-        if args.instance_games:
+                    f"id={native_id} count={args.cabinets}")
+        if args.instance_games or args.cabinets == 1:
             # Interactive launcher success describes process lifecycle only.
             # The core owns compatibility and reports any connection problem.
             success = (completed_run and len(results) == len(instance_indices)

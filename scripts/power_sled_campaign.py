@@ -72,14 +72,16 @@ def preflight(campaign):
         if 'status: service_menu_documented' not in text:
             raise RuntimeError(f'Phase 1 is incomplete: {path}')
         # Pin the completed menu topology, allowing later evidence reconciliation.
-        menu = json.JSONDecoder().raw_decode(text.split('menus:', 1)[1].lstrip())[0]
+        scope = source.get('scope', 'menus')
+        menu = json.JSONDecoder().raw_decode(text.split(scope+':', 1)[1].lstrip())[0]
         if digest(json.dumps(menu, sort_keys=True).encode()) != source['menu_sha256']:
             raise RuntimeError(f'Inventory changed; regenerate complete recipe: {path}')
     return samples
 
 
 class Screens:
-    def __init__(self):
+    def __init__(self, ride_reference_root=None):
+        self.ride_reference_root = Path(ride_reference_root) if ride_reference_root else None
         from PIL import Image
         self.Image = Image
         refs = ROOT / 'build-libretro-gpu/validation/power-sled-settings-20261008/mame-time0-range/1-powsledm'
@@ -118,14 +120,18 @@ class Screens:
         return int(''.join(values))
 
     def ride(self, path, game):
-        if game=='powsledr': raise RuntimeError('Relay role label cannot identify its stored byte')
-        for value in (0,1,2):
+        if game=='powsledr' and not self.ride_reference_root:
+            raise RuntimeError('Relay role label cannot identify its stored byte')
+        for value in ((0,1,2,3) if self.ride_reference_root else (0,1,2)):
             try: self.discrete(path,'ride_id',value,game);return value
             except RuntimeError: pass
         raise RuntimeError(f'Unrecognized visible Ride color: {path}')
 
     def discrete(self, path, setting, value, game):
-        if setting == 'country':
+        if setting == 'ride_id' and self.ride_reference_root:
+            role = ROLES[GAMES.index(game)]
+            ref = self.ride_reference_root / role / 'screenshots' / (['silver','red','black','yellow'][value]+'.png')
+        elif setting == 'country':
             ref = self.inventory / '1-powsledm/screen-0013.png'
         elif value == 255 and game != 'powsledr':
             ref = self.inventory / '1-powsledm/screen-0003.png'
@@ -148,6 +154,9 @@ def validate_sample(sample, run, core_hash, screens, baseline=None):
     if any(i['exit_code'] != 0 or i['forced_kill'] or not i['roster_ready']
            or not i['native_link_ready'] for i in report['instances']):
         raise RuntimeError('Unclean exit or native link failure')
+    if any('SHUTDOWN' in Path(i['log']).read_text(errors='replace')
+           or 'Unhandled ' in Path(i['log']).read_text(errors='replace') for i in report['instances']):
+        raise RuntimeError('Native program fault or frontend shutdown during acquisition')
     records = []
     setting = sample['setting']
     for index, (role, game) in enumerate(zip(ROLES, GAMES)):
@@ -251,7 +260,7 @@ def validate_sample(sample, run, core_hash, screens, baseline=None):
 
 def run_campaign(args, campaign, recipe):
     samples = preflight(campaign)
-    screens = Screens()  # Dependencies/references validated before any launch.
+    screens = Screens(campaign.get("ride_reference_root"))  # Pin the Phase 1 references before acquisition.
     if not args.output:
         raise RuntimeError('Complete campaign requires persistent --output for resume')
     output = args.output.expanduser().resolve()
@@ -306,6 +315,8 @@ def run_campaign(args, campaign, recipe):
                     '--set-name', 'powsledm', '--cabinets', '3', '--operator-recipe', str(recipe),
                     '--sample', name, '--output', str(run), '--settle', str(args.settle),
                     '--startup-wait', str(args.startup_wait), '--port', str(args.port)]
+                if args.core_options_override:
+                    command += ['--core-options-override', str(args.core_options_override)]
                 if baseline:
                     command += ['--baseline-run', str(baseline)]
                 journal['samples'][name] = {'status': 'acquiring', 'run': str(run), 'signature': signature}
@@ -356,7 +367,7 @@ def review_campaign(output):
     with recipe.open('rb') as stream:
         campaign = tomllib.load(stream)
     samples = preflight(campaign)
-    screens = Screens()
+    screens = Screens(campaign.get('ride_reference_root'))
     records = []
     for sample in samples:
         row = journal['samples'][sample['suffix']]
@@ -385,6 +396,16 @@ def review_campaign(output):
                  'meaning':'Unresolved; Not Additional Visible Color Choices'},
         'pending':['General Native Integrity Algorithm','Complete Initial Image Suitability',
                    'Country Semantics','Conditional Ride ID Assignment Logic','Core Option Review','Automatic Policies','Linked Gameplay']}
+    if screens.ride_reference_root:
+        summary.update(scope='Four-Color Operator Commit And Fresh Reload Mapping',
+                       settings=['ride_id'], country='Outside This Extension',
+                       relay={'visible_labels':['Silver Ride','Red Ride','Black Ride','Yellow Ride'],
+                              'program_role_id':256,
+                              'observed_stored_bytes':sorted({r['raw'] for r in records
+                                  if r['set']=='powsledr'}),
+                              'meaning':'Manual Color Is Independent Of Relay Role'},
+                       pending=['Country Semantics','Factory ID Assignment Logic',
+                                'Physical Panoramic Layout','Standalone Gameplay'])
     (output/'coverage.json').write_text(json.dumps(summary,indent=2)+'\n')
     return summary
 

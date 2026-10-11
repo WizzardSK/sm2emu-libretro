@@ -134,14 +134,12 @@ polarity. No additional Core Option or Quick Menu selector is provided.
 Exact upstream response/rounding equivalence through this binding remains
 unverified. Swing
 applica la polarità invertita dichiarata nei metadata: X+ produce `00` e X-
-produce `FF`. L'emulazione comune non risponde al controllo della Drive Board
-esterna e il gioco si ferma su `DRIVE BOARD TROUBLE CODE: FF`. La Core Option
-specifica `Drive Board Error Bypass (Restart Required)`, disabilitata per
-default, riproduce una singola pressione di Test quando compare quel messaggio.
-Con il bypass abilitato la ROM parent ha superato l'errore ed è arrivata alla
-sequenza sciabile in RetroArch macOS; con il bypass disabilitato conserva il
-comportamento upstream. La funzione non emula la Drive Board e non modifica ROM,
-NVRAM o binding.
+produce `FF`. Ski Super G now has a stationary Drive Board acknowledgement
+stub in the common machine: PE commands receive the expected PD startup
+responses (`00` → `CE`, centre command → `FF`). It reaches the attract sequence
+without pressing Test. The old timed Test bypass is removed. ROM, NVRAM,
+calibration and bindings are unchanged; the mechanism and full board protocol
+are not emulated. See `Docs/SKI_SUPER_G_DRIVE_BOARD_STUB_2026-10-11.md`.
 
 Le quattro revisioni Top Skater condividono `Special: Top Skater`. D-Pad
 Left/Right corrispondono a `Select Left`/`Select Right`, South/East a `Jump

@@ -7,6 +7,9 @@
 #include "timing_overlay.h"
 #include "initial_nvram.h"
 #include "manxtt_audio.h"
+#include "power_sled_audio.h"
+#include "power_sled_standalone.h"
+#include "power_sled_commands.h"
 #include "input.h"
 #include "netpacket.h"
 #include "rumble.h"
@@ -24,6 +27,7 @@
 #include "hw/model2_video.h"
 #include "hw/model2_softrender_async.h"
 #include "hw/sound_board.h"
+#include "hw/model2_sound.h"
 #include "rom/game_db.h"
 #include "rom/rom_loader.h"
 
@@ -56,6 +60,11 @@ void configure_audio_sources(hw::SoundBoard& sound)
             kAudioSources[i], libretro::audio_source_gain(i),
             libretro::audio_source_gain_automatic(i));
     }
+    if (auto* board = dynamic_cast<hw::Model2Sound*>(&sound))
+        if (auto* relay = board->auxiliary_scsp())
+            relay->set_audio_source_gain(hw::AudioSource::Scsp,
+                libretro::audio_gain("sm2_power_sled_relay_audio_gain"),
+                libretro::audio_gain_automatic("sm2_power_sled_relay_audio_gain"));
     libretro::set_audio_sources(present);
 }
 retro_environment_t environment = nullptr;
@@ -78,13 +87,18 @@ enum class RendererApi { Software, Vulkan, OpenGL, OpenGLES };
 // one extra MiB keeps bounded FIFO growth from changing the frontend contract.
 constexpr size_t libretro_state_size = 9 * 1024 * 1024;
 constexpr size_t frontend_state_size = 96;
-constexpr u64 ski_super_g_drive_board_test_frame = 900;
 
 struct Content {
     rom::GameSpec game;
     libretro::ControllerConfiguration controllers;
     libretro::InputRuntime input_runtime;
     libretro::ManxTtAudio manxtt_audio;  // ROM storage must outlive the machine.
+    libretro::PowerSledAudio power_sled_audio;
+    bool power_sled_standalone_requested = false;
+    bool power_sled_standalone = false;
+    bool power_sled_commands_requested = false;
+    bool power_sled_ai_finish_speed_fix_requested = false;
+    bool power_sled_commands = false;
     std::unique_ptr<hw::Model2MachineBase> machine;
     hw::SoftRenderer renderer;
     std::unique_ptr<hw::AsyncSoftRenderer> async_renderer;
@@ -195,7 +209,10 @@ void save_frontend_state(u8* destination, const Content& c)
     state_write<u32>(cursor, 0x47460000u | flash.triggers_held
         | (flash.trigger_pressed ? 1u << 2 : 0u)
         | (flash.window_mask_full ? 1u << 3 : 0u)
-        | (flash.hidden ? 1u << 4 : 0u) | (1u << 5));
+        | (flash.hidden ? 1u << 4 : 0u) | (1u << 5)
+        | (c.power_sled_audio.active() ? 1u << 7 : 0u)
+        | (c.power_sled_standalone ? 1u << 8 : 0u)
+        | (c.power_sled_commands ? 1u << 9 : 0u));
     for (float value : c.output_dc.previous_input) state_write<float>(cursor, value);
     for (float value : c.output_dc.previous_output) state_write<float>(cursor, value);
 }
@@ -246,7 +263,7 @@ bool load_frontend_state(const u8* source, libretro::InputRuntime& input_runtime
     return true;
 }
 
-void message(enum retro_log_level level, const char* text);
+void message(enum retro_log_level level, const char* text, bool notify = false);
 
 bool automatic_widescreen(const Content& c)
 {
@@ -457,7 +474,7 @@ void apply_pending_option(Content& c)
         c.audio_frame_remainder = 0;
         c.audio_frames_due = 0;
         export_frontend_save(c);
-        message(RETRO_LOG_INFO, "Applied NVRAM core options");
+        message(RETRO_LOG_INFO, "Applied NVRAM Settings; machine reset", true);
     }
     if (environment) {
         for (const auto& [key, value] : c.network_option_updates) {
@@ -500,11 +517,11 @@ void refresh_nvram_options(Content& c)
     c.option_wait_frames = 0;
 }
 
-void message(enum retro_log_level level, const char* text)
+void message(enum retro_log_level level, const char* text, bool notify)
 {
     if (log_cb) log_cb(level, "[SM2] %s\n", text);
     else std::fprintf(stderr, "[SM2] %s\n", text);
-    if (level >= RETRO_LOG_WARN && environment) {
+    if ((notify || level >= RETRO_LOG_WARN) && environment) {
         unsigned version = 0;
         if (environment(RETRO_ENVIRONMENT_GET_MESSAGE_INTERFACE_VERSION, &version)
             && version >= 1) {
@@ -824,7 +841,7 @@ void retro_deinit()
 }
 void retro_get_system_info(retro_system_info* info)
 {
-    if (info) *info = {"SM2-Emu", "0.9.13.0", "zip|7z", true, true};
+    if (info) *info = {"SM2-Emu", "0.9.13.1", "zip|7z", true, true};
 }
 void retro_get_system_av_info(retro_system_av_info* info)
 {
@@ -876,8 +893,40 @@ bool retro_load_game(const retro_game_info* game)
         next->game = loaded->game;
         if (next->game.name == "powsledm")
             message(RETRO_LOG_INFO, "Power Sled Master program: Relay-derived");
+        next->power_sled_audio.prepare(database, game->path, next->game.name,
+            loaded->roms, libretro::power_sled_relay_audio_enabled());
+        next->power_sled_standalone_requested = libretro::power_sled_standalone_enabled();
+        if ((next->game.name == "powsledm" || next->game.name == "powsledr") && next->power_sled_standalone_requested
+            && libretro::linked_cabinets(next->game.name) == 1) {
+            next->power_sled_standalone = next->game.name == "powsledr"
+                ? libretro::prepare_power_sled_relay_attract(loaded->roms)
+                : libretro::prepare_power_sled_standalone(loaded->roms);
+            message(RETRO_LOG_INFO, next->power_sled_standalone
+                ? (next->game.name == "powsledr"
+                    ? "Power Sled Standalone: experimental continuous Relay attract"
+                    : "Power Sled Standalone: experimental one rider and three computer opponents")
+                : "Power Sled Standalone: unsupported program; keeping original behavior");
+        }
+        next->power_sled_commands_requested = libretro::power_sled_relay_commands_enabled();
+        if (next->game.name == "powsledm" && next->power_sled_commands_requested) {
+            next->power_sled_commands = libretro::prepare_power_sled_commands(loaded->roms);
+            message(RETRO_LOG_INFO, next->power_sled_commands
+                ? "Power Sled Relay Commands On Master: experimental native input remap enabled"
+                : "Power Sled Relay Commands On Master: unsupported program; keeping original behavior");
+        }
+        next->power_sled_ai_finish_speed_fix_requested = libretro::power_sled_ai_finish_speed_fix_enabled();
+        if (libretro::power_sled_program_role(next->game.name)
+            && next->power_sled_ai_finish_speed_fix_requested) {
+            const bool applied = libretro::prepare_power_sled_ai_finish_speed_fix(loaded->roms, next->game.name);
+            message(RETRO_LOG_INFO, applied
+                ? "Power Sled AI Finish Speed Fix: native late-course clamp bypassed"
+                : "Power Sled AI Finish Speed Fix: unsupported program; keeping original behavior");
+        }
         next->machine = hw::create_machine(next->game, std::move(loaded->roms));
         if (!next->machine) throw std::runtime_error("Machine initialization failed");
+        next->power_sled_audio.attach(*next->machine);
+        if (!next->power_sled_audio.notice().empty())
+            message(RETRO_LOG_INFO, next->power_sled_audio.notice().c_str());
         next->manxtt_audio.prepare(database, game->path, next->game.name, *next->machine);
         next->machine->set_i960_round_nearest_even(
             libretro::i960_round_nearest_even_enabled());
@@ -976,7 +1025,8 @@ void retro_reset()
     try {
         reset_async_software_renderer(*content);
         content->rumble.stop();
-        const unsigned linked_cabinets = libretro::linked_cabinets(content->game.name);
+        const unsigned linked_cabinets = content->power_sled_standalone
+            ? 1u : libretro::linked_cabinets(content->game.name);
         if (linked_cabinets != content->linked_cabinets || linked_cabinets > 1)
             configure_linked_cabinets(*content, linked_cabinets);
         content->machine->reset();
@@ -1015,7 +1065,22 @@ void retro_run()
         bool variables_updated = false;
         if (environment && environment(RETRO_ENVIRONMENT_GET_VARIABLE_UPDATE, &variables_updated)
             && variables_updated) {
-            if (libretro::linked_cabinets(content->game.name) != content->linked_cabinets)
+            if (content->game.name == "powsledm"
+                && content->power_sled_audio.requested() != libretro::power_sled_relay_audio_enabled())
+                message(RETRO_LOG_INFO, "Power Sled Relay Audio changed: reload content to apply");
+            if ((content->game.name == "powsledm" || content->game.name == "powsledr")
+                && (content->power_sled_standalone_requested != libretro::power_sled_standalone_enabled()
+                    || (content->power_sled_standalone != (content->power_sled_standalone_requested
+                        && libretro::linked_cabinets(content->game.name) == 1))))
+                message(RETRO_LOG_INFO, "Power Sled Standalone changed: reload content to apply");
+            if (content->game.name == "powsledm"
+                && content->power_sled_commands_requested != libretro::power_sled_relay_commands_enabled())
+                message(RETRO_LOG_INFO, "Power Sled Relay Commands On Master changed: reload content to apply");
+            if (libretro::power_sled_program_role(content->game.name)
+                && content->power_sled_ai_finish_speed_fix_requested != libretro::power_sled_ai_finish_speed_fix_enabled())
+                message(RETRO_LOG_INFO, "Power Sled AI Finish Speed Fix changed: reload content to apply");
+            if (!content->power_sled_standalone
+                && libretro::linked_cabinets(content->game.name) != content->linked_cabinets)
                 retro_reset();
             else
                 refresh_nvram_options(*content);
@@ -1063,13 +1128,6 @@ void retro_run()
                              libretro::automatic_start_gear_enabled(),
                              libretro::mouse_edge_offscreen_reload_enabled(),
                              libretro::special_analog_options());
-        if (content->game.name == "skisuprg"
-            && content->machine->frames() == ski_super_g_drive_board_test_frame
-            && libretro::ski_super_g_drive_board_bypass_enabled()) {
-            content->machine->inputs().in0 &= static_cast<u8>(~0x04);
-            message(RETRO_LOG_INFO,
-                    "Sega Ski Super G Drive Board error bypass: pressed Test");
-        }
         const auto machine_start = std::chrono::steady_clock::now();
         content->machine->run_frame();
         if (content->external_link_active) {
@@ -1249,15 +1307,34 @@ bool retro_unserialize(const void* data, size_t size)
         // donor. Their program addresses differ; reject before any mutation.
         // Untagged legacy and Relay-derived states remain compatible.
         bool slave = false;
+        bool relay_audio = false;
+        bool standalone = false;
+        bool commands = false;
         if (size >= frontend_state_size) {
             const u8* trailer = static_cast<const u8*>(data) + size - frontend_state_size;
             if (std::memcmp(trailer, frontend_state_magic.data(), frontend_state_magic.size()) == 0) {
                 const u8* cursor = trailer + 76;  // Existing gun-flash flags.
-                slave = (state_read<u32>(cursor) & (1u << 6)) != 0;
+                const u32 flags = state_read<u32>(cursor);
+                slave = (flags & (1u << 6)) != 0;
+                relay_audio = (flags & (1u << 7)) != 0;
+                standalone = (flags & (1u << 8)) != 0;
+                commands = (flags & (1u << 9)) != 0;
             }
         }
         if (slave) {
             message(RETRO_LOG_ERROR, "Power Sled: Slave-derived Master Save State is unsupported");
+            return false;
+        }
+        if (relay_audio != content->power_sled_audio.active()) {
+            message(RETRO_LOG_ERROR, "Power Sled Save State requires the same Relay Audio setting");
+            return false;
+        }
+        if (commands != content->power_sled_commands) {
+            message(RETRO_LOG_ERROR, "Power Sled Save State requires the same Relay Commands On Master setting");
+            return false;
+        }
+        if (standalone != content->power_sled_standalone) {
+            message(RETRO_LOG_ERROR, "Power Sled Save State requires the same Standalone setting");
             return false;
         }
     }

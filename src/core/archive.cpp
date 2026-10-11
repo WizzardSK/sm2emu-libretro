@@ -137,7 +137,7 @@ bool read_header(const u8* data, usize size, Header& out, usize& payload_offset)
         SM2_ERROR("save-state: truncated header (no version)");
         return false;
     }
-    if (version != kFormatVersion && version != 9 && version != 8 && version != 7 && version != 6 && version != 5 && version != 4) {
+    if (version != kFormatVersion && version != 10 && version != 9 && version != 8 && version != 7 && version != 6 && version != 5 && version != 4) {
         SM2_ERROR("save-state: format version %u, this build reads %u; the file "
                   "is from a different version and cannot be loaded",
                   version, kFormatVersion);

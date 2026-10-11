@@ -786,10 +786,50 @@
 
     <!-- Analogue mux wiring, from MAME's model2c_state::bel. -->
     <analog>
-      <channel index="0" control="p1x" min="0x69" rest="0xb1"/>
-      <channel index="1" control="p2x" max="0x96" rest="0x50"/>
-      <channel index="2" control="p1y" min="0x11" max="0xae" rest="0x5f"/>
-      <channel index="3" control="p2y" min="0x11" max="0xae" rest="0x5f"/>
+      <channel index="0" control="p1x" min="0x69" rest="0xb1">
+        <point at="0.0427" value="0x00"/>
+        <point at="0.1727" value="0x20"/>
+        <point at="0.2894" value="0x40"/>
+        <point at="0.3983" value="0x60"/>
+        <point at="0.5036" value="0x80"/>
+        <point at="0.6090" value="0xa0"/>
+        <point at="0.7181" value="0xc0"/>
+        <point at="0.8352" value="0xe0"/>
+        <point at="0.9613" value="0xff"/>
+      </channel>
+      <channel index="1" control="p2x" max="0x96" rest="0x50">
+        <point at="0.0427" value="0x00"/>
+        <point at="0.1727" value="0x20"/>
+        <point at="0.2894" value="0x40"/>
+        <point at="0.3983" value="0x60"/>
+        <point at="0.5036" value="0x80"/>
+        <point at="0.6090" value="0xa0"/>
+        <point at="0.7181" value="0xc0"/>
+        <point at="0.8352" value="0xe0"/>
+        <point at="0.9613" value="0xff"/>
+      </channel>
+      <channel index="2" control="p1y" min="0x11" max="0xae" rest="0x5f">
+        <point at="0.0435" value="0xff"/>
+        <point at="0.1634" value="0xe0"/>
+        <point at="0.2792" value="0xc0"/>
+        <point at="0.3899" value="0xa0"/>
+        <point at="0.4984" value="0x80"/>
+        <point at="0.6066" value="0x60"/>
+        <point at="0.7173" value="0x40"/>
+        <point at="0.8329" value="0x20"/>
+        <point at="0.9565" value="0x00"/>
+      </channel>
+      <channel index="3" control="p2y" min="0x11" max="0xae" rest="0x5f">
+        <point at="0.0435" value="0xff"/>
+        <point at="0.1634" value="0xe0"/>
+        <point at="0.2792" value="0xc0"/>
+        <point at="0.3899" value="0xa0"/>
+        <point at="0.4984" value="0x80"/>
+        <point at="0.6066" value="0x60"/>
+        <point at="0.7173" value="0x40"/>
+        <point at="0.8329" value="0x20"/>
+        <point at="0.9565" value="0x00"/>
+      </channel>
     </analog>
 
     <roms>
@@ -2416,10 +2456,10 @@
     <!-- Lightgun calibration, from MAME's hotdp input ports. The guns are 10-bit and arrive over RS-422
          channel 2, not through the analogue mux. -->
     <lightgun>
-      <axis name="p1y" min="0x057" max="0x17c" rest="0x0e9"/>
-      <axis name="p1x" min="0x0ad" max="0x254" rest="0x180"/>
-      <axis name="p2y" min="0x057" max="0x17c" rest="0x0e9"/>
-      <axis name="p2x" min="0x0a3" max="0x254" rest="0x17b"/>
+      <axis name="p1y" min="0x027" max="0x1a9" rest="0x0e8"/>
+      <axis name="p1x" min="0x08b" max="0x27d" rest="0x184"/>
+      <axis name="p2y" min="0x027" max="0x1a9" rest="0x0e8"/>
+      <axis name="p2x" min="0x08b" max="0x27d" rest="0x184"/>
     </lightgun>
 
     <roms>
@@ -3675,10 +3715,28 @@
 
     <!-- Analogue mux wiring, from MAME's model2b_state::rchase2. -->
     <analog>
-      <channel index="0" control="p2x" min="0x34" max="0xc7" rest="0x7d" reverse="true"/>
-      <channel index="1" control="p1x" min="0x3a" max="0xca" rest="0x82" reverse="true"/>
-      <channel index="2" control="p2y" min="0x1c" max="0xcb" rest="0x73" reverse="true"/>
-      <channel index="3" control="p1y" min="0x1c" max="0xcb" rest="0x73" reverse="true"/>
+      <channel index="0" control="p2x" min="0x34" max="0xc7" rest="0x7d" reverse="true">
+        <point at="0.0000" value="0xc7"/>
+        <point at="0.6250" value="0x80"/>
+        <point at="1.0000" value="0x34"/>
+      </channel>
+      <channel index="1" control="p1x" min="0x3a" max="0xca" rest="0x82" reverse="true">
+        <point at="0.0000" value="0xca"/>
+        <point at="0.3750" value="0x80"/>
+        <point at="1.0000" value="0x3a"/>
+      </channel>
+      <channel index="2" control="p2y" min="0x1c" max="0xcb" rest="0x73" reverse="true">
+        <point at="0.0000" value="0xcb"/>
+        <point at="0.5000" value="0x80"/>
+        <point at="0.8750" value="0x1c"/>
+        <point at="1.0000" value="0x1c"/>
+      </channel>
+      <channel index="3" control="p1y" min="0x1c" max="0xcb" rest="0x73" reverse="true">
+        <point at="0.0000" value="0xcb"/>
+        <point at="0.5000" value="0x80"/>
+        <point at="0.8750" value="0x1c"/>
+        <point at="1.0000" value="0x1c"/>
+      </channel>
     </analog>
 
     <roms>
@@ -3735,10 +3793,28 @@
 
     <!-- Analogue mux wiring, from MAME's model2b_state::rchase2. -->
     <analog>
-      <channel index="0" control="p2x" rest="0x80"/>
-      <channel index="1" control="p1x" rest="0x80"/>
-      <channel index="2" control="p2y" rest="0x80"/>
-      <channel index="3" control="p1y" rest="0x80"/>
+      <channel index="0" control="p2x" rest="0x80">
+        <point at="0.0000" value="0x00"/>
+        <point at="0.6250" value="0x80"/>
+        <point at="1.0000" value="0xff"/>
+      </channel>
+      <channel index="1" control="p1x" rest="0x80">
+        <point at="0.0000" value="0x00"/>
+        <point at="0.3750" value="0x80"/>
+        <point at="1.0000" value="0xff"/>
+      </channel>
+      <channel index="2" control="p2y" rest="0x80">
+        <point at="0.0000" value="0x00"/>
+        <point at="0.5000" value="0x80"/>
+        <point at="0.8750" value="0xff"/>
+        <point at="1.0000" value="0xff"/>
+      </channel>
+      <channel index="3" control="p1y" rest="0x80">
+        <point at="0.0000" value="0x00"/>
+        <point at="0.5000" value="0x80"/>
+        <point at="0.8750" value="0xff"/>
+        <point at="1.0000" value="0xff"/>
+      </channel>
     </analog>
 
     <roms>
@@ -5730,16 +5806,24 @@
 
     <!-- MAME's powsled machine config: each rider has a right and a left
          handlebar on the analogue mux (P1 on 1 and 3, P2 on 5 and 7; 0 and 2
-         are the motion base). Each rider uses its own RetroPad triggers. -->
+         are the motion base). Each rider uses centered Left/Right stick X axes on its own controller. -->
     <analog>
-      <channel index="1" control="accel" rest="0x00"/>
-      <channel index="3" control="brake" rest="0x00"/>
-      <channel index="5" control="handlebar2_right" rest="0x00"/>
-      <channel index="7" control="handlebar2_left" rest="0x00"/>
+      <channel index="1" control="accel" rest="0x80"/>
+      <channel index="3" control="brake" rest="0x80"/>
+      <channel index="5" control="handlebar2_right" rest="0x80"/>
+      <channel index="7" control="handlebar2_left" rest="0x80"/>
     </analog>
 
     <roms>
       <region name="maincpu" size="0x200000" stride="4" chunk="2">
+        <!-- Accept native return-to-attract command during results on every linked board. -->
+        <patch offset="0x272e0" value="0x1f1300"/>
+        <patch offset="0x1f1300" value="0x5c201610"/>
+        <patch offset="0x1f1304" value="0x9ecc33c"/>
+        <patch offset="0x1f1308" value="0x5c801604"/>
+        <patch offset="0x1f130c" value="0x9ecc444"/>
+        <patch offset="0x1f1310" value="0xa000000"/>
+
         <file name="epr-19470a.15" offset="0x000000" crc="0x8f28cc09"/>
         <file name="epr-19471a.16" offset="0x000002" crc="0x01a013e3"/>
         <!-- Reconstructed Main publishes its Ride color separately from role
@@ -5747,6 +5831,9 @@
              cabinet counts and rider-packet mapping; command lookup retains
              the native Main/Relay identities. Helpers use verified empty ROM
              space. See Docs/POWER_SLED_MASTER_COLOR_2026-10-10.md. -->
+        <!-- Allow all four native Ride colors independently of rider count. -->
+        <patch offset="0x20624" value="0x8ca83000"/>
+        <patch offset="0x20628" value="0x4"/>
         <patch offset="0x14f90" value="0x81db370"/>
         <patch offset="0x14ffc" value="0x81db344"/>
         <patch offset="0x24a14" value="0x81cb7ec"/>
@@ -5801,9 +5888,9 @@
     </roms>
   </game>
 
-  <game name="powsledm" parent="powsled" board="model2b" preliminary="true">
+  <game name="powsledm" rom_fallback="powsledr" parent="powsled" board="model2b" preliminary="true">
     <title>Power Sled</title>
-    <version>Main, hack of Relay</version>
+    <version>Master, Undumped: Relay-Derived Version</version>
     <manufacturer>Sega</manufacturer>
     <year>1996</year>
 
@@ -5813,10 +5900,70 @@
 
     <roms>
       <region name="maincpu" size="0x200000" stride="4" chunk="2">
+        <!-- Accept native return-to-attract command during results on every linked board. -->
+        <patch offset="0x272f0" value="0x1f1300"/>
+        <patch offset="0x1f1300" value="0x5c201610"/>
+        <patch offset="0x1f1304" value="0x9ecc34c"/>
+        <patch offset="0x1f1308" value="0x5c801604"/>
+        <patch offset="0x1f130c" value="0x9ecc454"/>
+        <patch offset="0x1f1310" value="0xa000000"/>
+
+        <!-- B_CRX counts rider boards: reconstructed Main is also a rider.
+             Preserve its Master-present flag, then count it once. -->
+        <patch offset="0x24e8c" value="0x08000010"/>
+        <!-- A single playable Main plus Relay has three native field records,
+             but the attract renderer always reads four. Publish its fourth
+             local record only in phase 4; map that record on both programs.
+             Other phases and multi-rider arrangements retain native ownership. -->
+        <patch offset="0xcd6a0" value="0x8123be0"/>
+        <patch offset="0x1f1280" value="0x90a03000"/>
+        <patch offset="0x1f1284" value="0x53e744"/>
+        <patch offset="0x1f1288" value="0x3d252024"/>
+        <patch offset="0x1f128c" value="0xc0a03000"/>
+        <patch offset="0x1f1290" value="0x52949e"/>
+        <patch offset="0x1f1294" value="0x3d0d2018"/>
+        <patch offset="0x1f1298" value="0x90a03000"/>
+        <patch offset="0x1f129c" value="0x529450"/>
+        <patch offset="0x1f12a0" value="0x8ca520e0"/>
+        <patch offset="0x1f12a4" value="0x92a03000"/>
+        <patch offset="0x1f12a8" value="0x50553c"/>
+        <patch offset="0x1f12ac" value="0xa000000"/>
+        <patch offset="0xcd24c" value="0x8123fb4"/>
+        <patch offset="0x1f1200" value="0x90a03000"/>
+        <patch offset="0x1f1204" value="0x53e744"/>
+        <patch offset="0x1f1208" value="0x3d252014"/>
+        <patch offset="0x1f120c" value="0xc0a03000"/>
+        <patch offset="0x1f1210" value="0x52949e"/>
+        <patch offset="0x1f1214" value="0x3d0d2008"/>
+        <patch offset="0x1f1218" value="0x5ca81e04"/>
+        <patch offset="0x1f121c" value="0x92a83000"/>
+        <patch offset="0x1f1220" value="0x503428"/>
+        <patch offset="0x1f1224" value="0x8edc030"/>
+        <!-- Test Menu owns Entry/Call inputs. Keep operator commands
+             from overriding its local actions in native phase 15. -->
+        <patch offset="0xbd4d8" value="0x8132f28"/>
+        <patch offset="0x1f0400" value="0x90a03000"/>
+        <patch offset="0x1f0404" value="0x53e744"/>
+        <patch offset="0x1f0408" value="0x3a7d2010"/>
+        <patch offset="0x1f040c" value="0x88a03000"/>
+        <patch offset="0x1f0410" value="0x529368"/>
+        <patch offset="0x1f0414" value="0x8ecd0cc"/>
+        <patch offset="0x1f0418" value="0xa000000"/>
         <file name="epr-19472a.15" offset="0x000000" crc="0x7a947eb7"/>
         <file name="epr-19473a.16" offset="0x000002" crc="0x165d77ae"/>
         <!-- MAME's init_powsledm: the Main unit was never dumped, so the Relay
              program is switched to Main mode with node ID 0x200. -->
+        <!-- Allow all four native Ride colors independently of rider count. -->
+        <patch offset="0x20634" value="0x8ca83000"/>
+        <patch offset="0x20638" value="0x4"/>
+        <!-- Service commit stores Ride separately; Main remains role 0x200. -->
+        <patch offset="0x20480" value="0x091d0080"/>
+        <patch offset="0x20484" value="0x08000004"/>
+        <patch offset="0x1f0500" value="0x8ca83000"/>
+        <patch offset="0x1f0504" value="0x00000200"/>
+        <patch offset="0x1f0508" value="0x8aa83000"/>
+        <patch offset="0x1f050c" value="0x005293f0"/>
+        <patch offset="0x1f0510" value="0x0a000000"/>
         <patch offset="0x1571c" value="0x5ce81e01"/>
         <patch offset="0x1584c" value="0x58a81989"/>
         <patch offset="0x1585c" value="0xfffffdff"/>
@@ -5831,6 +5978,12 @@
              color: native role 0x200 otherwise selects no scene callback. -->
         <patch offset="0x33790" value="0x80a03000"/>
         <patch offset="0x33794" value="0x01d00008"/>
+        <!-- Main confirms modes with operator Call as well as Entry. Match
+             the native confirmation mask so every Ride runs its arm animation. -->
+        <patch offset="0xe5a4c" value="0x8cb00f00"/>
+        <patch offset="0xe5dd8" value="0x8cb00f00"/>
+        <patch offset="0xe6150" value="0x8cb00f00"/>
+        <patch offset="0xe64a4" value="0x8cb00f00"/>
         <!-- Main's first-person resources follow settings byte 8. The color
              identity extension below now also makes its local race index
              follow that Ride ID while preserving its native command role.
@@ -5937,6 +6090,53 @@
 
     <roms>
       <region name="maincpu" size="0x200000" stride="4" chunk="2">
+        <!-- Reconstructed Main also carries a rider board. Match its B_CRX
+             count on Relay while preserving distinct Master/Relay role flags. -->
+        <patch offset="0x24e8c" value="0x08000010"/>
+        <!-- Stop native auxiliary audio sequences before returning to attract; retain music stops. -->
+        <patch offset="0xbd698" value="0x9133ca8"/>
+        <patch offset="0x1f1340" value="0x8c803000"/>
+        <patch offset="0x1f1344" value="0x1f1360"/>
+        <patch offset="0x1f1348" value="0x9e213b8"/>
+        <patch offset="0x1f134c" value="0x9e21474"/>
+        <patch offset="0x1f1350" value="0xa000000"/>
+        <patch offset="0x1f1360" value="0x300a0"/>
+
+        <!-- Accept native return-to-attract command during results on every linked board. -->
+        <patch offset="0x272f0" value="0x1f1300"/>
+        <patch offset="0x1f1300" value="0x5c201610"/>
+        <patch offset="0x1f1304" value="0x9ecc34c"/>
+        <patch offset="0x1f1308" value="0x5c801604"/>
+        <patch offset="0x1f130c" value="0x9ecc454"/>
+        <patch offset="0x1f1310" value="0xa000000"/>
+
+        <!-- A single playable Main plus Relay has three native field records,
+             but the attract renderer always reads four. Publish its fourth
+             local record only in phase 4; map that record on both programs.
+             Other phases and multi-rider arrangements retain native ownership. -->
+        <patch offset="0xcd6a0" value="0x8123be0"/>
+        <patch offset="0x1f1280" value="0x90a03000"/>
+        <patch offset="0x1f1284" value="0x53e744"/>
+        <patch offset="0x1f1288" value="0x3d252024"/>
+        <patch offset="0x1f128c" value="0xc0a03000"/>
+        <patch offset="0x1f1290" value="0x52949e"/>
+        <patch offset="0x1f1294" value="0x3d0d2018"/>
+        <patch offset="0x1f1298" value="0x90a03000"/>
+        <patch offset="0x1f129c" value="0x529450"/>
+        <patch offset="0x1f12a0" value="0x8ca520e0"/>
+        <patch offset="0x1f12a4" value="0x92a03000"/>
+        <patch offset="0x1f12a8" value="0x50553c"/>
+        <patch offset="0x1f12ac" value="0xa000000"/>
+        <!-- Test Menu owns Entry/Call inputs. Keep operator commands
+             from overriding its local actions in native phase 15. -->
+        <patch offset="0xbd4d8" value="0x8132f28"/>
+        <patch offset="0x1f0400" value="0x90a03000"/>
+        <patch offset="0x1f0404" value="0x53e744"/>
+        <patch offset="0x1f0408" value="0x3a7d2010"/>
+        <patch offset="0x1f040c" value="0x88a03000"/>
+        <patch offset="0x1f0410" value="0x529368"/>
+        <patch offset="0x1f0414" value="0x8ecd0cc"/>
+        <patch offset="0x1f0418" value="0xa000000"/>
         <file name="epr-19472a.15" offset="0x000000" crc="0x7a947eb7"/>
         <file name="epr-19473a.16" offset="0x000002" crc="0x165d77ae"/>
         <!-- Reconstructed Main publishes its Ride color separately from role
@@ -5944,6 +6144,18 @@
              cabinet counts and rider-packet mapping; command lookup retains
              the native Main/Relay identities. Helpers use verified empty ROM
              space. See Docs/POWER_SLED_MASTER_COLOR_2026-10-10.md. -->
+        <!-- Relay exposes the same four-color operator field while retaining
+             its dedicated role; the stored color does not create a rider. -->
+        <patch offset="0x20634" value="0x8ca83000"/>
+        <patch offset="0x20638" value="0x4"/>
+        <patch offset="0x205b8" value="0x08000014"/>
+        <patch offset="0x20480" value="0x091d0080"/>
+        <patch offset="0x20484" value="0x08000004"/>
+        <patch offset="0x1f0500" value="0x8ca83000"/>
+        <patch offset="0x1f0504" value="0x100"/>
+        <patch offset="0x1f0508" value="0x8aa83000"/>
+        <patch offset="0x1f050c" value="0x5293f0"/>
+        <patch offset="0x1f0510" value="0x0a000000"/>
         <patch offset="0x14f90" value="0x81db370"/>
         <patch offset="0x14ffc" value="0x81db344"/>
         <patch offset="0x24a24" value="0x81cb7dc"/>

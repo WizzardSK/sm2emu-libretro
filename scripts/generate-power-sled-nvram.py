@@ -4,6 +4,7 @@
 Only generated Power Sled sections are replaced; existing game data is retained.
 The retained RetroArch qualification manifest pins each independent image.
 """
+import argparse
 import hashlib
 import json
 from pathlib import Path
@@ -25,12 +26,39 @@ def replace_section(text, name, body, before):
 
 
 def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--ride-evidence', type=Path, help='Completed four-color native acquisition journal')
+    args = parser.parse_args()
+    four_colors = args.ride_evidence is not None
+    if four_colors:
+        rides = json.loads(args.ride_evidence.read_text())
+        if rides['status'] != 'acquisition_validated':
+            raise ValueError('Four-color acquisition has not completed')
+        for raw,color in enumerate(['silver','red','black','yellow']):
+            for stage in ['commit-', 'reload-']:
+                sample = rides['samples'][stage+color]
+                if sample['status'] != 'validated' or len(sample['records']) != 3:
+                    raise ValueError('Missing independent color commit/reload')
+                for record in sample['records']:
+                    if record['raw'] != raw or record['copies'] != [raw]*3:
+                        raise ValueError('Unverified native color mapping')
+                    if hashlib.sha256(Path(record['backup']).read_bytes()).hexdigest() != record['backup_sha256']:
+                        raise ValueError('Acquired image changed')
     evidence = json.loads(EVIDENCE.read_text())
     if evidence['status'] != 'native_integrity_and_per_set_initial_images_validated':
         raise ValueError('Initial images have not passed the target-core campaign')
     helpers = runpy.run_path(str(ROOT / 'scripts/generate-initial-nvram-templates.py'))
+    calibration = json.loads((ROOT / 'data/power-sled-calibration-defaults.json').read_text())
+    endpoints = calibration['endpoint_bytes']
+    if calibration['settings_copy_bases'] != [0, 256, 512] or len(endpoints) != 8:
+        raise ValueError('Invalid Power Sled calibration layout')
+    if any(type(v) is not int or not 0 <= v <= 255 for v in endpoints):
+        raise ValueError('Invalid calibration endpoint byte')
+    if any(endpoints[i] == endpoints[i+1] for i in range(0, 8, 2)):
+        raise ValueError('Calibration endpoints have zero range')
     arrays, entries, templates, template_entries = [], [], [], []
-    fields = [('ride_id', 'RIDE ID', 8, ['silver', 'red', 'black'], ['Silver', 'Red', 'Black'])]
+    colors = ['silver', 'red', 'black'] + (['yellow'] if four_colors else [])
+    fields = [('ride_id', 'RIDE ID', 8, colors, [c.title() for c in colors])]
     fields += [(f'checkpoint_{i}', f'CHECKPOINT {i}', 10+2*i,
                 [str(n) for n in range(5, 100)], [str(n) for n in range(5, 100)]) for i in range(5)]
     fields += [('motion_angle', 'MOTION ANGLE', 26,
@@ -39,7 +67,7 @@ def main():
     defaults = ['silver', '49', '35', '35', '30', '30', '38.0']
     for index, (suffix, label, offset, keys, labels) in enumerate(fields):
         width = 1 if suffix == 'ride_id' else 2
-        raw = list(range(3)) if width == 1 else ([int(float(k)*10) for k in keys]
+        raw = list(range(len(keys))) if width == 1 else ([int(float(k)*10) for k in keys]
                      if suffix == 'motion_angle' else [int(k) for k in keys])
         patches = [f'    {{{offset+copy*256+byte}, 0xff}},' for copy in range(3) for byte in range(width)]
         arrays += [f'static constexpr Patch kPowerPatches{index}[] = {{\n'+ '\n'.join(patches)+'\n};']
@@ -53,11 +81,16 @@ def main():
         body = Path(image['initial_payload']).read_bytes()
         if len(body) != 16512 or hashlib.sha256(body).hexdigest() != image['initial_payload_sha256']:
             raise ValueError(f'Qualified image missing or changed: {game}')
+        # Approved user calibration uses the same native endpoint layout on all
+        # three programs. Seed only these bytes; retain each independent image.
+        body = bytearray(body)
+        for base in calibration['settings_copy_bases']:
+            body[base:base+8] = bytes(endpoints)
         symbol = 'kPower' + game.capitalize()
         templates += [f'static constexpr u8 {symbol}[] = {{\n'+helpers['format_bytes'](helpers['encode'](body))+'\n};']
         template_entries += [f'    {{"{game}", {symbol}, std::size({symbol}), 0x{helpers["crc16_ccitt"](body):04x}}},']
         for index, (suffix, label, offset, keys, labels) in enumerate(fields):
-            if game == 'powsledr' and suffix == 'ride_id':
+            if game == 'powsledr' and suffix == 'ride_id' and not four_colors:
                 continue
             help_text = f'Set {label} in the game\'s operator NVRAM. Applied at startup when NVRAM Settings is enabled.'
             if suffix.startswith('checkpoint'):
@@ -65,7 +98,7 @@ def main():
             elif suffix == 'motion_angle':
                 help_text += ' Native cabinet motion limit in degrees; this does not calibrate the controls.'
             else:
-                help_text += ' Silver is the native initialization value. Program roles and conditional ID assignment are unchanged.'
+                help_text += ' Silver is the native initialization value. Ride color does not change Master or Relay role.'
             entries += [f'    {{"{game}", "{suffix}", "{label}", "{help_text}", "{defaults[index]}", '
                         f'kPowerValues{index}, std::size(kPowerValues{index}), kPowerPatches{index}, std::size(kPowerPatches{index})}},']
     path = ROOT / 'src/libretro/nvram_settings_data.inc'
@@ -84,7 +117,7 @@ def main():
         pos = text.index('\n};', text.index('static constexpr Template kTemplates[] = {'))
         text = text[:pos]+'\n// BEGIN POWER SLED TEMPLATES\n'+'\n'.join(template_entries)+'\n// END POWER SLED TEMPLATES'+text[pos:]
     path.write_text(text)
-    print('Generated 20 approved options and 3 independently qualified initial templates')
+    print(f'Generated {len(entries)} approved options and 3 independently qualified initial templates')
 
 
 if __name__ == '__main__':

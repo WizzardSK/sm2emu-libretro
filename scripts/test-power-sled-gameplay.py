@@ -20,19 +20,20 @@ ROM_DIR = Path('/Volumes/MacBook External Drive/Retro/_Media/Sega - _Arcade (Mod
 
 
 def race_replay(path, role, frames=21600, sweep=False, repeat=False, manual=False):
-    """Native operator sequence followed by independent rider trigger phases.
+    """Native operator sequence followed by independent rider handle phases.
 
     Frames are local frontend callbacks, not wall-clock or link synchronization.
     Relay receives no scripted inputs. Never writes calibration or native RAM.
+    Y records compensate the inverted frontend polarity to retain native commands.
     """
-    pulses = {'host': [(2160,2196,8), (2880,2916,9), (3180,3216,9),
-                       (4080,4116,3)],
-              'client1': [], 'client2': [(1860,1896,0)]}[role]
+    pulses = {'host': [(2160,2196,0,8), (2880,2916,1,8), (3360,3396,1,8),
+                       (4080,4116,0,3)],
+              'client1': [], 'client2': [(1860,1896,0,0)]}[role]
     if repeat:
         # Let the first race and post-race sequence finish before replaying
         # the same native operator sequence. No reset or RAM forcing.
-        pulses += [(first+18000,last+18000,button)
-                   for first,last,button in list(pulses)]
+        pulses += [(first+18000,last+18000,port,button)
+                   for first,last,port,button in list(pulses)]
         frames = max(frames, 30000)
     phases = [(5100,5700,0,26000,2000,'p1-right'),
               (5700,6300,0,2000,26000,'p1-left'),
@@ -45,17 +46,18 @@ def race_replay(path, role, frames=21600, sweep=False, repeat=False, manual=Fals
                   (7200,7800,1,'left','p2-left')]
     movie = bytearray(struct.pack('<6I',0x42535632,1,0,0,1,0)+bytes(16))
     for frame in range(frames):
-        pressed = {button for first,last,button in pulses if first<=frame<last}
         movie += struct.pack('<BH',0,96)
         for port in range(2):
+            pressed = {button for first,last,target,button in pulses
+                       if first<=frame<last and port==target}
             right = left = 0
             if manual and role != 'client1':
                 # Existing calibrated command zones were measured by the prior
                 # RetroArch handlebar sweep. Raw ADC 112 selects Manual;
                 # raw 128 lies between both response zones. No endpoint edits.
                 selection_frame = frame % 18000 if repeat else frame
-                right = round((112 if selection_frame < 3300 else 128) * 32767 / 255)
-                left = round(128 * 32767 / 255)
+                right = round((112 if selection_frame < 3500 else 128) * 65535 / 255 - 32768)
+                left = 0
             if role != 'client1':
                 for phase in phases:
                     first,last,rider = phase[:3]
@@ -66,10 +68,13 @@ def race_replay(path, role, frames=21600, sweep=False, repeat=False, manual=Fals
                             right,left=(value,0) if phase[3]=='right' else (0,value)
                         else:
                             right,left=phase[3:5]
-            values = [(1,0,button,int(port==0 and button in pressed)) for button in range(16)]
-            values += [(5,index,axis,0) for index in range(2) for axis in range(2)]
-            values += [(5,2,button,right if button==13 else left if button==12 else 0)
-                       for button in range(16)]
+            if not manual and (right or left):
+                right = max(-32768,min(32767,2*right-32767))
+                left = max(-32768,min(32767,2*left-32767))
+            values = [(1,0,button,int(button in pressed)) for button in range(16)]
+            values += [(5,index,axis,max(-32768,min(32767,-(left if index==0 else right))) if axis==1 else 0)
+                       for index in range(2) for axis in range(2)]
+            values += [(5,2,button,0) for button in range(16)]
             values += [(2,0,button,0) for button in range(4)]
             values += [(4,0,button,0) for button in (2,3,6,7,13,14,15,16)]
             for device,index,button,value in values:
@@ -158,7 +163,6 @@ def replay(path, both_riders=False, entry_only=False):
         # Try Entry twice, then leave the introduction uninterrupted.
         pulses = [(2400,2412,0),(2700,2712,0)]
     for frame in range(9600):
-        pressed = {button for first,last,button in pulses if first<=frame<last}
         right = left = 0 if entry_only else 16384
         if frame>=3400:
             right,left = (18400,14400) if (frame//180)%2==0 else (14400,18400)
@@ -185,7 +189,7 @@ def main():
     parser.add_argument('--slave-ride',choices=('silver','red','black'),default='black')
     parser.add_argument('--both-riders',action='store_true',help='Drive both local riders; --entry-only omits Call')
     parser.add_argument('--entry-only',action='store_true',help='Entry-only attempt with native released handles, no Test or repeated attendant Call')
-    parser.add_argument('--race-qualification',action='store_true',help='Current native Start sequence and independent BSV rider triggers')
+    parser.add_argument('--race-qualification',action='store_true',help='Current native Start sequence and independent BSV rider Y axes')
     parser.add_argument('--handlebar-sweep',action='store_true',help='Sweep each handle independently across the full input range during the race')
     parser.add_argument('--repeat-race',action='store_true',help='Repeat native operator inputs after 18000 frontend frames to check post-race recovery')
     parser.add_argument('--manual-mode',action='store_true',help='Select Manual through the previously measured handlebar zone, then hold native neutral handles')

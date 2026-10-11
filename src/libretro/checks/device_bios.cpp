@@ -195,6 +195,35 @@ int main()
         const auto wrong_name = sm2::rom::RomLoader::load(parent_audio, main_archive.string());
         require(wrong_name && wrong_name->game.name == "slave",
                 "Filename preference must require matching main program chips");
+        sm2::rom::GameDatabase reconstruction;
+        require(reconstruction.load_from_string(R"(<games>
+          <game name="slave" board="model2"><roms>
+            <region name="samples" size="4"><file name="slave-samples.bin" offset="0" crc="0xf5f2e160"/></region>
+          </roms></game>
+          <game name="main" parent="slave" rom_fallback="relay" board="model2"><roms>
+            <region name="maincpu" size="4"><file name="program.bin" offset="0" crc="0x2290ede5"/><patch offset="0" value="0x41414141"/></region>
+          </roms></game>
+        </games>)"), "Cannot parse reconstructed archive fixture");
+        fs::remove(main_archive);
+        write_zip(slave_archive, {{"slave-samples.bin", "SSSS"}});
+        const auto absent = sm2::rom::RomLoader::load(reconstruction, main_archive.string());
+        require(absent && absent->game.name == "main"
+                    && absent->roms.region("maincpu")[0] == 'A'
+                    && absent->roms.region("samples")[0] == 'S',
+                "Absent reconstructed archive must retain identity, patches and parent data");
+        write_zip(main_archive, {});
+        require(sm2::rom::RomLoader::load(reconstruction, main_archive.string()).has_value(),
+                "Empty content entry must resolve the declared donor");
+        fs::remove(relay);
+        require(!sm2::rom::RomLoader::load(reconstruction, main_archive.string()),
+                "Missing donor program must fail rather than fill required data");
+        write_zip(main_archive, {{"program.bin", "RRRR"}, {"slave-samples.bin", "SSSS"}});
+        write_zip(relay, {{"program.bin", "BAD!"}});
+        require(sm2::rom::RomLoader::load(reconstruction, main_archive.string()).has_value(),
+                "Valid local chips must work without a valid donor");
+        fs::remove(main_archive);
+        require(!sm2::rom::RomLoader::load(reconstruction, main_archive.string()),
+                "Corrupt fallback program must fail CRC verification");
         fs::remove_all(root);
         return 0;
     } catch (const std::exception& error) {

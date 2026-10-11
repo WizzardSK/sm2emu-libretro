@@ -81,7 +81,8 @@ enum class ArchiveFormat {
     static constexpr u8 kSevenZipSignature[6] = {0x37, 0x7a, 0xbc, 0xaf, 0x27, 0x1c};  // "7z\xBC\xAF\x27\x1C"
 
     if (read >= sizeof(kZipSignature)
-        && std::memcmp(header, kZipSignature, sizeof(kZipSignature)) == 0) {
+        && (std::memcmp(header, kZipSignature, sizeof(kZipSignature)) == 0
+            || (header[0] == 0x50 && header[1] == 0x4b && header[2] == 0x05 && header[3] == 0x06))) {
         return ArchiveFormat::Zip;
     }
     if (read >= sizeof(kSevenZipSignature)
@@ -632,15 +633,34 @@ std::optional<LoadResult> RomLoader::load(const GameDatabase& database,
                                           bool verify_crc,
                                           const std::string& device_directory)
 {
+    const auto requested_name = preferred_game.empty()
+        ? std::filesystem::path(archive_path).stem().string() : preferred_game;
+    const GameSpec* requested = database.find(requested_name);
+    const bool declared_fallback = requested && !requested->rom_fallback.empty();
     std::error_code error;
-    if (!std::filesystem::exists(archive_path, error)) {
+    const bool primary_exists = std::filesystem::exists(archive_path, error);
+    if (!primary_exists && !declared_fallback) {
         SM2_ERROR("'%s' does not exist", archive_path.c_str());
         return std::nullopt;
     }
 
     ArchiveSet archives;
-    if (!archives.open(archive_path)) {
+    if (primary_exists && !archives.open(archive_path)) {
         return std::nullopt;
+    }
+    // A reconstructed set can use a sibling donor without changing its
+    // identity or making any declared chip optional. Existing local chips
+    // retain precedence. The ordinary parent search below supplies other gaps.
+    if (declared_fallback && !score_game(archives, *requested, verify_crc).complete()) {
+        for (const char* extension : {".zip", ".7z"}) {
+            const auto path = std::filesystem::path(archive_path).parent_path()
+                / (requested->rom_fallback + extension);
+            if (!std::filesystem::exists(path, error)) continue;
+            SM2_INFO("'%s': also reading ROM fallback %s", requested->name.c_str(),
+                     path.string().c_str());
+            if (!archives.open(path.string())) return std::nullopt;
+            break;
+        }
     }
     if (!verify_crc) {
         SM2_WARN("ROM CRC verification is disabled; matching chips by filename only");
@@ -649,7 +669,9 @@ std::optional<LoadResult> RomLoader::load(const GameDatabase& database,
     // -- pick a game -------------------------------------------------------
     const GameSpec* chosen = nullptr;
 
-    if (!preferred_game.empty()) {
+    if (declared_fallback) {
+        chosen = requested;
+    } else if (!preferred_game.empty()) {
         chosen = database.find(preferred_game);
         if (chosen == nullptr) {
             SM2_ERROR("'%s' is not in the ROM database", preferred_game.c_str());

@@ -1,5 +1,15 @@
 # Power Sled Service Menu Campaign
 
+## Current Controller Update — 2026-10-11
+
+P1 and P2 game inputs now belong exclusively to controllers 1 and 2. Left/Right
+handles use centered Left/Right Stick Y axes. Native Entry selects a Test Menu
+item and Call confirms. Entry uses RetroPad B (physical Xbox A) and Call uses RetroPad A (physical Xbox B) on
+both ports. Current executable recipes follow these bindings; Master/Relay skip the separate
+gameplay operator decoder during Test. See
+[Current Controls](POWER_SLED_CONTROLS_2026-10-11.md). Historical campaign
+recipes and samples below retain their original binding context.
+
 ## Current Service Bindings — 2026-10-09
 
 At the user's request, Power Sled swaps the two service bindings in all three
@@ -29,7 +39,32 @@ Backups and the installation manifest are retained under
 This binding change has no new gameplay or operator-menu runtime capture.
 
 
-## Current Phase Gate
+## Current Four-Color Extension — 2026-10-10
+
+Phase 1 independently documents Silver / Red / Black / Yellow and a closing
+cycle on Main, Slave and Relay in SM2-Emu Libretro/RetroArch. Narrow menu patches
+remove the roster-dependent selector limit; Main/Relay retain their dedicated
+roles when committing a color. Relay's manual color selector is enabled at the
+user's request. ANS remains solely `relay` there, while Main/Slave add `4` Yellow.
+
+Phase 2 completes one persistent recipe with four discrete commits and four
+fresh reloads on all three programs: eight new stages / 24 records, plus a reused
+three-record menu baseline. Encoding is 0/1/2/3 at native offsets 8/264/520.
+SRM identity/container CRC, all copies, visible labels, unchanged calibration
+and EEPROM pass; other changed bytes are confined to native bookkeeping blocks.
+The initial commit-helper return bug is corrected; faulted attempts are retained
+as superseded and excluded. Qualification requires no i960 fault or SHUTDOWN.
+
+The three historical inventories and initial templates below remain unchanged.
+The YAML four-color extension/acquisition records and green workbook table own
+the current extension. Country interpretation and factory conditional ID logic
+remain deferred; Relay color storage and current menu availability are resolved.
+Calibration is listed only. All new acquisition runs deliberately omit the
+Master archive and retain Master identity through the declared donor fallbacks.
+See `Docs/POWER_SLED_YELLOW_AND_MASTER_ARCHIVE_REVIEW_2026-10-10.md` and
+`build-libretro-gpu/validation/power-sled-yellow-20261010/acquisition-review.json`.
+
+## Historical Base Campaign Phase Gate — 2026-10-09
 
 **Phase 1 — complete for the observed linked MAME Main/Relay/Slave topology.**
 The per-set Service Menu hierarchy, labels, commands, numeric ranges, native

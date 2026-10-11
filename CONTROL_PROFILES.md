@@ -65,7 +65,7 @@ esempio, Ski Super G a Ski Champ o le motociclette al profilo Harley-Davidson.
 - **Driving:** Steering sullo stick sinistro X, Brake su L2, Accelerator su R2,
   Shift Down/Up su L/R; per quattro marce, stesso H-Gate/Standard sullo stick
   destro e Neutral su West. Daytona usa VR1 Red/Down, VR2 Blue/Left,
-  VR3 Yellow/Right, VR4 Green/Up. Sega Rally usa VR1 su Down e porta
+  VR3 Yellow/Right, VR4 Green/Up. Sega Rally e Super GT 24h usano VR1 su Down, con Up supplementare. Sega Rally porta
   `Handbrake (Analog)` su South, traducendolo negli estremi 0x00/0xFF di IN2.
 - **Gun:** riusare il nome di famiglia `Gun`; `Gun (Lightgun)`, `Gun (Mouse)`,
   `Gun (Mouse + Analog Stick)` e `Gun (Analog Sticks)` indicano la sorgente
@@ -113,13 +113,13 @@ separatamente l'eventuale integrazione dei metadati upstream.
 | Joystick (Standard): varianti da specificare | Rimanenti joystick digitali + buttons3; nomi delle azioni da verificare prima di assegnare Fighting o altre varianti | Last Bronx, Dynamite Cop, Dead or Alive, Zero Gunner | 21 |
 | Joystick (Standard): Baseball (Hanguk Pro Yagu 98) | Layout digitale VF2 a due giocatori; Button 1/2/3, senza assi Bat Swing | Hanguk Pro Yagu 98 | 1 |
 | Joystick (Twin) | Eccezione esplicita Virtual On: due stick dello stesso giocatore | Virtual On e revisioni | 4 |
-| Joystick (Analog): Sky Target | stickx/sticky; joystick centrato, comandi di azione digitali | Sky Target | 1 |
+| Joystick (Analog): Sky Target + VR1 | stickx/sticky; joystick centrato, comandi di azione digitali | Sky Target | 1 |
 | Driving: 4-Speed + VR4 | steer/accel/brake + gearbox, famiglia daytona con quattro VR verificati | Daytona USA | 4 |
 | Driving: 4-Speed + VR1 + Handbrake | steer/accel/brake + gearbox, famiglia srallyc; Handbrake analogico su IN2 | Sega Rally | 5 |
 | Driving: Sequential + VR2 | steer/accel/brake + shift_buttons; due View | Indy 500, Over Rev, Sega Touring Car | 10 |
 | Driving: Sequential + VR1 | steer/accel/brake + shift_buttons; un View | Super GT 24h | 1 |
-| Driving: Sequential (Manx TT Superbike) | bank/throttle/brake + shift_buttons; Start condiviso con VR su Start e D-Pad Down | Manx TT | 3 |
-| Driving: Sequential (Motor Raid) | bank/throttle/brake; Kick su South/L1 e Punch su East/R1 | Motor Raid | 2 |
+| Driving: Sequential + VR1 (Manx TT Superbike) | bank/throttle/brake + shift_buttons; Start condiviso con VR su Start, D-Pad Down e D-Pad Up | Manx TT | 3 |
+| Driving: Sequential + VR1 (Motor Raid) | bank/throttle/brake; Kick su South/L1 e Punch su East/R1 | Motor Raid | 2 |
 | Gun — seriale lightgun | Interfaccia seriale lightgun, coordinate a 10 bit | Virtua Cop 1/2, The House of the Dead | 6 |
 | Gun — posizionale, Shot | Assi gun1/gun2 sul mux analogico; pulsanti secondo il gioco | Gunblade NY, Rail Chase 2 | 3 |
 | Gun — posizionale, Shot + Missile | Stessi assi, gun_missile abilitato | Behind Enemy Lines | 1 |
@@ -127,7 +127,7 @@ separatamente l'eventuale integrazione dei metadati upstream.
 | Special: Water Ski | slide | Sega Water Ski | 1 |
 | Special: Ski Super G | swing/inclining | Sega Ski Super G | 1 |
 | Special: Top Skater | curving/slide e comandi digitali particolari | Top Skater e revisioni | 4 |
-| Special: Wave Runner | handle/roll/throttle/pitch; non trattarlo come volante a tre assi | Wave Runner | 1 |
+| Special: Wave Runner + VR1 | handle/roll/throttle/pitch; non trattarlo come volante a tre assi | Wave Runner | 1 |
 | Joystick (Standard): Basketball (Air Walkers) | common + joystick1 + buttons3; P1-P4 implementati tramite la matrice I/O del cabinet | Air Walkers | 1 |
 | Joystick (Standard): Horse Racing (Royal Ascot II) | common + joystick1 + buttons3; migliore mappatura consentita dai metadata correnti | Royal Ascot II | 1 |
 | Joystick (Analog): Desert Tank + VR3 | Scheda Model 1 I/O già emulata; steer/accel/elevation e cablaggio digitale verificati da MAME | Desert Tank | 1 |
@@ -212,7 +212,7 @@ possono mantenere esplicitamente un set nel gruppo da verificare.
 - **Joystick (Standard): Soccer (2):** `vstriker`, `vstrikero`.
 - **Joystick (Standard): varianti da specificare (21):** `zeroguna`, `zerogunaj`, `doaa`, `doaab`, `doa`, `doaae`, `doab`, `dynamcop`, `dynamcopb`, `dynamcopc`, `dyndeka2`, `dyndeka2b`, `lastbrnx`, `lastbrnxj`, `lastbrnxu`, `pltkids`, `pltkidsa`, `schamp`, `sfight`, `zerogun`, `zerogunj`.
 - **Joystick (Standard): Baseball (Hanguk Pro Yagu 98) (1):** `hpyagu98`.
-- **Joystick (Analog): Sky Target (1):** `skytargt`.
+- **Joystick (Analog): Sky Target + VR1 (1):** `skytargt`.
 - **Gun — seriale lightgun (6):** `vcop2`, `hotd`, `hotdo`, `hotdp`, `vcop`, `vcopa`.
 - **Joystick (Standard): Basketball (Air Walkers) (1):** `airwlkrs`.
 - **Joystick (Standard): Horse Racing (Royal Ascot II) (1):** `rascot2`.
@@ -224,36 +224,49 @@ possono mantenere esplicitamente un set nel gruppo da verificare.
 - **Gun — posizionale, Shot (3):** `gunblade`, `rchase2`, `rchase2a`.
 - **Driving: Sequential + VR2 (10):** `indy500`, `indy500d`, `indy500to`, `overrev`, `overrevb`, `overrevba`, `stcc`, `stcca`, `stccb`, `stcco`.
 - **Driving: Sequential + VR1 (1):** `sgt24h`.
-- **Driving: Sequential (Manx TT Superbike) (3):** `manxtt`, `manxttc`, `manxttdx`.
-- **Driving: Sequential (Motor Raid) (2):** `motoraid`, `motoraiddx`.
+- **Driving: Sequential + VR1 (Manx TT Superbike) (3):** `manxtt`, `manxttc`, `manxttdx`.
+- **Driving: Sequential + VR1 (Motor Raid) (2):** `motoraid`, `motoraiddx`.
 - **Special: Water Ski (1):** `segawski`.
 - **Special: Ski Super G (1):** `skisuprg`.
 - **Special: Top Skater (4):** `topskatr`, `topskatrj`, `topskatru`, `topskatruo`.
 - **Joystick (Twin) (4):** `von`, `vonj`, `vonr`, `vonu`.
-- **Special: Wave Runner (1):** `waverunr`.
+- **Special: Wave Runner + VR1 (1):** `waverunr`.
 
 ## Power Sled Upstream Addition — 2026-10-08
 
 The current database contains 87 sets; the original catalogue counts above
 are historical. `powsled`, `powsledm` and `powsledr` use the new
 `Special: Power Sled` profile. Port 1 follows the upstream cabinet
-layout, with the original P2 Entry/Call aliases retained. Port 2 additionally
-provides P2 Entry/Call and independent handlebars on MAME mux channels 5/7;
-Port 1 handlebars retain channels 1/3. All variants retain their
-preliminary status. L3 exposes **Service B / Select** (extra Service 2,
-IN0 bit 0x40) in the Test/Service controller variant, including the second-port
-service alias. It is absent and inactive in the reduced controller variant.
-D-Pad Down exposes **Service A** (Service 1, IN0 bit 0x08), following the
-user-requested swap on 2026-10-09. Both service inputs obey the same profile
-eligibility on both ports. P1 Call (A) confirms menu selections.
+layout. As updated on 2026-10-11, Port 1 supplies P1 Entry/Call and
+Port 2 supplies P2 Entry/Call. Secondary bindings on Port 1 supply P2 Entry
+from West (RetroPad Y) and P2 Call from North (RetroPad X), even without Port 2. Both ports
+map Entry to RetroPad B (Xbox A / DualSense Cross) and Call to RetroPad A
+(Xbox B / DualSense Circle). Each rider
+uses Left Stick Y for Left Handlebar and Right Stick Y for Right Handlebar,
+with inverted signed Y travel and neutral ADC 0x80 (2026-10-11). P2 uses MAME mux channels 5/7;
+P1 retains channels 1/3. All variants retain their
+preliminary status. P1 L3 exposes **Service A / Select** (IN0 bit 0x40)
+and P1 R3 exposes **Test A**, subject to the Test/Service controller variant.
+There are no P2 Service/Test aliases. P2 North is **Shutdown Button** (IN0 bit
+0x08), P2 L3 is **Cancel Error** (IN0 bit 0x80), and P2 R3 is **Cancel Network
+Check** (IN3 bit 0x02). On each port, D-Pad Up and Down are secondary Entry
+bindings. P1 West/North still supply P2 Entry/Call; P2 North supplies Shutdown
+only. These changes do not alter the four handle axes or their polarity.
+In the Test Menu, Entry advances the selection and
+Call confirms it. During native Test phase 15, Master/Relay skip the separate gameplay operator
+decoder so that Entry/Call retain their menu actions; the Slave skips that
+decoder by role.
 Port 1 Start additionally supplies the qualified native operator input IN1
 `0x10` on Main and Relay, advancing linked boarding to the race through command
 5. The original Start line and Entry/Call wiring are preserved; Slave and Port
-2 do not supply the additional operator bit. Main/Relay P2 Entry deliberately
-requests Test Menu in the native program. See
+2 do not supply the additional operator bit. With the experimental Master command remap Disabled, Main/Relay P2 Entry
+requests Test Menu in the native program. Master remapping defaults to Enabled
+and uses Entry for phase-specific confirmation/race requests instead. See
 `Docs/POWER_SLED_OPERATOR_START_2026-10-09.md` for the verified sequence and limits.
 Exact actions, board wiring and verification limits are
 documented in `Docs/UPSTREAM_ROM_LOADER_PACKAGE_2026-10-08.md`.
+Current controls and the native Test comparison are documented in
+`Docs/POWER_SLED_CONTROLS_2026-10-11.md`.
 
 ## Upstream Control Reconciliation — 2026-10-08
 
@@ -271,10 +284,35 @@ Only Top Skater consumes this setting. No SDL device ownership is imported.
 
 The existing Ski Super G channel order and polarity already match upstream
 `54d6ff2`. Independent Swing/Inclining bindings are the approved core-specific behavior.
-Users wanting coupled steering can bind both virtual horizontal axes to the
-same physical axis in Settings > Input > Port 1 Controls. Swing's metadata
-already supplies the opposite polarity. No additional Core Option or Quick
-Menu selector is planned. Exact upstream response/rounding equivalence has
-not been verified. Reconsider built-in coupling only if frontend binding
-limitations or gameplay evidence warrant it. See
+Inclining also accepts LT/L2 (Left) and RT/R2 (Right), with proportional trigger
+travel and a digital full-travel fallback. RT minus LT produces the signed
+axis; the larger absolute travel of triggers or Right Stick X wins, with
+stick priority on ties, matching Top Skater's secondary Slide binding.
+Swing stays independent. No coupling selector is planned. See
 `Docs/UPSTREAM_CONTROLS_PACKAGE_2026-10-08.md` for evidence and limits.
+
+## VR1 Supplemental Up Binding — 2026-10-11
+
+VR1 means exactly one game action for changing the view, regardless of the
+hardware genre or whether that action shares a physical input with Start.
+Every single-View profile exposes D-Pad Up for the existing View action,
+preserving existing bindings and native input routing. Profile descriptions
+explicitly include VR1. Keep established action labels (VR1, View, View Change,
+or Start / VR); a shared Start/View line must not become a fictional separate
+camera input. Multiple-View profiles retain their VR2/VR3/VR4 layouts.
+
+| Single-View Family | Sets | D-Pad Up | Other Existing View Bindings |
+| --- | --- | --- | --- |
+| Sega Rally | srallyc, srallycb, srallycc, srallycdx, srallycdxa | VR1, already present | Down |
+| Super GT 24h | sgt24h | VR1, already present | Down |
+| Manx TT | manxtt, manxttc, manxttdx | Start / VR, added | Start, Down |
+| Motor Raid | motoraid, motoraiddx | Start / VR, added | Start |
+| Sky Target | skytargt | View Change, already present | — |
+| Wave Runner | waverunr | View, already present | — |
+
+The catalogue review covers 13 sets in six single-View families. No independent
+Up action conflicts with the new motorcycle aliases. Native calibration,
+analogue axes, gear/actions and multi-View layouts are unchanged. Verification
+uses the existing ROM-free input checks; physical-pad/gameplay behavior is a
+separate verification scope. The normal RetroArch core was rebuilt and installed with
+backup and SHA-256 verification; the removed dev core was not recreated.

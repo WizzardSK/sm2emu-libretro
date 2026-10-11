@@ -1,0 +1,21 @@
+{
+  "source_set": "powsledm",
+  "source_sha256": "2680c233072396d8521b58803664920c37173819ff47d03f1a91c9ac8f6a95cc",
+  "settings_copy_bases": [
+    0,
+    256,
+    512
+  ],
+  "endpoint_bytes": [
+    255,
+    0,
+    255,
+    0,
+    255,
+    0,
+    255,
+    0
+  ],
+  "scope": "Initial NVRAM only; preserve existing saves",
+  "approved_date": "2026-10-11"
+}

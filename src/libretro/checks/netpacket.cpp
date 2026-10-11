@@ -173,6 +173,36 @@ void check_power_sled_handshake()
     captured_callbacks->receive(hello.data(), hello.size(), 1);
     check(transport.ready(), "Valid Power Sled program roster rejected");
     captured_callbacks->stop();
+
+    // A pair needs no Relay; four riders may include one final Relay.
+    // Repeated Slave programs have separate peers and exactly one Master.
+    for (const unsigned count : {2u, 4u, 5u}) {
+        transport.configure("powsled", count, 1);
+        captured_callbacks->start(0, send_packet, nullptr);
+        check(!transport.ready(), "Expanded roster ready before peers are known");
+        hello = sent_packet;
+        for (unsigned peer = 1; peer < count; ++peer) {
+            check(captured_callbacks->connected(peer), "Expanded Power Sled peer rejected");
+            hello[14] = count == 5 && peer == 4 ? 2 : 3;
+            captured_callbacks->receive(hello.data(), hello.size(), peer);
+        }
+        check(transport.ready(), "Power Sled riders with optional Relay rejected");
+        hello[14] = 1;
+        captured_callbacks->receive(hello.data(), hello.size(), 1);
+        check(!transport.ready(), "Expanded ring accepted a second Master");
+        hello[14] = 3;
+        captured_callbacks->receive(hello.data(), hello.size(), 1);
+        check(transport.ready(), "Expanded valid roster failed to recover");
+        if (count == 2 || count == 5) {
+            hello[14] = 2;
+            captured_callbacks->receive(hello.data(), hello.size(), 1);
+            if (count == 2)
+                check(transport.ready(), "Power Sled Master + Relay pair rejected");
+            else
+                check(!transport.ready(), "Power Sled ring accepted two Relays");
+        }
+        captured_callbacks->stop();
+    }
 }
 
 void check_counted_relay_ring()

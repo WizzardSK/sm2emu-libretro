@@ -35,12 +35,19 @@ on Main; the Relay binding follows the same decoded operator path.
 
 ## Manual Sequence Used
 
+See [Current Start Sequence](POWER_SLED_START_SEQUENCE_2026-10-10.md) for
+the explanation using game input names, separate confirmation/advance
+activations, countdown readiness and local P2 versus a linked Slave.
+
 With Main Red / Slave Silver / Relay linked and startup complete:
 
 - Main **A / P1 Call** enters mode selection.
 - Slave **B / P1 Entry** confirms its mode.
-- Main **X / P2 Call**, release and wait; then **X** again after confirmation
-  enters boarding. The first pulse can be overwritten by local confirmation.
+- Main **X / P2 Call** confirms its mode. Release and wait at least seven
+  seconds at default 60 Hz before pressing **X** again to enter boarding,
+  allowing the native arm/platform animation and its audio sequence to finish.
+  The qualification on 2026-10-10 uses an eight-second wait. The first pulse
+  can be overwritten by local confirmation.
 - After boarding, Main **Start** begins the race.
 
 Main/Relay **Y / P2 Entry** deliberately enters Test Menu through native
@@ -98,3 +105,6 @@ main-program recognition. The installed-core original-archive session produces
 Main audio during the race; both cores and local system databases are updated.
 See `Docs/POWER_SLED_MAIN_AUDIO_INTEGRATION_2026-10-09.md` for current evidence.
 Earlier pending-integration and silence observations above are historical.
+
+See `Docs/POWER_SLED_BOARDING_ANOMALY_2026-10-10.md` for the restored
+Master animation and its native 380-frame model / 400-frame sound boundaries.

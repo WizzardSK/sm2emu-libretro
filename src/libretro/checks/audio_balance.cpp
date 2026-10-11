@@ -29,6 +29,23 @@ std::vector<s16> scsp(const char* game,bool balance,bool automatic,unsigned perc
     board.run(100000);const auto samples=board.pending_samples();
     return {samples.begin(),samples.end()};
 }
+std::vector<s16> dual_scsp(unsigned rider_gain, unsigned relay_gain) {
+    const auto rom = idle_program();
+    hw::Model2Sound board;
+    board.attach(rom, {}); board.attach_auxiliary_scsp(rom, {}); board.reset();
+    board.set_audio_source_gain(hw::AudioSource::Scsp, rider_gain, false);
+    board.auxiliary_scsp()->set_audio_source_gain(hw::AudioSource::Scsp, relay_gain, false);
+    for (auto* source : {&board, board.auxiliary_scsp()}) {
+        for (unsigned i = 0; i < 256; ++i)
+            source->scsp_write_word(0x4000 + i*2, u16(s16(500*std::sin(2*3.141592653589793*i/64))));
+        source->write16(0x100400, 15); source->write16(0x100002, 0x4000);
+        source->write16(0x100006, 256); source->write16(0x100008, 31);
+        source->write16(0x100016, 0xe000); source->write16(0x100000, 0x1820);
+    }
+    board.run(100000);
+    const auto samples = board.pending_samples();
+    return {samples.begin(), samples.end()};
+}
 std::vector<s16> pcm(const char* game,bool balance,bool auto1,bool auto2,unsigned gain1,unsigned gain2) {
     const auto rom=idle_program();std::vector<u8> sample(0x1000);
     sample[1]=1;sample[5]=0xff;sample[6]=0;sample[8]=0xf0;
@@ -58,6 +75,77 @@ std::vector<s16> music(const std::vector<u8>& mpeg,bool balance,bool automatic,u
 }
 int main(int argc,char** argv) {
     try {
+        {
+            const auto rom=idle_program();hw::Model2Sound routed,native;
+            routed.attach(rom,{});routed.attach_auxiliary_scsp(rom,{});routed.reset();
+            native.attach(rom,{});native.reset();
+            for(u8 byte:{u8(0xa0),u8(0x63),u8(3)})routed.midi_in(byte);
+            for(u8 byte:{u8(0xa0),u8(0),u8(3)})native.midi_in(byte);
+            std::vector<u8> actual,expected;
+            Archive actual_save(actual),expected_save(expected);
+            // Saving does not mutate the SCSP; the production accessor is read-only.
+            const_cast<hw::Scsp&>(routed.auxiliary_scsp()->scsp()).serialize(actual_save);
+            const_cast<hw::Scsp&>(native.scsp()).serialize(expected_save);
+            check(actual==expected && routed.scsp().stats().midi_in_bytes==0,
+                "Result stop translates exactly to native sequence control on Relay only");
+        }
+        {
+            const auto rom=idle_program();hw::Model2Sound board;
+            board.attach(rom,{});board.attach_auxiliary_scsp(rom,{});board.reset();
+            for(u8 byte:{u8(0xa0),u8(0x11),u8(0x0f)})board.midi_in(byte);
+            check(board.scsp().stats().midi_in_bytes==3
+                && board.auxiliary_scsp()->scsp().stats().midi_in_bytes==0,
+                "Rider packets stay on the primary SCSP");
+            board.midi_in(0xa0); // Save midway through a tagged MIDI packet.
+            std::vector<u8> state;Archive save(state);board.serialize(save);
+            board.midi_in(0x61);board.midi_in(5);
+            check(board.auxiliary_scsp()->scsp().stats().midi_in_bytes==3,
+                "Tagged music reaches only the auxiliary SCSP");
+            std::vector<u8> completed;Archive save_completed(completed);board.serialize(save_completed);
+            Archive load(state.data(),state.size());board.serialize(load);
+            check(!load.failed(),"Auxiliary board and partial MIDI packet restore");
+            board.midi_in(0x61);board.midi_in(5);
+            std::vector<u8> replayed;Archive save_replayed(replayed);board.serialize(save_replayed);
+            check(board.scsp().stats().midi_in_bytes==3
+                && replayed==completed,
+                "Restored routing neither duplicates music nor loses rider bytes");
+            const auto aux_bytes=board.auxiliary_scsp()->scsp().stats().midi_in_bytes;
+            for(u8 byte:{u8(0xa0),u8(0x12),u8(0)})board.midi_in(byte);
+            check(board.scsp().stats().midi_in_bytes==6
+                && board.auxiliary_scsp()->scsp().stats().midi_in_bytes==aux_bytes,
+                "Untagged group-12 rider cues remain on the primary board");
+            board.midi_in(0xa0);board.midi_in(0x62);
+            std::vector<u8> cue_state;Archive cue_save(cue_state);board.serialize(cue_save);
+            board.midi_in(1);
+            std::vector<u8> cue_completed;Archive cue_done(cue_completed);board.serialize(cue_done);
+            Archive cue_load(cue_state.data(),cue_state.size());board.serialize(cue_load);
+            board.midi_in(1);
+            std::vector<u8> cue_replayed;Archive cue_again(cue_replayed);board.serialize(cue_again);
+            check(!cue_load.failed() && cue_completed==cue_replayed
+                && board.scsp().stats().midi_in_bytes==6
+                && board.auxiliary_scsp()->scsp().stats().midi_in_bytes==aux_bytes+6,
+                "Tagged countdown restores mid-packet and reaches only the Relay board");
+            board.run(100000);board.clear_pending_samples();
+            std::vector<u8> resumed;Archive save_again(resumed);board.serialize(save_again);
+            hw::Model2Sound other;other.attach(rom,{});other.reset();
+            Archive wrong(resumed.data(),resumed.size());other.serialize(wrong);
+            check(wrong.failed(),"Reject auxiliary state without matching hardware");
+            other.reset();std::vector<u8> legacy;Archive old_save(legacy,10);other.serialize(old_save);
+            Archive old_load(legacy.data(),legacy.size(),10);other.serialize(old_load);
+            check(!old_load.failed(),"Version 10 sound state remains readable without auxiliary hardware");
+        }
+        {
+            const auto rider = dual_scsp(100, 0), relay = dual_scsp(0, 100);
+            const auto mixed = dual_scsp(100, 100), half = dual_scsp(0, 50);
+            check(energy(rider) > 0 && energy(relay) > 0 && energy(dual_scsp(0, 0)) == 0,
+                  "Independent rider and Relay gains can mute either board without silencing the other");
+            check(rider.size() == mixed.size() && relay.size() == mixed.size(), "Dual board output sizes match");
+            for (size_t i = 0; i < mixed.size(); ++i)
+                check(std::abs(int(mixed[i]) - int(rider[i]) - int(relay[i])) <= 1,
+                      "Rider and Relay output gains remain independent in the final mix");
+            check(std::abs(std::sqrt(energy(half)/energy(relay)) - 0.5) < 0.025,
+                  "Relay 50 percent changes only its board output level");
+        }
         for(auto [game,gain]: {std::pair{"hotd",1400}, {"vf2",840}, {"doa",500}, {"topskatr",232}, {"von",1042}}) {
             const auto raw=scsp(game,false,true,100),manual=scsp(game,true,false,100),automatic=scsp(game,true,true,100);
             check(energy(raw)>0,"SCSP fixture produces audio");

@@ -1,0 +1,18 @@
+{
+  "source": "/Users/andrea/Library/Application Support/sm2-emu/saves/bel.eeprom",
+  "source_sha256": "541139d25c0d00f00428c7fd439dcb685e871c0b642d660cc62d667635980d4a",
+  "calibration": [
+    0,
+    0,
+    0,
+    0,
+    255,
+    255,
+    255,
+    255
+  ],
+  "scope": "Calibration bytes only; existing template settings retained; checksum rebuilt",
+  "crc16": 58359,
+  "upstream_revision": "7db7108",
+  "verification": "User confirmed calibrated upstream aiming on 2026-10-11"
+}

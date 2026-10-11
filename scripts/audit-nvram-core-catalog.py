@@ -43,6 +43,7 @@ def normalized(value: str) -> str:
     value = re.sub(r"U\.?S\.?A?\.?\b", "USA", value)
     value = re.sub(r"\bJPN\b", "JAPAN", value)
     value = re.sub(r"\bEXP\b", "EXPORT", value)
+    value = re.sub(r"\bEUR\b", "EUROPE", value)
     value = re.sub(r"C\.?R\.?T\.?", "CRT", value)
     return re.sub(r"[^A-Z0-9#+-]+", " ", value).strip()
 
@@ -143,11 +144,12 @@ def expected_default(game: str, option: dict[str, object], native: str) -> str:
     }
     if (game, suffix) in overrides:
         return overrides[(game, suffix)]
-    if game in {"powsled", "powsledm"} and suffix == "ride_id":
+    if game in {"powsled", "powsledm", "powsledr"} and suffix == "ride_id":
         return "Silver"  # Native ROM fallback; no menu Use Default command.
     if suffix in {"country", "nation"}:
         return (
             next((label for label in labels if normalized(label) == "EXPORT"), None)
+            or next((label for label in labels if normalized(label) == "EUROPE"), None)
             or next((label for label in labels if normalized(label) == "USA"), native)
         )
     if "link" in suffix or "network" in suffix:
@@ -189,7 +191,7 @@ def audit_power_sled_campaign(options, errors):
                   if name.startswith("xl/tables/") and name.endswith(".xml")]
         if options.get("powsled"):
             table = next((t for t in tables if t.get("name") == "PowerSledCoreOptions"), None)
-            if (table is None or table.get("ref") != "A326:G346"
+            if (table is None or table.get("ref") != "A326:G347"
                     or table.find("m:autoFilter", namespace) is None
                     or table.find("m:tableStyleInfo", namespace).get("name") != "TableStyleMedium8"):
                 errors.append("Missing approved Power Sled Core Options review table")
@@ -208,7 +210,39 @@ def audit_power_sled_campaign(options, errors):
                     wanted = next(label for key, label in option["values"] if key == option["default_key"])
                     if actual_default != [wanted]: errors.append(f"Default emphasis differs at C{row}")
                     row += 1
-            if row != 347: errors.append("Expected 20 approved Power Sled option rows")
+            if row != 348: errors.append("Expected 21 approved Power Sled option rows")
+            color_table = next((t for t in tables if t.get("name") == "PowerSledFourColors"), None)
+            if (color_table is None or color_table.get("ref") != "A349:G352"
+                    or color_table.find("m:autoFilter", namespace) is None
+                    or color_table.find("m:tableStyleInfo", namespace).get("name") != "TableStyleMedium8"):
+                errors.append("Missing current four-color Power Sled review table")
+            for row, game in enumerate(["powsledm", "powsledr", "powsled"], 350):
+                if (cells.get(f"A{row}") != game
+                        or cells.get(f"C{row}") != "Silver, Red, Black, Yellow"
+                        or cells.get(f"E{row}") != "Approved"
+                        or cells.get(f"F{row}") != "Implemented"):
+                    errors.append(f"Four-color review differs at row {row}")
+                text = (ROOT / f"data/diagnostic-menus/{game}.yaml").read_text()
+                for key in ["ride_color_extension", "ride_color_acquisition"]:
+                    if key+":" not in text:
+                        errors.append(f"Missing {game} four-color evidence: {key}")
+                if "ride_color_acquisition:" in text:
+                    acquisition = json.JSONDecoder().raw_decode(text.split("ride_color_acquisition:",1)[1].lstrip())[0]
+                    if (acquisition.get("mapping") != {"Silver":0,"Red":1,"Black":2,"Yellow":3}
+                            or acquisition.get("offsets") != [8,264,520]
+                            or acquisition.get("status") != "commits_and_fresh_reloads_validated"):
+                        errors.append(f"Invalid acquired {game} four-color mapping")
+                    evidence = ROOT / acquisition["evidence"]
+                    if evidence.exists():
+                        journal = json.loads(evidence.read_text())
+                        if hashlib.sha256(evidence.read_bytes()).hexdigest() != acquisition["evidence_sha256"]:
+                            errors.append(f"Changed four-color acquisition journal: {game}")
+                        for raw, color in enumerate(["silver","red","black","yellow"]):
+                            for action in ["commit", "reload"]:
+                                sample = journal["samples"][f"{action}-{color}"]
+                                record = next(r for r in sample["records"] if r["set"] == game)
+                                if sample["status"] != "validated" or record["copies"] != [raw]*3:
+                                    errors.append(f"Missing native {game} {action}-{color} proof")
             implementation_path = ROOT / "build-libretro-gpu/validation/power-sled-options-20261009/coverage.json"
             if implementation_path.exists():
                 implementation = json.loads(implementation_path.read_text())
@@ -231,9 +265,12 @@ def audit_power_sled_campaign(options, errors):
                         errors.append(f"Missing implementation YAML: {game}")
                         continue
                     metadata = json.JSONDecoder().raw_decode(text.split("core_option_implementation:",1)[1].lstrip())[0]
+                    # This pinned historical package preceded Relay Ride ID;
+                    # the independently acquired extension above owns that row.
                     if (metadata["evidence_sha256"] != hashlib.sha256(implementation_path.read_bytes()).hexdigest()
                             or metadata["core_sha256"] != implementation["core_sha256"]
-                            or metadata["approved_fields"] != [o["suffix"] for o in options[game]]):
+                            or metadata["approved_fields"] != [o["suffix"] for o in options[game]
+                                if game != "powsledr" or o["suffix"] != "ride_id"]):
                         errors.append(f"Power Sled implementation YAML differs: {game}")
         if integrity_acquired:
             evidence = json.loads(integrity_path.read_text())
@@ -500,7 +537,7 @@ def audit_power_sled_campaign(options, errors):
             if data.get("core_options", {}).get(key) != "disabled":
                 errors.append(f"{game}: acquisition must disable {key}")
         if options.get(game):
-            wanted = (["ride_id"] if game != "powsledr" else []) + [f"checkpoint_{i}" for i in range(5)] + ["motion_angle"]
+            wanted = ["ride_id"] + [f"checkpoint_{i}" for i in range(5)] + ["motion_angle"]
             if [o["suffix"] for o in options[game]] != wanted:
                 errors.append(f"{game}: Power Sled exposes fields outside the approved review")
             for option in options[game]:
@@ -508,7 +545,7 @@ def audit_power_sled_campaign(options, errors):
                     expected = [(str(v),str(v)) for v in range(5,100)]
                 elif option["suffix"] == "motion_angle":
                     expected = [(f"{v/10:.1f}",f"{v/10:.1f}") for v in range(100,451,5)]
-                else: expected = [("silver","Silver"),("red","Red"),("black","Black")]
+                else: expected = [("silver","Silver"),("red","Red"),("black","Black"),("yellow","Yellow")]
                 if option["values"] != expected: errors.append(f"{game}: approved values differ")
     evidence = ROOT / "build-libretro-gpu/validation/power-sled-service-menu-20261008"
     manifest_path = evidence / "manifest.json"
@@ -584,7 +621,7 @@ def main() -> int:
         }
         if game in {"powsled", "powsledm", "powsledr"}:
             expected_labels = {f"CHECKPOINT {i}" for i in range(5)} | {"MOTION ANGLE"}
-            if game != "powsledr": expected_labels.add("RIDE ID")
+            expected_labels.add("RIDE ID")
 
         actual_labels = [normalized(str(option["label"])) for option in actual]
         actual_set = set(actual_labels)

@@ -11,6 +11,36 @@ An upstream change is an integration candidate by default when it can operate
 through the Libretro API and the core's supported platforms. The date when a
 change was first reviewed does not affect its priority or status.
 
+## Mandatory Frontend References
+
+Before changing menu organization, equivalent option names, descriptions/help text,
+choices, defaults or application behavior, inspect the current Supermodel Libretro and TGPulse
+Libretro reference implementations read-only. Compare their actual code and
+runtime evidence rather than relying on older chat descriptions. Record any
+pending feature or differing implementation explicitly. Adapt hardware-specific
+semantics while preserving the user's shared frontend conventions and explicit
+exceptions; the latest approved user instruction takes precedence. Reuse the
+reference wording for equivalent behavior, adapting only hardware, applicability
+and actual lifecycle differences. Descriptions must state when changes apply
+and whether they reset the machine; do not claim behavior absent from this core.
+
+Equivalent frontend improvements, including supplemental bindings, should be
+reviewed for transfer to the other reference cores. Use an interchange file and
+the destination chat to record applicable candidates in its roadmap. Verify
+that the destination records the requirement before closing the originating
+handoff; implementation requires its own approved scope.
+
+## Single-View Input Convention
+
+VR1 denotes any game with exactly one action that changes the view, including
+non-driving games and actions sharing a native input with Start. Include VR1
+in the profile description and bind D-Pad Up to that existing action in addition
+to the established bindings. Preserve the native shared-input behavior and the
+existing action label. Do not invent another camera input. Review a genuine
+conflict with an independent Up action before changing that binding. Multiple
+independent View actions retain their VR2/VR3/VR4 layouts. Catalogue reviews
+must cover all profiles and clones, not just profiles already named VR1.
+
 ## Integration Rules
 
 1. **Import compatible emulator changes.** Bring in CPU, timing, audio,

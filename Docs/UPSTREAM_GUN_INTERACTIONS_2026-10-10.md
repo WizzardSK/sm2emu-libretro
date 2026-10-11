@@ -18,7 +18,7 @@ or a RetroArch qualification of the proposed integration.
 | Change | Current Port Interaction | Proposed Treatment |
 | --- | --- | --- |
 | Positional `<point>` metadata | The current parser has no point support and `scale_fraction` is linear. Importing XML alone would silently leave the new curves unused. Upstream points replace min/max/reverse; applying reverse twice would invert Rail Chase 2 again. | Import the schema/parser and piecewise interpolation together. Use point values directly, round as upstream and clamp at the outer points. Keep the existing linear fallback when points are absent. |
-| Rail Chase 2 / Revision A curves | Corrects non-central X response and Y saturation. Existing channel order is P2 X, P1 X, P2 Y, P1 Y; revisions have different raw directions. | Preserve each revision's own curve and mux channels. Keep controller sources, player routing and Shot bindings. No response selector is justified by the source comparison. Verify reticle placement with existing initial saves before claiming gameplay accuracy. |
+| Rail Chase 2 / Revision A curves | Corrects non-central X response and Y saturation. Existing channel order is P2 X, P1 X, P2 Y, P1 Y; revisions have different raw directions. | Preserve each revision's own curve and mux channels. Keep controller sources, player routing and Shot bindings. User decision on 2026-10-11 supersedes the original selector recommendation: expose Linear / Upstream mapping, keeping Linear default. Preserve the current native reticle behavior unless Upstream is explicitly selected. Intentional depth-related reticle displacement is a hypothesis, not established evidence. Verify reticle placement with existing initial saves before claiming gameplay accuracy. |
 | HOTD Prototype endpoints | Changes only prototype serial coordinates. Its dedicated initial template remains separate from retail; the P2 trigger is already corrected to IN1 bit 1. | Import prototype bounds, retaining the one-unit on-screen inset, explicit off-screen bit and both trigger routes. Check the dedicated template and an existing save; do not migrate or erase operator settings. |
 | BEL curves and seed removal | New raw full-range curves conflict with the distributed calibration. The port also extends the seed to recognize that preset. Removing only the seed does not repair that mismatch. | Reconcile curve scaling with the published preset before removing the workaround. A private rescaled-curve candidate restores the center with the existing preset. Retain the narrow legacy workaround until the replacement is qualified; no unconditional save rewrite. |
 | Serial 1% border reload | Upstream affects Mouse, gamepad and physical guns unconditionally. Current port treats on-screen endpoints as on-screen and receives physical off-screen status separately. Mouse-only 5% reload is an optional shared Supermodel convention. | Preserve the published frontend policy as the recommended adaptation. An exact upstream border mode would require an explicit user-approved selector and clearly stated precedence. Do not silently make disabled Mouse edge reload ineffective. |
@@ -121,3 +121,16 @@ both installed cores remain at SHA-256
 This is source and bounded native-machine analysis. Full-range accuracy,
 arbitrary calibration compatibility, physical guns and final RetroArch behavior
 are not claimed. No commit, publication or cross-project change was performed.
+
+## User Decision — 2026-10-11
+
+Rail Chase 2 and Revision A require optional Linear / Upstream coordinate
+mapping with Linear default. Source preparation currently contains the upstream
+tables, but normal RetroArch builds deliberately exclude them together with
+pending HOTD prototype bounds. The installed core retains the prior linear
+conversion. This decision does not qualify the new mapping or prove whether
+the original reticle displacement intentionally represents depth.
+
+## Integration Update — 2026-10-11
+
+The operator calibrated upstream BEL successfully. Its EEPROM contains MIN 00 / DEL FF for all four axes, resolving the missing calibration prerequisite in the earlier private probes. The latest approval replaces the earlier RC2 Linear-default decision: RC2 and HOTDP now have optional mappings with Upstream default. BEL uses upstream mapping and the matching initial calibration, without the RAM seed. Existing saves are preserved. See `GUN_MAPPING_INTEGRATION_2026-10-11.md` for current behavior and verification limits.

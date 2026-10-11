@@ -65,8 +65,8 @@ inline constexpr std::array<LinkedCabinetGame, 31> linked_cabinet_games{{
     {"manxtt", "manxtt", 3}, {"manxttc", "manxtt", 3},
     {"von", "von", 3}, {"vonj", "von", 3}, {"vonu", "von", 3},
     {"vonr", "von", 3},
-    {"powsledm", "powsledm", 3}, {"powsledr", "powsledr", 3},
-    {"powsled", "powsled", 3},
+    {"powsledm", "powsledm", 5}, {"powsledr", "powsledr", 5},
+    {"powsled", "powsled", 5},
 }};
 
 inline constexpr std::array<retro_core_option_value, 9> linked_cabinet_values{{
@@ -98,7 +98,7 @@ inline std::string_view linked_cabinet_network_family(std::string_view game)
 inline std::string_view linked_cabinet_rules(const LinkedCabinetGame& linked_game)
 {
     if (power_sled_program_role(linked_game.name))
-        return "Use exactly three instances: powsledm Main, powsledr Relay and powsled Slave. The program selects its hardware role; Automatic Network Settings selects the Ride color on Main and Slave. Relay has a fixed Relay value. Gameplay support remains preliminary.";
+        return "Use one powsledm Master, zero to three powsled Slaves and an optional final powsledr Relay, with two to five total instances. A Master without Slaves requires a Relay and Silver Ride color. Rider colors must be distinct. The program selects its hardware role; Automatic Network Settings selects the Ride color on Main and Slave. Relay has a fixed Relay value. Gameplay support remains preliminary.";
     if (linked_game.name == "vonr")
         return "This dedicated Relay program is valid only in a 3 Cabinets session with one Master Twin and one Slave Twin; it displays the linked match and is not playable.";
     const std::string_view game = linked_game.nvram_game;
@@ -199,7 +199,7 @@ inline void build_option_definitions()
     retro_core_option_v2_definition initial_nvram{};
     initial_nvram.key = "sm2_initial_nvram_setup";
     initial_nvram.desc = "Automatic Initial NVRAM Setup";
-    initial_nvram.info = "When no frontend .srm or valid standalone .nv/.eeprom exists, initialize supported sets from a validated game sample or a byte-identical parent sample before the first emulated frame, then apply the selected country, safe offline/link values and core defaults such as Daytona's Deluxe cabinet, Motor Raid Deluxe's Twin cabinet, Over Rev's SEGA STCC hardware and Super GT 24h's I/O Type C. Automatic setup never replaces existing saves; normal game writes still persist. Delete the game's save data to regenerate the initial setup.";
+    initial_nvram.info = "When no frontend .srm or valid standalone .nv/.eeprom exists, initialize supported sets from a validated game sample or a byte-identical parent sample before the first emulated frame, then apply the selected country, safe offline/link values and core defaults such as Daytona's Deluxe cabinet, Motor Raid Deluxe's Twin cabinet, Over Rev's SEGA STCC hardware and Super GT 24h's I/O Type C and Power Sled's approved handlebar calibration. Automatic setup never replaces existing saves; normal game writes still persist. Delete the game's save data to regenerate the initial setup.";
     initial_nvram.category_key = "system";
     initial_nvram.values[0] = {"enabled", "Enabled"};
     initial_nvram.values[1] = {"disabled", "Disabled"};
@@ -216,7 +216,10 @@ inline void build_option_definitions()
             + std::string(linked_cabinet_rules(game)));
         linked_cabinets.info = option_info_storage.back().c_str();
         linked_cabinets.category_key = "system";
-        if (game.name == "vonr" || power_sled_program_role(game.name)) {
+        if (power_sled_program_role(game.name)) {
+            linked_cabinets.values[0] = linked_cabinet_values[0];
+            std::copy_n(linked_cabinet_values.begin() + 1, 4, linked_cabinets.values + 1);
+        } else if (game.name == "vonr") {
             linked_cabinets.values[0] = linked_cabinet_values[0];
             linked_cabinets.values[1] = linked_cabinet_values[2];
         } else {
@@ -231,11 +234,11 @@ inline void build_option_definitions()
         retro_core_option_v2_definition automatic{};
         automatic.key = option_key_storage.back().c_str();
         automatic.desc = "Automatic Network Settings";
-        automatic.info = "Choose the native operator role and identity using reviewed NVRAM values. NVRAM Settings must be enabled. Linked Cabinets Disabled restores safe offline values; Automatic Network Settings Disabled leaves manual selectors authoritative. Netplay host/client status does not choose the native role. Changes apply on Resume or Restart.";
+        automatic.info = "Available only while NVRAM Settings is enabled. An active preset sets and maintains the corresponding NVRAM selectors for the native role and identity. Linked Cabinets Disabled selects safe offline defaults. Disabled leaves the selectors under manual control. Changes apply when returning to the game; changed persisted values reset the machine automatically. Frontend host/client does not select the native role.";
         if (power_sled_program_role(game.name))
-            automatic.info = "Choose the Power Sled Ride color using reviewed NVRAM values. Main and Slave roles are selected by the loaded ROM program. NVRAM Settings must be enabled. Disabled leaves the manual Ride ID selector authoritative. The Relay program has no color selector. Changes apply on Resume or Restart.";
+            automatic.info = "Available only while NVRAM Settings is enabled. An active preset sets and maintains the Ride ID selector for the Power Sled Ride color, including with Linked Cabinets Disabled. The loaded ROM program selects the Main or Slave role independently of color. Disabled leaves the selector under manual control. Changes apply when returning to the game; changed persisted values reset the machine automatically. Frontend host/client does not select the native role.";
         if (relay_program)
-            automatic.info = "This ROM program has a fixed Relay role. Relay is the only value; it does not select a Power Sled Ride color. Virtual On retains its native No Link operator attribute. Changes apply on Resume or Restart.";
+            automatic.info = "Available only while NVRAM Settings is enabled. This ROM program has a fixed Relay role. Relay is the only value. Power Sled retains the manual Ride ID selector; Virtual On retains its native No Link operator attribute. Changes apply when returning to the game; changed persisted values reset the machine automatically. Frontend host/client does not select the native role.";
         automatic.category_key = "system";
         const auto choices = network::choices(relay_program ? game.name : game.nvram_game,
                                              game.max_cabinets);
@@ -245,25 +248,54 @@ inline void build_option_definitions()
             automatic.values[index] = {option_key_storage.back().c_str(),
                                        option_value_label_storage.back().c_str()};
         }
-        automatic.default_value = relay_program ? "relay"
-            : power_sled_program_role(game.name) ? "0" : "1";
+        automatic.default_value = relay_program ? "relay" : "1";
         registered_definitions.push_back(automatic);
     }
 
-    retro_core_option_v2_definition ski_drive_board_bypass{};
-    ski_drive_board_bypass.key = "sm2_skisuprg_drive_board_bypass";
-    ski_drive_board_bypass.desc = "Drive Board Error Bypass (Restart Required)";
-    ski_drive_board_bypass.info = "For Sega Ski Super G, automatically press Test once when the game reaches the DRIVE BOARD TROUBLE CODE: FF screen. This allows play without the unimplemented external Drive Board. Disabled preserves the original SM2-Emu startup behaviour.";
-    ski_drive_board_bypass.category_key = "system";
-    ski_drive_board_bypass.values[0] = {"disabled", "Disabled"};
-    ski_drive_board_bypass.values[1] = {"enabled", "Enabled"};
-    ski_drive_board_bypass.default_value = "disabled";
-    registered_definitions.push_back(ski_drive_board_bypass);
+    retro_core_option_v2_definition sled_standalone{};
+    sled_standalone.key = "sm2_power_sled_standalone";
+    sled_standalone.desc = "Power Sled Standalone Mode (Restart Required)";
+    sled_standalone.info = "Experimental: run the Power Sled Master alone with one human sled and three native computer opponents, or run the Relay alone in continuous Attract Mode without starting a race. Applies only to powsledm and powsledr with Linked Cabinets Disabled. Has no effect on other games or linked sessions. Relay Audio On Master is selected independently. Reload content after changing this option or switching between standalone and linked play.";
+    sled_standalone.category_key = "system";
+    sled_standalone.values[0] = {"disabled", "Disabled"};
+    sled_standalone.values[1] = {"enabled", "Enabled"};
+    sled_standalone.default_value = "enabled";
+    registered_definitions.push_back(sled_standalone);
+
+    retro_core_option_v2_definition sled_audio{};
+    sled_audio.key = "sm2_power_sled_relay_audio";
+    sled_audio.desc = "Power Sled Relay Audio On Master (Restart Required)";
+    sled_audio.info = "Experimental: run the Relay music sound program on an additional SCSP inside the Power Sled Master, preserving rider effects. Requires matching Relay sound ROMs in the loaded archive or adjacent powsledr set. Has no effect on Slave, Relay or other games. Disable when a separate Relay already supplies the music to avoid duplicate playback. SCSP Gain controls the rider board; Power Sled Relay Audio Gain controls the added Relay board. Reload content after changing this option.";
+    sled_audio.category_key = "system";
+    sled_audio.values[0] = {"disabled", "Disabled"};
+    sled_audio.values[1] = {"enabled", "Enabled"};
+    sled_audio.default_value = "enabled";
+    registered_definitions.push_back(sled_audio);
+
+    retro_core_option_v2_definition sled_commands{};
+    sled_commands.key = "sm2_power_sled_relay_commands";
+    sled_commands.desc = "Power Sled Relay Commands On Master (Restart Required)";
+    sled_commands.info = "Experimental: use Coin or Start to open mode selection, Entry P1/P2 to confirm, and automatically enter pre-race after the native departure animation and sound finish. In pre-race, Start or Entry P1/P2 requests the race. During results, Start or Select (Coin) returns the group to the intro. Call P1/P2 activates native Emergency Stop; Coin or Start returns the stopped group to the intro, then another Coin or Start opens selection. Test Menu keeps its original Entry/Call actions. Applies only to powsledm, in linked or Standalone play. Has no effect on Slave, Relay or other games. Relay Audio is selected independently. Reload content after changing this option.";
+    sled_commands.category_key = "system";
+    sled_commands.values[0] = {"disabled", "Disabled"};
+    sled_commands.values[1] = {"enabled", "Enabled"};
+    sled_commands.default_value = "enabled";
+    registered_definitions.push_back(sled_commands);
+
+    retro_core_option_v2_definition sled_speed{};
+    sled_speed.key = "sm2_power_sled_ai_finish_speed_fix";
+    sled_speed.desc = "Power Sled AI Finish Speed Fix (Restart Required)";
+    sled_speed.info = "Experimental: bypass the native computer-opponent speed limit after course index 773. The normal AI driving and final stop beyond index 839 remain unchanged. Applies to Power Sled programs, including Standalone. Enable consistently on every linked instance that owns computer opponents. Disabled preserves original behavior. Reload content after changing this option.";
+    sled_speed.category_key = "system";
+    sled_speed.values[0] = {"disabled", "Disabled"};
+    sled_speed.values[1] = {"enabled", "Enabled"};
+    sled_speed.default_value = "enabled";
+    registered_definitions.push_back(sled_speed);
 
     retro_core_option_v2_definition master{};
     master.key = "sm2_nvram_settings";
     master.desc = "NVRAM Settings";
-    master.info = "Let RetroArch manage supported operator settings for the loaded game. When enabled, every displayed value is applied at startup and overrides later Service Menu changes. When disabled, the core does not modify these fields.";
+    master.info = "For games with reviewed operator fields, apply the displayed settings at startup and when Core Options change, overriding saved values for these fields. Disabled preserves Service Menu settings. Applying changed persisted values resets the machine automatically. Other fields and calibration are preserved.";
     master.category_key = "system";
     master.values[0] = {"disabled", "Disabled"};
     master.values[1] = {"enabled", "Enabled"};
@@ -425,7 +457,7 @@ inline void build_option_definitions()
     scsp_low_pass.category_key = "audio";
     scsp_low_pass.values[0] = {"disabled", "Disabled"};
     scsp_low_pass.values[1] = {"enabled", "Enabled"};
-    scsp_low_pass.default_value = "disabled";
+    scsp_low_pass.default_value = "enabled";
     registered_definitions.push_back(scsp_low_pass);
 
     retro_core_option_v2_definition music_volume{};
@@ -457,15 +489,18 @@ inline void build_option_definitions()
     music_volume.default_value = "100";
     registered_definitions.push_back(music_volume);
 
-    constexpr std::array<const char*, 5> audio_source_labels{{
+    constexpr std::array<const char*, 6> audio_source_labels{{
         "SCSP Gain", "DSB (MPEG) Gain",
         "MultiPCM 1 Gain", "MultiPCM 2 Gain",
-        "FM (YM3438) Gain"}};
-    for (size_t source = 0; source < audio_source_keys.size(); ++source) {
+        "FM (YM3438) Gain", "Power Sled Relay Audio Gain"}};
+    for (size_t source = 0; source < audio_source_labels.size(); ++source) {
         retro_core_option_v2_definition gain{};
-        gain.key = audio_source_keys[source];
+        gain.key = source < audio_source_keys.size()
+            ? audio_source_keys[source] : "sm2_power_sled_relay_audio_gain";
         gain.desc = audio_source_labels[source];
         gain.info = "Set this sound source's output level. Auto uses the upstream game profile when Enhanced Audio Balance is enabled, otherwise unity gain. Manual percentages replace the profile for this source. Fixed hardware mixer routes and Music Volume still apply. Mute silences only the output; the chip and timers keep running. Changes take effect immediately.";
+        if (source == audio_source_keys.size())
+            gain.info = "Set only the added Relay SCSP output on the Power Sled Master when Relay Audio is active. Auto uses the Relay board profile with Enhanced Audio Balance, otherwise unity gain. Mute saves 0 and silences output without stopping the chip. Rider SCSP Gain remains independent; Master Volume applies to the final mix. Has no effect without the added Relay board. Changes take effect immediately.";
         gain.category_key = "audio";
         gain.values[0] = {"auto", "Auto"};
         gain.values[1] = {"0", "Mute"};
@@ -511,6 +546,30 @@ inline void build_option_definitions()
     crosshair_style.values[1] = {"supermodel", "Supermodel"};
     crosshair_style.default_value = "sm2";
     registered_definitions.push_back(crosshair_style);
+
+    {
+        retro_core_option_v2_definition mapping{};
+        mapping.key = "sm2_rail_chase_aim_mapping";
+        mapping.desc = "Rail Chase 2 Aim Mapping";
+        mapping.info = "Custom (SM2-Emu) uses the coordinate tables for Rail Chase 2 and its Rev. A. Linear (MAME) retains the previous port mapping. Other games are unaffected. Changes take effect immediately; recalibrate in the Service Menu after changing this option.";
+        mapping.category_key = "input";
+        mapping.values[0] = {"upstream", "Custom (SM2-Emu)"};
+        mapping.values[1] = {"previous", "Linear (MAME)"};
+        mapping.default_value = "upstream";
+        registered_definitions.push_back(mapping);
+    }
+
+    {
+        retro_core_option_v2_definition mapping{};
+        mapping.key = "sm2_hotd_prototype_aim_mapping";
+        mapping.desc = "House Of The Dead Prototype Aim Mapping";
+        mapping.info = "Custom (SM2-Emu) uses the expanded coordinate range for the prototype. Linear (MAME) retains the previous port range. Other games are unaffected. Changes take effect immediately.";
+        mapping.category_key = "input";
+        mapping.values[0] = {"upstream", "Custom (SM2-Emu)"};
+        mapping.values[1] = {"previous", "Linear (MAME)"};
+        mapping.default_value = "upstream";
+        registered_definitions.push_back(mapping);
+    }
 
     retro_core_option_v2_definition gun_input{};
     gun_input.key = "sm2_gun_input";
@@ -815,11 +874,44 @@ inline bool manxtt_cabinet_audio_enabled()
              && option.value && std::strcmp(option.value, "disabled") == 0);
 }
 
+inline bool power_sled_relay_audio_enabled()
+{
+    retro_variable option{"sm2_power_sled_relay_audio", nullptr};
+    return !(option_environment && option_environment(RETRO_ENVIRONMENT_GET_VARIABLE, &option)
+        && option.value && std::strcmp(option.value, "disabled") == 0);
+}
+
+inline bool power_sled_standalone_enabled()
+{
+    retro_variable option{"sm2_power_sled_standalone", nullptr};
+    return !(option_environment && option_environment(RETRO_ENVIRONMENT_GET_VARIABLE, &option)
+        && option.value && std::strcmp(option.value, "disabled") == 0);
+}
+
+inline bool power_sled_ai_finish_speed_fix_enabled()
+{
+    retro_variable option{"sm2_power_sled_ai_finish_speed_fix", nullptr};
+    return !(option_environment && option_environment(RETRO_ENVIRONMENT_GET_VARIABLE, &option)
+        && option.value && std::strcmp(option.value, "disabled") == 0);
+}
+
+inline bool power_sled_relay_commands_enabled()
+{
+    retro_variable option{"sm2_power_sled_relay_commands", nullptr};
+    if (option_environment && option_environment(RETRO_ENVIRONMENT_GET_VARIABLE, &option)
+        && option.value)
+        return std::strcmp(option.value, "enabled") == 0;
+    return true;
+}
+
 inline bool scsp_output_low_pass_enabled()
 {
     retro_variable option{"sm2_scsp_output_low_pass_filter", nullptr};
-    return option_environment && option_environment(RETRO_ENVIRONMENT_GET_VARIABLE, &option)
-        && option.value && std::strcmp(option.value, "enabled") == 0;
+    if (option_environment && option_environment(RETRO_ENVIRONMENT_GET_VARIABLE, &option)
+        && option.value) {
+        return std::strcmp(option.value, "disabled") != 0;
+    }
+    return true;
 }
 
 inline unsigned music_volume_percent()
@@ -831,18 +923,16 @@ inline unsigned music_volume_percent()
     return static_cast<unsigned>(std::clamp(std::atoi(value), 0, 200));
 }
 
-inline bool audio_source_gain_automatic(size_t source)
+inline bool audio_gain_automatic(const char* key)
 {
-    if (source >= audio_source_keys.size()) return true;
-    retro_variable option{audio_source_keys[source], nullptr};
+    retro_variable option{key, nullptr};
     return !(option_environment && option_environment(RETRO_ENVIRONMENT_GET_VARIABLE, &option)
              && option.value) || std::strcmp(option.value, "auto") == 0;
 }
 
-inline unsigned audio_source_gain(size_t source)
+inline unsigned audio_gain(const char* key)
 {
-    if (source >= audio_source_keys.size()) return 100;
-    retro_variable option{audio_source_keys[source], nullptr};
+    retro_variable option{key, nullptr};
     const char* value = option_environment
         && option_environment(RETRO_ENVIRONMENT_GET_VARIABLE, &option)
         && option.value ? option.value : "auto";
@@ -855,6 +945,16 @@ inline unsigned audio_source_gain(size_t source)
     return static_cast<unsigned>(percent);
 }
 
+inline bool audio_source_gain_automatic(size_t source)
+{
+    return source >= audio_source_keys.size() || audio_gain_automatic(audio_source_keys[source]);
+}
+
+inline unsigned audio_source_gain(size_t source)
+{
+    return source >= audio_source_keys.size() ? 100 : audio_gain(audio_source_keys[source]);
+}
+
 inline SpecialAnalogOptions special_analog_options()
 {
     SpecialAnalogOptions options;
@@ -862,6 +962,13 @@ inline SpecialAnalogOptions special_analog_options()
     if (option_environment && option_environment(RETRO_ENVIRONMENT_GET_VARIABLE, &response)
         && response.value)
         options.top_skater_progressive = std::strcmp(response.value, "linear") != 0;
+    for (auto [key, enabled] : {std::pair{"sm2_rail_chase_aim_mapping", &options.rail_chase_upstream},
+                                std::pair{"sm2_hotd_prototype_aim_mapping", &options.hotd_prototype_upstream}}) {
+        retro_variable mapping{key, nullptr};
+        if (option_environment && option_environment(RETRO_ENVIRONMENT_GET_VARIABLE, &mapping)
+            && mapping.value)
+            *enabled = std::strcmp(mapping.value, "previous") != 0;
+    }
     return options;
 }
 
@@ -965,7 +1072,7 @@ inline unsigned linked_cabinets(std::string_view game)
         || !option.value || std::strcmp(option.value, "disabled") == 0)
         return 1;
     const unsigned cabinets = static_cast<unsigned>(option.value[0] - '0');
-    const unsigned minimum = (game == "vonr" || power_sled_program_role(game)) ? 3u : 2u;
+    const unsigned minimum = game == "vonr" ? 3u : 2u;
     return cabinets >= minimum && cabinets <= linked_game->max_cabinets
         && option.value[1] == '\0'
         ? cabinets : 1;
@@ -980,19 +1087,12 @@ inline std::string automatic_network_preset(std::string_view game)
     retro_variable option{key.c_str(), nullptr};
     const std::string selected = option_environment
         && option_environment(RETRO_ENVIRONMENT_GET_VARIABLE, &option) && option.value
-            ? option.value : relay_program ? "relay" : power_sled_program_role(game) ? "0" : "1";
+            ? option.value : relay_program ? "relay" : "1";
     const auto choices = network::choices(relay_program ? game : linked_game->nvram_game,
                                          linked_game->max_cabinets);
     return std::any_of(choices.begin(), choices.end(), [&](const auto& choice) {
         return choice.key == selected;
     }) ? selected : "0";
-}
-
-inline bool ski_super_g_drive_board_bypass_enabled()
-{
-    retro_variable option{"sm2_skisuprg_drive_board_bypass", nullptr};
-    return option_environment && option_environment(RETRO_ENVIRONMENT_GET_VARIABLE, &option)
-        && option.value && std::strcmp(option.value, "enabled") == 0;
 }
 
 inline bool update_option_visibility()
@@ -1008,6 +1108,14 @@ inline bool update_option_visibility()
     for (const auto& definition : registered_definitions) {
         if (!definition.key || std::strcmp(definition.key, "sm2_nvram_settings") == 0) continue;
         const std::string_view key = definition.key;
+        if (key == "sm2_power_sled_relay_audio" || key == "sm2_power_sled_standalone"
+            || key == "sm2_power_sled_relay_commands" || key == "sm2_power_sled_ai_finish_speed_fix") {
+            const unsigned role = power_sled_program_role(option_content_game);
+            retro_core_option_display display{definition.key,
+                role == 1 || (role == 2 && key == "sm2_power_sled_standalone")};
+            option_environment(RETRO_ENVIRONMENT_SET_CORE_OPTIONS_DISPLAY, &display);
+            continue;
+        }
         if (key.starts_with("sm2_linked_cabinets_")) {
             retro_core_option_display display{definition.key,
                 key.substr(std::strlen("sm2_linked_cabinets_")) == option_content_game};
@@ -1018,12 +1126,6 @@ inline bool update_option_visibility()
             retro_core_option_display display{definition.key,
                 game_visible && key.substr(std::strlen("sm2_automatic_network_"))
                     == option_content_game};
-            option_environment(RETRO_ENVIRONMENT_SET_CORE_OPTIONS_DISPLAY, &display);
-            continue;
-        }
-        if (key == "sm2_skisuprg_drive_board_bypass") {
-            retro_core_option_display display{definition.key,
-                                               option_content_game == "skisuprg"};
             option_environment(RETRO_ENVIRONMENT_SET_CORE_OPTIONS_DISPLAY, &display);
             continue;
         }

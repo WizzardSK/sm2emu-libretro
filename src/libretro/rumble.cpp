@@ -6,7 +6,7 @@
 
 namespace sm2::libretro {
 namespace {
-constexpr int kSteeringDeadzone = 7000;
+constexpr int kCorneringMinimum = 32767 * 5 / 100;
 constexpr int kHoldFrames = 12;
 }
 
@@ -92,15 +92,12 @@ void GamepadRumble::update(const rom::GameSpec& game, std::span<const u8> drive_
         }
     }
 
-    // A gamepad cannot reproduce the directional centring force, so upstream
-    // represents steering load as a lighter vibration instead.
-    int cornering = 0;
-    const int deflection = std::abs(static_cast<int>(steering));
-    if (deflection > kSteeringDeadzone) {
-        constexpr int span = 32767 - kSteeringDeadzone;
-        const int over = std::min(deflection - kSteeringDeadzone, span);
-        cornering = (ceiling * 2 / 5) * over / span;
-    }
+    // The frontend has already applied its deadzone to this analog callback.
+    // Keep a small, deliberate 5% onset threshold for synthetic cornering only.
+    // Rescale the remaining travel to preserve the existing maximum strength.
+    const int deflection = std::min(std::abs(static_cast<int>(steering)), 32767);
+    const int travel = std::max(0, deflection - kCorneringMinimum);
+    const int cornering = (ceiling * 2 / 5) * travel / (32767 - kCorneringMinimum);
 
     const int target = std::max(impact, cornering);
     if (target > 0) {

@@ -48,6 +48,24 @@ int main()
     expect(rumble.init(environment), "frontend rumble interface is acquired");
     auto driving = driving_game();
 
+    rumble.update(driving, {}, 0, true);
+    expect(motors[RETRO_RUMBLE_STRONG] == 0 && motors[RETRO_RUMBLE_WEAK] == 0,
+           "frontend deadzone output keeps cornering rumble silent");
+    rumble.update(driving, {}, 1000, true);
+    expect(motors[RETRO_RUMBLE_STRONG] == 0 && motors[RETRO_RUMBLE_WEAK] == 0,
+           "small steering below the deliberate rumble minimum stays silent");
+    rumble.update(driving, {}, 2500, true);
+    const auto small_corner = motors;
+    expect(small_corner[RETRO_RUMBLE_STRONG] > 0,
+           "steering above the deliberate rumble minimum starts cornering vibration");
+    rumble.update(driving, {}, -2500, true);
+    expect(motors == small_corner, "cornering rumble is symmetric around centre");
+    rumble.update(driving, {}, -32768, true);
+    expect(motors[RETRO_RUMBLE_STRONG] == 26214
+               && motors[RETRO_RUMBLE_WEAK] == 13107,
+           "negative full travel keeps the existing maximum cornering strength");
+    rumble.stop();
+
     const std::array<u8, 1> daytona_push{0x57};
     const std::array<u8, 1> daytona_release{0x10};
     rumble.update(driving, daytona_push, 0, true);

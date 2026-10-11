@@ -162,9 +162,15 @@ void rebuild_roster_locked()
         return;
     }
     if (session.program_role) {
-        std::set<unsigned> roles{session.program_role};
-        for (const auto& [peer, role] : session.program_roles) roles.insert(role);
-        if (session.expected_cabinets != 3 || roles != std::set<unsigned>{1, 2, 3}) {
+        unsigned masters = session.program_role == 1;
+        unsigned relays = session.program_role == 2;
+        unsigned slaves = session.program_role == 3;
+        for (const auto& [peer, role] : session.program_roles) {
+            masters += role == 1; relays += role == 2; slaves += role == 3;
+        }
+        if (masters != 1 || relays > 1 || (slaves < 1 && relays != 1)
+            || masters + relays + slaves != session.expected_cabinets
+            || masters + slaves > 4) {
             session.roster.clear();
             return;
         }

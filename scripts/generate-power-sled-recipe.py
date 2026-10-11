@@ -10,7 +10,61 @@ GAMES = ['powsledm', 'powsledr', 'powsled']
 OUT = ROOT/'scripts/libretro_nvram_samples.power-sled-linked.toml'
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--check', action='store_true')
+parser.add_argument('--ride-campaign', type=Path, help='Generate the complete four-color extension campaign')
+parser.add_argument('--phase1-run', type=Path, help='Validated target-core menu inventory run')
 args = parser.parse_args()
+if args.ride_campaign:
+    if not args.phase1_run:
+        parser.error('--ride-campaign requires --phase1-run')
+    phase1 = args.phase1_run.resolve()
+    review = json.loads((phase1.parent/'phase1-review.json').read_text())
+    if review['status'] != 'four_color_inventory_validated' or Path(review['run']) != phase1:
+        raise SystemExit('Four-color Phase 1 inventory is not validated')
+    inventories = []
+    for game in GAMES:
+        path = ROOT/f'data/diagnostic-menus/{game}.yaml'
+        spec = json.JSONDecoder().raw_decode(path.read_text().split('ride_color_extension:',1)[1].lstrip())[0]
+        if spec['status'] != 'service_menu_documented' or len(spec['values']) != 4:
+            raise SystemExit(f'Incomplete four-color inventory: {game}')
+        inventories.append({'path':str(path.relative_to(ROOT)), 'scope':'ride_color_extension',
+            'menu_sha256':hashlib.sha256(json.dumps(spec,sort_keys=True).encode()).hexdigest()})
+    samples = [{'suffix':'menu-baseline','setting':'ride_id','offset':8,'width':1,
+        'expected':[0,0,1], 'screenshot':'initial','reload_only':True,'reuse':str(phase1)}]
+    prior = 'menu-baseline'
+    for value,color in enumerate(['silver','red','black','yellow']):
+        steps = []
+        for index,game in enumerate(GAMES):
+            calls = (3 if index == 2 else 4) if value == 0 else 1
+            steps.append({'sets':[game], 'sequence':['@enter_ride','SCREENSHOT(reloaded)',
+                'L3*2',f'A*{calls}','SCREENSHOT(selected)','L3*2','A','WAIT(1.0)']})
+        steps.append({'sets':GAMES,'sequence':['CLOSE']})
+        name = 'commit-'+color
+        samples.append({'suffix':name,'setting':'ride_id','offset':8,'width':1,
+            'expected':[value]*3,'screenshot':'selected','before_screenshot':'reloaded',
+            'baseline':prior,'steps':steps})
+        prior = 'reload-'+color
+        samples.append({'suffix':prior,'setting':'ride_id','offset':8,'width':1,
+            'expected':[value]*3,'screenshot':'selected','baseline':name,'reload_only':True,
+            'sequence':['@enter_ride','SCREENSHOT(selected)','CLOSE']})
+    # JSON literals are TOML-compatible for these strings, numbers and arrays.
+    text = 'schema_version = 1\nride_reference_root = '+json.dumps(str(phase1))+'\n'
+    for source in inventories:
+        text += '\n[[inventory]]\n'+''.join(k+' = '+json.dumps(v)+'\n' for k,v in source.items())
+    text += '\n[macros]\nenter_ride = '+json.dumps(['R3','WAIT(2.0)','L3*6','A','WAIT(1.0)','L3*2','A','WAIT(1.0)'])+'\n'
+    for sample in samples:
+        text += '\n[[samples]]\n'
+        for key,val in sample.items():
+            if key=='steps': continue
+            text += key+' = '+(str(val).lower() if isinstance(val,bool) else json.dumps(val))+'\n'
+        for step in sample.get('steps',[]):
+            text += '\n[[samples.steps]]\n'+''.join(k+' = '+json.dumps(v)+'\n' for k,v in step.items())
+    if args.check:
+        if args.ride_campaign.read_text() != text: raise SystemExit('Four-color recipe differs from inventory')
+    else:
+        args.ride_campaign.write_text(text)
+    print('Four-color extension: one persistent recipe, four commits and four fresh reloads for all three sets')
+    raise SystemExit(0)
+
 inventories = []
 menus = []
 for game in GAMES:

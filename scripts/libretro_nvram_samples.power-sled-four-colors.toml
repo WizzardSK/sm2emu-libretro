@@ -1,0 +1,178 @@
+schema_version = 1
+ride_reference_root = "/Users/andrea/dev/sm2-emu-libretro/build-libretro-gpu/validation/power-sled-yellow-20261010/phase1-02"
+
+[[inventory]]
+path = "data/diagnostic-menus/powsledm.yaml"
+scope = "ride_color_extension"
+menu_sha256 = "40ab0d8c063f7da911e4f5316910a79d1744ab4463f16ce126de2b4d3e104057"
+
+[[inventory]]
+path = "data/diagnostic-menus/powsledr.yaml"
+scope = "ride_color_extension"
+menu_sha256 = "bfa4df5c260efe9022391cae2cd9e55a6bf001ab2846294999372ef2c25f329c"
+
+[[inventory]]
+path = "data/diagnostic-menus/powsled.yaml"
+scope = "ride_color_extension"
+menu_sha256 = "7a8e0dd5ff79b50cdd83345e927c9779f0319225b2c3c796a85f5af8f522b806"
+
+[macros]
+enter_ride = ["R3", "WAIT(2.0)", "L3*6", "A", "WAIT(1.0)", "L3*2", "A", "WAIT(1.0)"]
+
+[[samples]]
+suffix = "menu-baseline"
+setting = "ride_id"
+offset = 8
+width = 1
+expected = [0, 0, 1]
+screenshot = "initial"
+reload_only = true
+reuse = "/Users/andrea/dev/sm2-emu-libretro/build-libretro-gpu/validation/power-sled-yellow-20261010/phase1-02"
+
+[[samples]]
+suffix = "commit-silver"
+setting = "ride_id"
+offset = 8
+width = 1
+expected = [0, 0, 0]
+screenshot = "selected"
+before_screenshot = "reloaded"
+baseline = "menu-baseline"
+
+[[samples.steps]]
+sets = ["powsledm"]
+sequence = ["@enter_ride", "SCREENSHOT(reloaded)", "L3*2", "A*4", "SCREENSHOT(selected)", "L3*2", "A", "WAIT(1.0)"]
+
+[[samples.steps]]
+sets = ["powsledr"]
+sequence = ["@enter_ride", "SCREENSHOT(reloaded)", "L3*2", "A*4", "SCREENSHOT(selected)", "L3*2", "A", "WAIT(1.0)"]
+
+[[samples.steps]]
+sets = ["powsled"]
+sequence = ["@enter_ride", "SCREENSHOT(reloaded)", "L3*2", "A*3", "SCREENSHOT(selected)", "L3*2", "A", "WAIT(1.0)"]
+
+[[samples.steps]]
+sets = ["powsledm", "powsledr", "powsled"]
+sequence = ["CLOSE"]
+
+[[samples]]
+suffix = "reload-silver"
+setting = "ride_id"
+offset = 8
+width = 1
+expected = [0, 0, 0]
+screenshot = "selected"
+baseline = "commit-silver"
+reload_only = true
+sequence = ["@enter_ride", "SCREENSHOT(selected)", "CLOSE"]
+
+[[samples]]
+suffix = "commit-red"
+setting = "ride_id"
+offset = 8
+width = 1
+expected = [1, 1, 1]
+screenshot = "selected"
+before_screenshot = "reloaded"
+baseline = "reload-silver"
+
+[[samples.steps]]
+sets = ["powsledm"]
+sequence = ["@enter_ride", "SCREENSHOT(reloaded)", "L3*2", "A*1", "SCREENSHOT(selected)", "L3*2", "A", "WAIT(1.0)"]
+
+[[samples.steps]]
+sets = ["powsledr"]
+sequence = ["@enter_ride", "SCREENSHOT(reloaded)", "L3*2", "A*1", "SCREENSHOT(selected)", "L3*2", "A", "WAIT(1.0)"]
+
+[[samples.steps]]
+sets = ["powsled"]
+sequence = ["@enter_ride", "SCREENSHOT(reloaded)", "L3*2", "A*1", "SCREENSHOT(selected)", "L3*2", "A", "WAIT(1.0)"]
+
+[[samples.steps]]
+sets = ["powsledm", "powsledr", "powsled"]
+sequence = ["CLOSE"]
+
+[[samples]]
+suffix = "reload-red"
+setting = "ride_id"
+offset = 8
+width = 1
+expected = [1, 1, 1]
+screenshot = "selected"
+baseline = "commit-red"
+reload_only = true
+sequence = ["@enter_ride", "SCREENSHOT(selected)", "CLOSE"]
+
+[[samples]]
+suffix = "commit-black"
+setting = "ride_id"
+offset = 8
+width = 1
+expected = [2, 2, 2]
+screenshot = "selected"
+before_screenshot = "reloaded"
+baseline = "reload-red"
+
+[[samples.steps]]
+sets = ["powsledm"]
+sequence = ["@enter_ride", "SCREENSHOT(reloaded)", "L3*2", "A*1", "SCREENSHOT(selected)", "L3*2", "A", "WAIT(1.0)"]
+
+[[samples.steps]]
+sets = ["powsledr"]
+sequence = ["@enter_ride", "SCREENSHOT(reloaded)", "L3*2", "A*1", "SCREENSHOT(selected)", "L3*2", "A", "WAIT(1.0)"]
+
+[[samples.steps]]
+sets = ["powsled"]
+sequence = ["@enter_ride", "SCREENSHOT(reloaded)", "L3*2", "A*1", "SCREENSHOT(selected)", "L3*2", "A", "WAIT(1.0)"]
+
+[[samples.steps]]
+sets = ["powsledm", "powsledr", "powsled"]
+sequence = ["CLOSE"]
+
+[[samples]]
+suffix = "reload-black"
+setting = "ride_id"
+offset = 8
+width = 1
+expected = [2, 2, 2]
+screenshot = "selected"
+baseline = "commit-black"
+reload_only = true
+sequence = ["@enter_ride", "SCREENSHOT(selected)", "CLOSE"]
+
+[[samples]]
+suffix = "commit-yellow"
+setting = "ride_id"
+offset = 8
+width = 1
+expected = [3, 3, 3]
+screenshot = "selected"
+before_screenshot = "reloaded"
+baseline = "reload-black"
+
+[[samples.steps]]
+sets = ["powsledm"]
+sequence = ["@enter_ride", "SCREENSHOT(reloaded)", "L3*2", "A*1", "SCREENSHOT(selected)", "L3*2", "A", "WAIT(1.0)"]
+
+[[samples.steps]]
+sets = ["powsledr"]
+sequence = ["@enter_ride", "SCREENSHOT(reloaded)", "L3*2", "A*1", "SCREENSHOT(selected)", "L3*2", "A", "WAIT(1.0)"]
+
+[[samples.steps]]
+sets = ["powsled"]
+sequence = ["@enter_ride", "SCREENSHOT(reloaded)", "L3*2", "A*1", "SCREENSHOT(selected)", "L3*2", "A", "WAIT(1.0)"]
+
+[[samples.steps]]
+sets = ["powsledm", "powsledr", "powsled"]
+sequence = ["CLOSE"]
+
+[[samples]]
+suffix = "reload-yellow"
+setting = "ride_id"
+offset = 8
+width = 1
+expected = [3, 3, 3]
+screenshot = "selected"
+baseline = "commit-yellow"
+reload_only = true
+sequence = ["@enter_ride", "SCREENSHOT(selected)", "CLOSE"]

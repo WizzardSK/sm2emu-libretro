@@ -26,7 +26,7 @@ user explicitly requested a selector to enable it in this port.
 | Category / Label | Audio / SCSP Output Low-Pass Filter |
 | Key | `sm2_scsp_output_low_pass_filter` |
 | Choices, in order | `disabled` / Disabled; `enabled` / Enabled |
-| Default | Disabled |
+| Default | Enabled (user-approved 2026-10-11) |
 | Application | Immediate; switching clears the old filter history |
 | Visibility | All games; no effect without SCSP |
 | Scope | SCSP output after master gain; separate MPEG music is unaffected |
@@ -102,3 +102,11 @@ actual Batocera SCSP/filter, MultiPCM and sustained/repeated real-content DSB2
 output checks. See `NATIVE_BATOCERA_AUDIO_VALIDATION_2026-10-09.md` for artifact
 identity, the native Sound Test path and non-bit-exact repetition limits.
 Subjective listening and current Windows frontend qualification remain pending.
+
+## Default Update — 2026-10-11
+
+Following successful user listening checks, the user chooses Enabled as the
+Libretro default to approximate the board's analogue output response. Missing
+saved values also enable the filter. Explicit saved Disabled remains respected;
+no user configuration is rewritten. This changes only the frontend default,
+not the filter coefficients or standalone behavior.

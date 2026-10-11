@@ -322,49 +322,66 @@ int main()
         check(sled && sled->preliminary, "Power Sled variants remain preliminary");
         devices = {RETRO_DEVICE_JOYPAD, RETRO_DEVICE_JOYPAD};
         const auto sled_desc = libretro::descriptors(*sled, devices);
-        check(has_descriptor(sled_desc, 0, RETRO_DEVICE_JOYPAD, 0,
-                  RETRO_DEVICE_ID_JOYPAD_R, "Cancel Network Check"),
+        check(has_descriptor(sled_desc, 1, RETRO_DEVICE_JOYPAD, 0,
+                  RETRO_DEVICE_ID_JOYPAD_R3, "Cancel Network Check"),
               "Power Sled exposes upstream network-wait cancel");
         check(has_descriptor(sled_desc, 0, RETRO_DEVICE_ANALOG,
-                  RETRO_DEVICE_INDEX_ANALOG_BUTTON, RETRO_DEVICE_ID_JOYPAD_R2,
+                  RETRO_DEVICE_INDEX_ANALOG_RIGHT, RETRO_DEVICE_ID_ANALOG_Y,
                   "P1 Right Handlebar"), "Power Sled handlebar descriptor");
         check(has_descriptor(sled_desc, 1, RETRO_DEVICE_ANALOG,
-                  RETRO_DEVICE_INDEX_ANALOG_BUTTON, RETRO_DEVICE_ID_JOYPAD_R2,
+                  RETRO_DEVICE_INDEX_ANALOG_RIGHT, RETRO_DEVICE_ID_ANALOG_Y,
                   "P2 Right Handlebar"), "Power Sled second-rider descriptor");
+        for (unsigned player = 0; player < 2; ++player) {
+            check(has_descriptor(sled_desc, player, RETRO_DEVICE_JOYPAD, 0,
+                      RETRO_DEVICE_ID_JOYPAD_B, player == 0 ? "P1 Entry" : "P2 Entry")
+                      && has_descriptor(sled_desc, player, RETRO_DEVICE_JOYPAD, 0,
+                          RETRO_DEVICE_ID_JOYPAD_A, player == 0 ? "P1 Call" : "P2 Call"),
+                  "Power Sled maps Xbox A / RetroPad B to Entry and Xbox B / RetroPad A to Call");
+            check(has_descriptor(sled_desc, player, RETRO_DEVICE_ANALOG,
+                      RETRO_DEVICE_INDEX_ANALOG_LEFT, RETRO_DEVICE_ID_ANALOG_Y,
+                      player == 0 ? "P1 Left Handlebar" : "P2 Left Handlebar")
+                      && !has_descriptor_id(sled_desc, player, RETRO_DEVICE_ANALOG,
+                          RETRO_DEVICE_INDEX_ANALOG_LEFT, RETRO_DEVICE_ID_ANALOG_X)
+                      && !has_descriptor_id(sled_desc, player, RETRO_DEVICE_ANALOG,
+                          RETRO_DEVICE_INDEX_ANALOG_RIGHT, RETRO_DEVICE_ID_ANALOG_X),
+                  "Power Sled exposes only Y axes for both riders' handles");
+        }
         check(has_descriptor(sled_desc, 0, RETRO_DEVICE_JOYPAD, 0,
-                  RETRO_DEVICE_ID_JOYPAD_L3, "Service B / Select"),
-              "Power Sled exposes extra Service 2 selection");
-        check(has_descriptor(sled_desc, 0, RETRO_DEVICE_JOYPAD, 0,
-                  RETRO_DEVICE_ID_JOYPAD_DOWN, "Service A"),
-              "Power Sled exposes Service 1 on D-Pad Down");
+                  RETRO_DEVICE_ID_JOYPAD_L3, "Service A / Select"),
+              "Power Sled service selection belongs to P1");
         pressed = {1u << RETRO_DEVICE_ID_JOYPAD_L3, 0};
         libretro::poll_input(inputs, *sled, devices, runtime, true, state);
         check(inputs.in0 == 0xbf && inputs.in1 == 0xff && inputs.in3 == 0xff,
-              "Power Sled Service 2 only clears IN0 bit 0x40");
+              "Power Sled P1 Service A clears only the selection line");
         devices[0] = libretro::kNoServiceDevice;
         libretro::poll_input(inputs, *sled, devices, runtime, true, state);
-        check(inputs.in0 == 0xff && !has_descriptor_id(
-                  libretro::descriptors(*sled, devices), 0, RETRO_DEVICE_JOYPAD,
-                  0, RETRO_DEVICE_ID_JOYPAD_L3),
-              "Power Sled reduced profile disables extra Service 2");
+        check(inputs.in0 == 0xff, "Power Sled reduced P1 disables Service");
         devices[0] = RETRO_DEVICE_JOYPAD;
-        pressed = {0, 1u << RETRO_DEVICE_ID_JOYPAD_L3};
-        libretro::poll_input(inputs, *sled, devices, runtime, true, state);
-        check(inputs.in0 == 0xbf, "Power Sled port 2 aliases extra Service 2");
-        for (unsigned port = 0; port < 2; ++port) {
-            pressed = {};
-            pressed[port] = 1u << RETRO_DEVICE_ID_JOYPAD_DOWN;
-            libretro::poll_input(inputs, *sled, devices, runtime, true, state);
-            check(inputs.in0 == 0xf7 && inputs.in1 == 0xff && inputs.in3 == 0xff,
-                  "Power Sled Service 1 only clears IN0 bit 0x08 on either port");
-            devices[port] = libretro::kNoServiceDevice;
-            libretro::poll_input(inputs, *sled, devices, runtime, true, state);
-            check(inputs.in0 == 0xff && !has_descriptor_id(
-                      libretro::descriptors(*sled, devices), port, RETRO_DEVICE_JOYPAD,
-                      0, RETRO_DEVICE_ID_JOYPAD_DOWN),
-                  "Power Sled reduced profile disables Service 1");
-            devices[port] = RETRO_DEVICE_JOYPAD;
+        for (const auto button : {RETRO_DEVICE_ID_JOYPAD_UP, RETRO_DEVICE_ID_JOYPAD_DOWN}) {
+            for (unsigned port = 0; port < 2; ++port) {
+                pressed = {}; pressed[port] = 1u << button;
+                libretro::poll_input(inputs, *sled, devices, runtime, true, state);
+                check(inputs.in0 == 0xff && inputs.in1 == (port == 0 ? 0xfe : 0xfb),
+                      "D-Pad Entry aliases do not send Shutdown or Service");
+            }
         }
+        for (const auto button : {RETRO_DEVICE_ID_JOYPAD_L3, RETRO_DEVICE_ID_JOYPAD_R3,
+                                  RETRO_DEVICE_ID_JOYPAD_X}) {
+            pressed = {}; pressed[1] = 1u << button;
+            libretro::poll_input(inputs, *sled, devices, runtime, true, state);
+            check(inputs.in0 == (button == RETRO_DEVICE_ID_JOYPAD_L3 ? 0x7f
+                                  : button == RETRO_DEVICE_ID_JOYPAD_X ? 0xf7 : 0xff)
+                      && inputs.in3 == (button == RETRO_DEVICE_ID_JOYPAD_R3 ? 0xfd : 0xff)
+                      && inputs.in1 == 0xff,
+                  "P2 Shutdown and Cancel inputs never send Service, Test or Call");
+        }
+        check(!has_descriptor(sled_desc, 1, RETRO_DEVICE_JOYPAD, 0,
+                  RETRO_DEVICE_ID_JOYPAD_L3, "Service A / Select")
+              && !has_descriptor(sled_desc, 1, RETRO_DEVICE_JOYPAD, 0,
+                  RETRO_DEVICE_ID_JOYPAD_R3, "Test A")
+              && has_descriptor(sled_desc, 1, RETRO_DEVICE_JOYPAD, 0,
+                  RETRO_DEVICE_ID_JOYPAD_X, "Shutdown Button"),
+              "P2 descriptors have Shutdown and Cancel without duplicate Service/Test");
         // Native operator command is available on Main/Relay Port 1 only.
         for (unsigned port = 0; port < 2; ++port) {
             pressed = {};
@@ -393,43 +410,82 @@ int main()
         pressed[0] = 1u << RETRO_DEVICE_ID_JOYPAD_A;
         libretro::poll_input(inputs, *sled, devices, runtime, true, state);
         check(inputs.in1 == static_cast<u8>(0xff & ~0x02), "Power Sled P1 Call wiring");
-        pressed[0] = 1u << RETRO_DEVICE_ID_JOYPAD_Y;
+        for (const auto button : {RETRO_DEVICE_ID_JOYPAD_Y, RETRO_DEVICE_ID_JOYPAD_X}) {
+            const bool entry = button == RETRO_DEVICE_ID_JOYPAD_Y;
+            pressed = {};
+            pressed[0] = 1u << button;
+            devices[1] = RETRO_DEVICE_NONE;
+            libretro::poll_input(inputs, *sled, devices, runtime, true, state);
+            check(inputs.in1 == (entry ? 0xfb : 0xf7)
+                      && has_descriptor(sled_desc, 0, RETRO_DEVICE_JOYPAD, 0,
+                          button, entry ? "P2 Entry" : "P2 Call"),
+                  "Power Sled P1 West/North independently supply P2 Entry/Call without controller 2");
+            devices[1] = RETRO_DEVICE_JOYPAD;
+            pressed = {};
+            pressed[1] = 1u << button;
+            libretro::poll_input(inputs, *sled, devices, runtime, true, state);
+            check(inputs.in1 == 0xff && inputs.in0 == (entry ? 0xff : 0xf7),
+                  "P2 North is Shutdown, not the P1 secondary Call alias");
+        }
+        pressed = {};
+        pressed[1] = 1u << RETRO_DEVICE_ID_JOYPAD_B;
         libretro::poll_input(inputs, *sled, devices, runtime, true, state);
-        check(inputs.in1 == static_cast<u8>(0xff & ~0x04), "Power Sled P2 Entry wiring");
-        pressed[0] = 1u << RETRO_DEVICE_ID_JOYPAD_X;
+        check(inputs.in1 == 0xfb, "Power Sled P2 Entry wiring");
+        pressed[1] = 1u << RETRO_DEVICE_ID_JOYPAD_A;
         libretro::poll_input(inputs, *sled, devices, runtime, true, state);
-        check(inputs.in1 == static_cast<u8>(0xff & ~0x08), "Power Sled P2 Call wiring");
-        pressed[0] = 1u << RETRO_DEVICE_ID_JOYPAD_L;
+        check(inputs.in1 == 0xf7, "Power Sled P2 Call wiring");
+        pressed = {};
+        pressed[1] = 1u << RETRO_DEVICE_ID_JOYPAD_L3;
         libretro::poll_input(inputs, *sled, devices, runtime, true, state);
         check(inputs.in0 == static_cast<u8>(0xff & ~0x80), "Power Sled Cancel Error wiring");
-        pressed[0] = 1u << RETRO_DEVICE_ID_JOYPAD_R;
+        pressed[1] = 1u << RETRO_DEVICE_ID_JOYPAD_R3;
         libretro::poll_input(inputs, *sled, devices, runtime, true, state);
         check(inputs.in3 == static_cast<u8>(0xff & ~0x02), "Power Sled Cancel Network Check wiring");
         pressed = {};
-        analog_buttons[0][RETRO_DEVICE_ID_JOYPAD_R2] = 32767;
-        analog_buttons[0][RETRO_DEVICE_ID_JOYPAD_L2] = 16384;
+        axes = {};
+        axes[0][RETRO_DEVICE_INDEX_ANALOG_RIGHT][RETRO_DEVICE_ID_ANALOG_Y] = 32767;
+        axes[0][RETRO_DEVICE_INDEX_ANALOG_LEFT][RETRO_DEVICE_ID_ANALOG_Y] = -32768;
         libretro::poll_input(inputs, *sled, devices, runtime, true, state);
-        check(inputs.analog[1] == 0xff && inputs.analog[3] == 0x80,
-              "Power Sled handles use mux channels 1 and 3");
+        check(inputs.analog[1] == 0 && inputs.analog[3] == 0xff,
+              "Power Sled inverted Y handles reach both endpoints on mux 1 and 3");
         pressed[1] = (1u << RETRO_DEVICE_ID_JOYPAD_B) | (1u << RETRO_DEVICE_ID_JOYPAD_A);
-        analog_buttons[1][RETRO_DEVICE_ID_JOYPAD_R2] = 8192;
-        analog_buttons[1][RETRO_DEVICE_ID_JOYPAD_L2] = 32767;
+        axes[1][RETRO_DEVICE_INDEX_ANALOG_RIGHT][RETRO_DEVICE_ID_ANALOG_Y] = -16384;
+        axes[1][RETRO_DEVICE_INDEX_ANALOG_LEFT][RETRO_DEVICE_ID_ANALOG_Y] = 16384;
         libretro::poll_input(inputs, *sled, devices, runtime, true, state);
-        check(inputs.in1 == 0xf3 && inputs.analog[5] == 0x40 && inputs.analog[7] == 0xff
-                  && inputs.analog[1] == 0xff && inputs.analog[3] == 0x80,
+        check(inputs.in1 == 0xf3 && inputs.analog[5] == 0xbf && inputs.analog[7] == 0x40
+                  && inputs.analog[1] == 0 && inputs.analog[3] == 0xff,
               "Power Sled second rider is independent and preserves P1");
+        // Exercise both signed extremes on both riders, including -32768.
+        for (unsigned player = 0; player < 2; ++player) {
+            axes[player][RETRO_DEVICE_INDEX_ANALOG_RIGHT][RETRO_DEVICE_ID_ANALOG_Y] = -32768;
+            axes[player][RETRO_DEVICE_INDEX_ANALOG_LEFT][RETRO_DEVICE_ID_ANALOG_Y] = 32767;
+        }
+        libretro::poll_input(inputs, *sled, devices, runtime, true, state);
+        check(inputs.analog[1] == 0xff && inputs.analog[3] == 0
+                  && inputs.analog[5] == 0xff && inputs.analog[7] == 0,
+              "Power Sled inverted extremes do not wrap on either controller");
         devices[1] = RETRO_DEVICE_NONE;
         libretro::poll_input(inputs, *sled, devices, runtime, true, state);
-        check(inputs.in1 == 0xff && inputs.analog[5] == 0 && inputs.analog[7] == 0,
-              "Power Sled disabled second port contributes no rider inputs");
+        check(inputs.in1 == 0xff && inputs.analog[5] == 0x80 && inputs.analog[7] == 0x80,
+              "Power Sled disabled second port returns its handles to center");
         devices[1] = RETRO_DEVICE_JOYPAD;
         pressed = {};
-        analog_buttons = {};
+        axes = {};
+        // Old trigger bindings must not contribute a second handle source.
+        for (unsigned player = 0; player < 2; ++player) {
+            axes[player][RETRO_DEVICE_INDEX_ANALOG_LEFT][RETRO_DEVICE_ID_ANALOG_X] = -32768;
+            axes[player][RETRO_DEVICE_INDEX_ANALOG_RIGHT][RETRO_DEVICE_ID_ANALOG_X] = 32767;
+        }
+        analog_buttons[0][RETRO_DEVICE_ID_JOYPAD_R2] = 32767;
+        analog_buttons[1][RETRO_DEVICE_ID_JOYPAD_L2] = 32767;
         libretro::poll_input(inputs, *sled, devices, runtime, true, state);
         check(inputs.in0 == 0xff && inputs.in1 == 0xff && inputs.in3 == 0xff
-                  && inputs.analog[1] == 0 && inputs.analog[3] == 0
-                  && inputs.analog[5] == 0 && inputs.analog[7] == 0,
-              "Power Sled releases all buttons and handles");
+                  && inputs.analog[1] == 0x80 && inputs.analog[3] == 0x80
+                  && inputs.analog[5] == 0x80 && inputs.analog[7] == 0x80,
+              "Power Sled centers Y handles and ignores X axes and triggers");
+        analog_buttons = {};
+        axes = {};
+
     }
     inputs.analog[0] = 0x77;
     inputs.gun_p1x = 0x123;
@@ -729,6 +785,11 @@ int main()
     libretro::poll_input(inputs, *srally, devices, runtime, true, state);
     check(inputs.in2 == 0x00, "Sega Rally handbrake releases to analog zero");
 
+    pressed = {1u << RETRO_DEVICE_ID_JOYPAD_UP, 0};
+    libretro::poll_input(inputs, *srally, devices, runtime, true, state);
+    check(inputs.in0 == 0xdf && inputs.in2 == 0x00,
+          "Sega Rally Up aliases VR1 without applying Handbrake");
+
     const auto* indy500 = database.find("indy500");
     const auto* overrev = database.find("overrev");
     const auto* stcc = database.find("stcc");
@@ -827,9 +888,9 @@ int main()
                                 RETRO_DEVICE_INDEX_ANALOG_LEFT,
                                 RETRO_DEVICE_ID_ANALOG_X, "Steering"),
           "Sequential VR1 descriptions match the approved workbook");
-    check(!has_descriptor_id(driving_desc, 0, RETRO_DEVICE_JOYPAD, 0,
-                             RETRO_DEVICE_ID_JOYPAD_UP),
-          "Sequential VR1 does not expose an unapproved second View command");
+    check(has_descriptor(driving_desc, 0, RETRO_DEVICE_JOYPAD, 0,
+                         RETRO_DEVICE_ID_JOYPAD_UP, "VR1"),
+          "Sequential VR1 exposes the approved supplemental Up binding");
     pressed = {(1u << RETRO_DEVICE_ID_JOYPAD_DOWN)
                    | (1u << RETRO_DEVICE_ID_JOYPAD_L)
                    | (1u << RETRO_DEVICE_ID_JOYPAD_R), 0};
@@ -849,13 +910,13 @@ int main()
     const auto* manxtt = database.find("manxtt");
     check(manxtt != nullptr, "Manx TT parent game exists");
     check(std::string_view(libretro::profile_name(libretro::recognize_profile(*manxtt)))
-              == "Driving: Sequential (Manx TT Superbike)",
+              == "Driving: Sequential + VR1 (Manx TT Superbike)",
           "Manx TT uses the approved profile name");
     libretro::configure_controllers(*manxtt, controllers);
     check(std::string_view(controllers.descriptions[0][0].desc)
-              == "Driving: Sequential (Manx TT Superbike) + Test/Service slots"
+              == "Driving: Sequential + VR1 (Manx TT Superbike) + Test/Service slots"
           && std::string_view(controllers.descriptions[0][1].desc)
-              == "Driving: Sequential (Manx TT Superbike)",
+              == "Driving: Sequential + VR1 (Manx TT Superbike)",
           "Manx TT exposes the approved service variants");
     driving_desc = libretro::descriptors(*manxtt, devices);
     check(has_descriptor(driving_desc, 0, RETRO_DEVICE_JOYPAD, 0,
@@ -874,9 +935,9 @@ int main()
                                 RETRO_DEVICE_INDEX_ANALOG_LEFT,
                                 RETRO_DEVICE_ID_ANALOG_X, "Bank"),
           "Manx TT descriptions match the approved workbook");
-    check(!has_descriptor_id(driving_desc, 0, RETRO_DEVICE_JOYPAD, 0,
-                             RETRO_DEVICE_ID_JOYPAD_UP),
-          "Manx TT exposes only the approved D-Pad Down Start/VR alias");
+    check(has_descriptor(driving_desc, 0, RETRO_DEVICE_JOYPAD, 0,
+                         RETRO_DEVICE_ID_JOYPAD_UP, "Start / VR"),
+          "Manx TT exposes the supplemental Up Start/VR alias");
     pressed = {(1u << RETRO_DEVICE_ID_JOYPAD_START)
                    | (1u << RETRO_DEVICE_ID_JOYPAD_L)
                    | (1u << RETRO_DEVICE_ID_JOYPAD_R), 0};
@@ -916,13 +977,13 @@ int main()
     const auto* motoraid = database.find("motoraid");
     check(motoraid != nullptr, "Motor Raid parent game exists");
     check(std::string_view(libretro::profile_name(libretro::recognize_profile(*motoraid)))
-              == "Driving: Sequential (Motor Raid)",
+              == "Driving: Sequential + VR1 (Motor Raid)",
           "Motor Raid uses the approved profile name");
     libretro::configure_controllers(*motoraid, controllers);
     check(std::string_view(controllers.descriptions[0][0].desc)
-              == "Driving: Sequential (Motor Raid) + Test/Service slots"
+              == "Driving: Sequential + VR1 (Motor Raid) + Test/Service slots"
           && std::string_view(controllers.descriptions[0][1].desc)
-              == "Driving: Sequential (Motor Raid)",
+              == "Driving: Sequential + VR1 (Motor Raid)",
           "Motor Raid exposes the approved service variants");
     driving_desc = libretro::descriptors(*motoraid, devices);
     check(has_descriptor(driving_desc, 0, RETRO_DEVICE_JOYPAD, 0,
@@ -961,16 +1022,37 @@ int main()
     check(inputs.analog[0] == 0x00,
           "Motor Raid does not convert digital R2 to analog Accelerator");
 
+    // Single-View motorcycle aliases must preserve the shared native Start line.
+    for (const char* set : {"manxtt", "manxttc", "manxttdx", "motoraid", "motoraiddx"}) {
+        const auto* motorcycle = database.find(set);
+        check(motorcycle != nullptr, "VR1 motorcycle set exists");
+        const auto motorcycle_desc = libretro::descriptors(*motorcycle, devices);
+        check(has_descriptor(motorcycle_desc, 0, RETRO_DEVICE_JOYPAD, 0,
+                             RETRO_DEVICE_ID_JOYPAD_UP, "Start / VR"),
+              "Every VR1 motorcycle set exposes Up");
+        pressed = {1u << RETRO_DEVICE_ID_JOYPAD_UP, 0};
+        axes = {};
+        analog_buttons = {};
+        libretro::poll_input(inputs, *motorcycle, devices, runtime, true, state);
+        check(inputs.in0 == static_cast<u8>(0xff & ~motorcycle->start1_bit)
+                  && inputs.in1 == 0xff,
+              "VR1 Up reaches only the shared native Start/View line");
+        pressed = {};
+        libretro::poll_input(inputs, *motorcycle, devices, runtime, true, state);
+        check(inputs.in0 == 0xff && inputs.in1 == 0xff,
+              "VR1 motorcycle alias releases cleanly");
+    }
+
     const auto* skytargt = database.find("skytargt");
     check(skytargt != nullptr, "Sky Target parent game exists");
     check(std::string_view(libretro::profile_name(libretro::recognize_profile(*skytargt)))
-              == "Joystick (Analog): Sky Target",
+              == "Joystick (Analog): Sky Target + VR1",
           "Sky Target uses the approved profile name");
     libretro::configure_controllers(*skytargt, controllers);
     check(std::string_view(controllers.descriptions[0][0].desc)
-              == "Joystick (Analog): Sky Target + Test/Service slots"
+              == "Joystick (Analog): Sky Target + VR1 + Test/Service slots"
           && std::string_view(controllers.descriptions[0][1].desc)
-              == "Joystick (Analog): Sky Target",
+              == "Joystick (Analog): Sky Target + VR1",
           "Sky Target exposes the approved service variants");
     auto sky_desc = libretro::descriptors(*skytargt, devices);
     check(has_descriptor(sky_desc, 0, RETRO_DEVICE_JOYPAD, 0,
@@ -1213,6 +1295,28 @@ int main()
     libretro::poll_input(inputs, *skisuprg, devices, runtime, true, state);
     check(inputs.analog[0] == 0x80 && inputs.analog[1] == 0xff,
           "Sega Ski Super G maps Left X- to the opposite inverted Swing endpoint");
+    axes = {};
+    for (const auto button : {RETRO_DEVICE_ID_JOYPAD_L2, RETRO_DEVICE_ID_JOYPAD_R2}) {
+        pressed = {1u << button, 0};
+        libretro::poll_input(inputs, *skisuprg, devices, runtime, true, state);
+        check(inputs.analog[0] == (button == RETRO_DEVICE_ID_JOYPAD_L2 ? 0 : 255)
+                  && inputs.analog[1] == 128,
+              "Ski Super G digital trigger aliases incline independently of Swing");
+    }
+    pressed = {};
+    analog_buttons[0][RETRO_DEVICE_ID_JOYPAD_L2] = 16000;
+    analog_buttons[0][RETRO_DEVICE_ID_JOYPAD_R2] = 16000;
+    libretro::poll_input(inputs, *skisuprg, devices, runtime, true, state);
+    check(inputs.analog[0] == 128, "Equal Ski Super G triggers cancel Inclining");
+    analog_buttons[0][RETRO_DEVICE_ID_JOYPAD_L2] = 0;
+    libretro::poll_input(inputs, *skisuprg, devices, runtime, true, state);
+    check(inputs.analog[0] > 128 && inputs.analog[0] < 255,
+          "Ski Super G analogue trigger travel remains proportional");
+    axes[0][RETRO_DEVICE_INDEX_ANALOG_RIGHT][RETRO_DEVICE_ID_ANALOG_X] = -32768;
+    libretro::poll_input(inputs, *skisuprg, devices, runtime, true, state);
+    check(inputs.analog[0] == 0, "Stronger Ski Super G right stick retains priority");
+    analog_buttons = {};
+    axes = {};
     auto changed_ski_super_g = *skisuprg;
     changed_ski_super_g.analog[1].control = rom::AnalogControl::StickX;
     check(libretro::recognize_profile(changed_ski_super_g) == libretro::InputProfile::Unsupported,
@@ -1342,13 +1446,13 @@ int main()
     check(waverunr != nullptr, "Wave Runner parent exists");
     check(libretro::recognize_profile(*waverunr) == libretro::InputProfile::SpecialWaveRunner
               && std::string_view(libretro::profile_name(
-                     libretro::recognize_profile(*waverunr))) == "Special: Wave Runner",
+                     libretro::recognize_profile(*waverunr))) == "Special: Wave Runner + VR1",
           "Wave Runner uses the approved profile");
     libretro::configure_controllers(*waverunr, controllers);
     check(std::string_view(controllers.descriptions[0][0].desc)
-              == "Special: Wave Runner + Test/Service slots"
+              == "Special: Wave Runner + VR1 + Test/Service slots"
           && std::string_view(controllers.descriptions[0][1].desc)
-              == "Special: Wave Runner",
+              == "Special: Wave Runner + VR1",
           "Wave Runner exposes both service variants");
     devices = {RETRO_DEVICE_JOYPAD, RETRO_DEVICE_JOYPAD};
     auto wave_runner_desc = libretro::descriptors(*waverunr, devices);
@@ -1785,9 +1889,9 @@ int main()
                          libretro::GunInputMode::Lightgun);
     check(inputs.in1 == 0xcc,
           "Behind Enemy Lines writes both players Shot and Missile directly");
-    check(inputs.analog[0] == 0x69 && inputs.analog[1] == 0x96
-              && inputs.analog[2] == 0xae && inputs.analog[3] == 0x11,
-          "Behind Enemy Lines preserves every declared gun-axis calibration");
+    check(inputs.analog[0] == 0 && inputs.analog[1] == 255
+              && inputs.analog[2] == 0 && inputs.analog[3] == 255,
+          "Behind Enemy Lines upstream mapping reaches all raw endpoints for both players");
     pressed = {1u << RETRO_DEVICE_ID_JOYPAD_L, 0};
     lightgun_buttons = {};
     libretro::poll_input(inputs, *bel, devices, runtime, true, state,
@@ -1854,6 +1958,36 @@ int main()
                                     RETRO_DEVICE_ID_LIGHTGUN_RELOAD),
           "Positional Gun profile exposes no unsupported reload action");
 
+    // An idle off-screen Lightgun report must not monopolize Standard's cursor.
+    for (const auto* target : {bel, vcop}) {
+        runtime = {};
+        pressed = {};
+        axes = {};
+        analog_buttons = {};
+        mouse_axes = {};
+        mouse_buttons = {};
+        lightgun_axes = {};
+        lightgun_buttons = {1u << RETRO_DEVICE_ID_LIGHTGUN_IS_OFFSCREEN, 0};
+        libretro::poll_input(inputs, *target, devices, runtime, true, state);
+        const int before_mouse = runtime.gun_cursor_x[0];
+        mouse_axes[0][0] = 12;
+        libretro::poll_input(inputs, *target, devices, runtime, true, state);
+        check(runtime.gun_cursor_x[0] == before_mouse + 12,
+              "Standard accepts Mouse movement with an idle off-screen Lightgun");
+        check(!runtime.gun_aim_offscreen[0],
+              "An inactive Lightgun does not mark the Mouse cursor off-screen");
+        mouse_axes = {};
+        const int before_stick = runtime.gun_cursor_x[0];
+        axes[0][0][0] = 32767;
+        libretro::poll_input(inputs, *target, devices, runtime, true, state);
+        check(runtime.gun_cursor_x[0] > before_stick,
+              "Standard accepts Stick movement with an idle off-screen Lightgun");
+    }
+    pressed = {};
+    axes = {};
+    mouse_axes = {};
+    mouse_buttons = {};
+
     runtime = {};
     lightgun_axes = {{{-32768, 32767}, {32767, -32768}}};
     lightgun_buttons = {1u << RETRO_DEVICE_ID_LIGHTGUN_TRIGGER,
@@ -1893,6 +2027,57 @@ int main()
         check(inputs.in1 == 0xfc && inputs.in2 == 0xff,
               "All House of the Dead revisions use the corrected trigger route");
     }
+    // Exercise both selector branches with identical frontend coordinates.
+    pressed = {};
+    mouse_buttons = {};
+    lightgun_buttons = {};
+    lightgun_axes = {};
+    for (const char* name : {"rchase2", "rchase2a"}) {
+        const auto* target = database.find(name);
+        check(target != nullptr, "Rail Chase revision exists");
+        runtime = {};
+        libretro::poll_input(inputs, *target, devices, runtime, true, state,
+                             libretro::GunInputMode::Lightgun);
+        const auto mapped = inputs.analog;
+        libretro::SpecialAnalogOptions previous;
+        previous.rail_chase_upstream = false;
+        libretro::poll_input(inputs, *target, devices, runtime, true, state,
+                             libretro::GunInputMode::Lightgun, true, {}, {}, true, false, previous);
+        check(mapped[0] != inputs.analog[0] && mapped[1] != inputs.analog[1],
+              "Rail Chase selector switches both player X mappings");
+        for (unsigned axis = 0; axis < 4; ++axis) {
+            const auto& channel = target->analog[axis];
+            float fraction = (axis < 2 ? 247.0f / 495.0f : 191.0f / 383.0f);
+            if (channel.reverse) fraction = 1.0f - fraction;
+            const auto expected = static_cast<u8>(channel.minimum
+                + fraction * (channel.maximum - channel.minimum) + 0.5f);
+            check(inputs.analog[axis] == expected,
+                  "Rail Chase Linear restores the previous midpoint for each mux channel");
+        }
+    }
+    const auto* prototype = database.find("hotdp");
+    for (s16 edge : {static_cast<s16>(-32768), static_cast<s16>(32767)}) {
+        lightgun_axes = {{{edge, edge}, {edge, edge}}};
+        runtime = {};
+        libretro::poll_input(inputs, *prototype, devices, runtime, true, state,
+                             libretro::GunInputMode::Lightgun);
+        check(inputs.gun_p1x == (edge < 0 ? 140 : 636)
+                  && inputs.gun_p2x == inputs.gun_p1x
+                  && inputs.gun_p1y == (edge < 0 ? 40 : 424)
+                  && inputs.gun_p2y == inputs.gun_p1y,
+              "HOTD prototype Upstream uses expanded endpoints for both players");
+        libretro::SpecialAnalogOptions previous;
+        previous.hotd_prototype_upstream = false;
+        libretro::poll_input(inputs, *prototype, devices, runtime, true, state,
+                             libretro::GunInputMode::Lightgun, true, {}, {}, true, false, previous);
+        check(inputs.gun_p1x == (edge < 0 ? 174 : 595)
+                  && inputs.gun_p2x == (edge < 0 ? 164 : 595)
+                  && inputs.gun_p1y == (edge < 0 ? 88 : 379),
+              "HOTD prototype Previous restores the published port endpoints");
+    }
+    lightgun_axes = {};
+    lightgun_buttons = {1u << RETRO_DEVICE_ID_LIGHTGUN_TRIGGER,
+                        1u << RETRO_DEVICE_ID_LIGHTGUN_TRIGGER};
     auto legacy_hotd = *hotd;
     legacy_hotd.lightgun.p2_trigger_on_in2 = true;
     libretro::poll_input(inputs, legacy_hotd, devices, runtime, true, state,

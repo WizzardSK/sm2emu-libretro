@@ -59,6 +59,9 @@ public:
     ///
     /// Parent ROMs missing from a clone's archive are looked for in
     /// `<parent>.zip` beside it, matching the usual split-set layout.
+    /// A declared rom_fallback sibling is searched after the selected archive
+    /// and before its parent. Only such sets allow an absent selected archive;
+    /// their declared identity and patches remain fixed and all chips required.
     /// Device archives may additionally be read from `device_directory` before
     /// the sibling directory; the standalone default keeps the sibling-only
     /// search. The path is supplied by the caller, not inferred from a frontend.

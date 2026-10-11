@@ -1141,6 +1141,21 @@ void Input::gather_lightguns(hw::Inputs* inputs, const rom::GameSpec& game) cons
                 return;
             }
             const rom::AnalogChannel& c = game.analog[static_cast<usize>(idx)];
+            fraction = std::clamp(fraction, 0.0f, 1.0f);
+            if (c.point_count >= 2) {
+                // Interpolate between the two points around the aim.
+                usize next = 1;
+                while (next + 1 < c.point_count && fraction > c.points[next].at) {
+                    ++next;
+                }
+                const rom::AnalogPoint& a = c.points[next - 1];
+                const rom::AnalogPoint& b = c.points[next];
+                const float t     = std::clamp((fraction - a.at) / (b.at - a.at), 0.0f, 1.0f);
+                const float value = std::lerp(static_cast<float>(a.value),
+                                              static_cast<float>(b.value), t);
+                inputs->analog[static_cast<usize>(idx)] = static_cast<u8>(value + 0.5f);
+                return;
+            }
             const float f    = c.reverse ? 1.0f - fraction : fraction;
             const float span = static_cast<float>(c.maximum - c.minimum);
             inputs->analog[static_cast<usize>(idx)] =
