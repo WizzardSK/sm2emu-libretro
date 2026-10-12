@@ -60,6 +60,11 @@ installed copies describe the previous setup.
 
 ## Upstream integration
 
+Before choosing or publishing a release version, follow the mandatory release
+version convention in `Docs/UPSTREAM_PORTING_MANIFESTO.md`: reconciled upstream
+version plus port revision. Selective imports count toward upstream coverage;
+the last wholesale source import is not the advertised version baseline.
+
 Future upstream updates are an explicit architectural requirement. Keep the
 original source layout and minimize edits to imported files. Put Libretro ABI,
 callbacks, options, input adaptation and frontend persistence in `src/libretro/`

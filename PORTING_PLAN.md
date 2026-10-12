@@ -3,20 +3,17 @@
 Il progetto indipendente `Zer0one/sm2-emu-libretro` sviluppa su `main` e usa
 `dmanlfc/sm2-emu` come remote `upstream`. La base iniziale è SM2-Emu 0.9.4,
 commit `8b3a468c5b51387093811cb16b076e6fd9289d66`. Il clone mainstream rimane
-separato, per build e confronti con il codice originale. La revisione upstream
-integrata resta `5ddf84ae7970a9bce1d0a17b3900d26065de1996` (0.9.13), e il
-core dichiara 0.9.13.1. La revisione upstream consultata il 10 ottobre 2026 è
-`3c9e79a76272b736e720377e8ec67c2b1c599ce6` (`main`, 0.9.43 nel sorgente):
-il solo fetch non cambia la base integrata. Il fix Save State 68000
-`1a60affc251dd9992044013650dbe24075221593` è importato separatamente l’8 ottobre
-2026; il fix texture GPU `277a482` è integrato separatamente nello stesso giorno.
-I fix geometria Top Skater `d0db61c` e dettaglio ombre `2c4e9e2` sono
-importati separatamente nello stesso giorno. Il pacchetto CPU/coprocessori `760a556`
-e il fix SCSP pitch `ec9c3ac` sono integrati separatamente il 10 ottobre 2026.
-La baseline completa resta 0.9.13. Le esclusioni e gli adattamenti
-Libretro fino alla 0.9.13 sono riepilogati nel punto 7; i candidati upstream
-ancora aperti sono nel punto 9 secondo il
-[manifesto dei porting](Docs/UPSTREAM_PORTING_MANIFESTO.md).
+separato, per build e confronti con il codice originale. La base storica dell'importazione completa è
+`5ddf84ae7970a9bce1d0a17b3900d26065de1996` (0.9.13). La copertura upstream
+riconciliata arriva a `7db71083ac3419b0c17af74bc6a1640365226238` (0.9.44):
+le modifiche applicabili sono integrate o adattate e le esclusioni motivate sono
+registrate nei pacchetti e nel punto 9. Il core dichiara **0.9.44.0** secondo la
+convenzione del [manifesto dei porting](Docs/UPSTREAM_PORTING_MANIFESTO.md).
+Gli import selettivi contribuiscono alla copertura; la base storica 0.9.13 non
+rappresenta più la versione upstream pubblicizzata. Il solo fetch non avanza
+questa copertura. La release 0.9.13.1 aveva mantenuto erroneamente il numero
+storico; 0.9.44.0 corregge versione e documentazione senza nuovi cambiamenti
+all'emulazione. Vedere [release notes](Docs/RELEASE_NOTES_0.9.44.0.md).
 
 Obiettivo: un core per RetroArch e Batocera, preservando emulazione, timing,
 audio e controlli. Ogni traguardo richiede una prova eseguibile; una build
@@ -664,8 +661,9 @@ pattern run-ahead e rewind; Daytona supera la prova anche a 60 Hz.
 
 L'analisi è allineata al commit upstream
 `5ddf84ae7970a9bce1d0a17b3900d26065de1996`, tag 0.9.13 del 26 settembre
-2026 nel fuso dell'autore. Il core dichiara 0.9.13.0 e conserva la
-provenienza della base iniziale 0.9.4.
+2026 nel fuso dell'autore. La versione dichiarata a quel traguardo era 0.9.13.0;
+la release corrente dichiara 0.9.44.0. Resta conservata la provenienza della
+base iniziale 0.9.4.
 
 | Integrazione applicabile | Stato nel core |
 | --- | --- |
@@ -733,7 +731,8 @@ interchange file.
 Reviewed against `upstream/main` at `3c9e79a76272b736e720377e8ec67c2b1c599ce6`
 on 2026-10-10. Treat all open changes as one candidate set under the
 [Upstream-First Libretro Porting Manifesto](Docs/UPSTREAM_PORTING_MANIFESTO.md).
-The integrated baseline remains 0.9.13. The latest review adds CPU/coprocessor,
+The historical full-import base is 0.9.13; current reconciled upstream coverage
+is 0.9.44. The latest review adds CPU/coprocessor,
 SCSP and gun candidates from 12 additional commits; standalone GUI/localization
 changes are excluded. See [Upstream Review](Docs/UPSTREAM_REVIEW_2026-10-10.md). The user approved all compatible candidates on 2026-10-07. Integrate
 them after validation, adapting frontend-facing parts to Libretro. Place work

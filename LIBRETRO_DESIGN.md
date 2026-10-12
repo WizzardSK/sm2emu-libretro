@@ -1090,3 +1090,14 @@ Native impact/kick decoding and its own direction threshold are unchanged;
 12-frame tail, disable/reset/unload stops and archive layout are preserved.
 No frontend settings query or new Core Option is introduced. See
 `Docs/RUMBLE_FRONTEND_DEADZONE_INTERCHANGE_2026-10-11.md`.
+
+## Release Version And Reconciled Upstream Coverage — 2026-10-12
+
+The historical full-import source base is 0.9.13 (`5ddf84a`). Subsequent
+selective imports, Libretro adaptations and documented exclusions reconcile
+applicable upstream changes through 0.9.44 (`7db7108`). The advertised core
+version is therefore 0.9.44.0, not 0.9.13.1. The final component is the port
+revision, reset when the reconciled upstream version advances. Follow the
+mandatory release gate in `Docs/UPSTREAM_PORTING_MANIFESTO.md`. Dated package
+reports retain their original baseline and validation statements as history.
+This numbering correction changes no emulation, input, audio or state format.

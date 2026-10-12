@@ -60,7 +60,11 @@ Rendering, input, NVRAM, and networking options are exposed through RetroArch's
 Core Options menu. Options that represent operator settings are shown only for
 the loaded game.
 
-## Latest Update — 0.9.13.1
+## Latest Update — 0.9.44.0
+
+This release corrects the version numbering: applicable upstream changes are
+reconciled through 0.9.44, with Libretro adaptations and documented exclusions.
+Its emulation and frontend behavior are unchanged from 0.9.13.1.
 
 - Power Sled: Relay-derived undumped Master, linked play, experimental Master
   Standalone and Relay Attract modes, Relay audio/commands on Master, and
@@ -74,7 +78,7 @@ the loaded game.
 - Generic local linked-cabinet launcher with persistent per-instance settings,
   independent gamepad assignments, and desktop-sized window layouts.
 
-See the [release notes](Docs/RELEASE_NOTES_0.9.13.1.md) and
+See the [release notes](Docs/RELEASE_NOTES_0.9.44.0.md) and
 [linked-cabinet launcher guide](Docs/LINKED_CABINET_LAUNCHER.md).
 Experimental Power Sled features reconstruct missing behavior; they do not
 represent a verified dump of the original Master board. Existing saves take

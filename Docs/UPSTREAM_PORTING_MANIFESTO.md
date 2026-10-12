@@ -74,6 +74,32 @@ must cover all profiles and clones, not just profiles already named VR1.
    including video, PCM, NVRAM, Save States and real RetroArch behavior when
    relevant. A successful build does not establish runtime correctness.
 
+## Release Version Convention — Mandatory Cross-Project Rule
+
+Use `UPSTREAM_VERSION.PORT_REVISION`: the first components identify the latest
+upstream release whose applicable changes have been reconciled with the core;
+the final component identifies subsequent port-only releases. For example,
+upstream 0.9.44 becomes core 0.9.44.0; a later port-only release becomes
+0.9.44.1. Reset the port revision to zero when advancing the upstream version.
+
+Reconciliation means every change through that upstream revision is recorded as
+integrated, adapted, or excluded with a concrete reason under this manifesto.
+Selective imports and cherry-picks count: neither the Git merge strategy nor
+the last wholesale source import determines the advertised version. Excluded
+standalone/frontend changes do not prevent advancing the upstream component.
+An unresolved applicable change does prevent claiming that release; fetch or
+review alone never qualifies it.
+
+Before publishing, verify the integration ledger through the intended upstream
+revision. Distinguish the historical source base from the reconciled upstream
+coverage, and align the runtime version, core-info metadata, release tag/title,
+README, release notes and current roadmap status. Do not retain an obsolete
+upstream component merely because imports were documented separately.
+
+For SM2-Emu, the approved correction is 0.9.44.0 after reconciliation through
+0.9.44, replacing the mistaken 0.9.13.1 release numbering. Recording this rule
+does not itself change an existing release or authorize rewriting public tags.
+
 ## Applying This Manifesto Elsewhere
 
 Each port applies these rules in its own repository and project chat. Adapt to
