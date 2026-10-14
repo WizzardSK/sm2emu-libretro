@@ -72,6 +72,37 @@ jobs:
           name: sm2_libretro-windows-x86_64
           path: sm2_libretro.dll
 
+  macos:
+    name: macOS ${{ matrix.arch }} (software renderer)
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {arch: arm64, os: macos-15, extra: '-DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_APPLE_SILICON_PROCESSOR=arm64 -DCMAKE_SYSTEM_PROCESSOR=arm64'}
+          - {arch: x86_64, os: macos-15-intel, extra: ''}
+    runs-on: ${{ matrix.os }}
+    env:
+      MACOSX_DEPLOYMENT_TARGET: "13.0"
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+          persist-credentials: false
+      - name: Build (the recipe's script, no glslc on the machine)
+        run: |
+          if command -v glslc; then echo "glslc is on this runner; the build must not need it"; fi
+          CORE_ARGS="-DSM2_BUILD_STANDALONE=OFF -DSM2_BUILD_TESTS=OFF -DSM2_BUILD_LIBRETRO=ON -DSM2_LIBRETRO_VULKAN=OFF -DSM2_LIBRETRO_OPENGL=OFF -DSM2_BUILD_OPENGL_DESKTOP=OFF -DCMAKE_DISABLE_FIND_PACKAGE_miniz=TRUE -DCMAKE_DISABLE_FIND_PACKAGE_pugixml=TRUE -DCMAKE_DISABLE_FIND_PACKAGE_lzmasdk=TRUE -DCMAKE_OSX_DEPLOYMENT_TARGET=13.0"
+          cmake -DCMAKE_BUILD_TYPE=Release $CORE_ARGS . -Bbuild/osx ${{ matrix.extra }}
+          cmake --build build/osx --target sm2_libretro --config Release -- -j $(sysctl -n hw.ncpu)
+          mv build/osx/libretro/sm2_libretro.dylib sm2_libretro.dylib
+          ls -la sm2_libretro.dylib
+          lipo -info sm2_libretro.dylib
+          otool -L sm2_libretro.dylib
+      - uses: actions/upload-artifact@v7
+        with:
+          name: sm2_libretro-macos-${{ matrix.arch }}
+          path: sm2_libretro.dylib
+
   android:
     name: Android ${{ matrix.abi }}
     strategy:

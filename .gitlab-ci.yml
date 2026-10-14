@@ -9,8 +9,9 @@
 # compiled to SPIR-V at build time, and the GL ones are checked with it), none
 # of which the buildbot's xenial/focal images have, so the Linux jobs run on
 # ubuntu:24.04 and pull them in, the way other C++20 cores do. Android takes
-# glslc and the Vulkan headers from the NDK. macOS is not here yet: its
-# runners have no glslc.
+# glslc and the Vulkan headers from the NDK. macOS builds the software
+# renderer only, which needs no glslc: the buildbot's Mac runners are not
+# known to have it, and they cannot be given packages from here.
 
 # Core definitions
 .core-defs:
@@ -52,6 +53,12 @@ include:
   # Windows
   - project: 'libretro-infrastructure/ci-templates'
     file: '/windows-cmake-mingw.yml'
+
+  # macOS
+  - project: 'libretro-infrastructure/ci-templates'
+    file: '/osx-cmake-arm64.yml'
+  - project: 'libretro-infrastructure/ci-templates'
+    file: '/osx-cmake-x86.yml'
 
   ################################## CELLULAR #################################
   # Android
@@ -116,6 +123,34 @@ libretro-build-windows-x64:
     - ${CMAKE} --build $BUILD_DIR --target ${CORENAME}_libretro --config Release -- -j $NUMPROC
     - mv $BUILD_DIR/$EXTRA_PATH/$LIBNAME $LIBNAME
     - strip --strip-unneeded $LIBNAME || x86_64-w64-mingw32.static-strip --strip-unneeded $LIBNAME
+
+# macOS: the software renderer only (see the top), with the system's make
+# (no Ninja on those runners) and the deployment target the project's own CI
+# uses, which the C++20 library needs.
+.core-defs-osx:
+  extends: .core-defs
+  variables:
+    CORE_ARGS: >-
+      -DSM2_BUILD_STANDALONE=OFF -DSM2_BUILD_TESTS=OFF
+      -DSM2_BUILD_LIBRETRO=ON -DSM2_LIBRETRO_VULKAN=OFF -DSM2_LIBRETRO_OPENGL=OFF
+      -DSM2_BUILD_OPENGL_DESKTOP=OFF
+      -DCMAKE_DISABLE_FIND_PACKAGE_miniz=TRUE
+      -DCMAKE_DISABLE_FIND_PACKAGE_pugixml=TRUE
+      -DCMAKE_DISABLE_FIND_PACKAGE_lzmasdk=TRUE
+      -DCMAKE_OSX_DEPLOYMENT_TARGET=13.0
+    MACOSX_DEPLOYMENT_TARGET: "13.0"
+
+# macOS 64-bit (ARM)
+libretro-build-osx-arm64:
+  extends:
+    - .libretro-osx-cmake-arm64
+    - .core-defs-osx
+
+# macOS 64-bit (Intel)
+libretro-build-osx-x64:
+  extends:
+    - .libretro-osx-cmake-x86_64
+    - .core-defs-osx
 
 ################################### CELLULAR #################################
 # Android: Vulkan needs API level 24, and the NDK carries glslc and the Vulkan
