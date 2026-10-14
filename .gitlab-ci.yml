@@ -119,13 +119,15 @@ libretro-build-windows-x64:
 
 ################################### CELLULAR #################################
 # Android: Vulkan needs API level 24, and the NDK carries glslc and the Vulkan
-# headers. The OpenGL renderer asks the frontend for a GLES 3 context there.
+# headers. The OpenGL renderer asks the frontend for a GLES 3 context there;
+# Dear ImGui's OpenGL backend calls GLES 3 directly on Android (it has no
+# loader of its own there), so the core links the system's libGLESv3.
 .core-defs-android:
   extends: .core-defs
   variables:
     API_LEVEL: 24
   script:
-    - cmake -DCMAKE_BUILD_TYPE=Release $CORE_ARGS -DSM2_GLSLC=$NDK_ROOT/shader-tools/linux-x86_64/glslc -DANDROID_PLATFORM=android-$API_LEVEL -DCMAKE_TOOLCHAIN_FILE=$NDK_ROOT/build/cmake/android.toolchain.cmake -DANDROID_STL=c++_static -DANDROID_ABI=$ANDROID_ABI . -B$BUILD_DIR
+    - cmake -DCMAKE_BUILD_TYPE=Release $CORE_ARGS -DSM2_GLSLC=$NDK_ROOT/shader-tools/linux-x86_64/glslc -DCMAKE_SHARED_LINKER_FLAGS=-lGLESv3 -DANDROID_PLATFORM=android-$API_LEVEL -DCMAKE_TOOLCHAIN_FILE=$NDK_ROOT/build/cmake/android.toolchain.cmake -DANDROID_STL=c++_static -DANDROID_ABI=$ANDROID_ABI . -B$BUILD_DIR
     - cmake --build $BUILD_DIR --target ${CORENAME}_libretro --config Release -- -j $NUMPROC
 
 # Android 64-bit (ARM)

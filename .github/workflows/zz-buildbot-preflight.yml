@@ -89,7 +89,7 @@ jobs:
           sudo apt-get update -qq && sudo apt-get install -yqq ninja-build
           NDK_ROOT=$ANDROID_NDK_LATEST_HOME
           CORE_ARGS="-G Ninja -DSM2_BUILD_STANDALONE=OFF -DSM2_BUILD_TESTS=OFF -DSM2_BUILD_LIBRETRO=ON -DSM2_LIBRETRO_VULKAN=ON -DSM2_LIBRETRO_OPENGL=ON -DSM2_BUILD_OPENGL_DESKTOP=OFF -DCMAKE_DISABLE_FIND_PACKAGE_miniz=TRUE -DCMAKE_DISABLE_FIND_PACKAGE_pugixml=TRUE -DCMAKE_DISABLE_FIND_PACKAGE_lzmasdk=TRUE"
-          cmake -DCMAKE_BUILD_TYPE=Release $CORE_ARGS -DSM2_GLSLC=$NDK_ROOT/shader-tools/linux-x86_64/glslc -DANDROID_PLATFORM=android-24 -DCMAKE_TOOLCHAIN_FILE=$NDK_ROOT/build/cmake/android.toolchain.cmake -DANDROID_STL=c++_static -DANDROID_ABI=${{ matrix.abi }} . -Bbuild/android
+          cmake -DCMAKE_BUILD_TYPE=Release $CORE_ARGS -DSM2_GLSLC=$NDK_ROOT/shader-tools/linux-x86_64/glslc -DCMAKE_SHARED_LINKER_FLAGS=-lGLESv3 -DANDROID_PLATFORM=android-24 -DCMAKE_TOOLCHAIN_FILE=$NDK_ROOT/build/cmake/android.toolchain.cmake -DANDROID_STL=c++_static -DANDROID_ABI=${{ matrix.abi }} . -Bbuild/android
           cmake --build build/android --target sm2_libretro --config Release -- -j $(nproc)
           mv build/android/libretro/sm2_libretro.so sm2_libretro_android.so
           $NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip sm2_libretro_android.so
