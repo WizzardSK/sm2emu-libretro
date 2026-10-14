@@ -1,0 +1,99 @@
+# Replays the jobs of .gitlab-ci.yml on GitHub's runners, before the recipe
+# goes to the libretro buildbot (whose own images cannot be pulled from here).
+# The commands are the recipe's; only the runner around them differs.
+name: Buildbot recipe preflight
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  linux:
+    name: Linux ${{ matrix.arch }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {arch: x86_64, os: ubuntu-24.04, lto: -DSM2_LTO=ON}
+          - {arch: aarch64, os: ubuntu-24.04-arm, lto: ''}
+    runs-on: ${{ matrix.os }}
+    container: ubuntu:24.04
+    steps:
+      - name: Image packages (the recipe's before_script)
+        run: |
+          apt-get update -qq
+          DEBIAN_FRONTEND=noninteractive apt-get install -yqq build-essential cmake ninja-build git ca-certificates python3 glslc libvulkan-dev libegl1-mesa-dev libgles2-mesa-dev
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+          persist-credentials: false
+      - name: Build (the recipe's script)
+        run: |
+          CORE_ARGS="-G Ninja -DSM2_BUILD_STANDALONE=OFF -DSM2_BUILD_TESTS=OFF -DSM2_BUILD_LIBRETRO=ON -DSM2_LIBRETRO_VULKAN=ON -DSM2_LIBRETRO_OPENGL=ON -DSM2_BUILD_OPENGL_DESKTOP=OFF -DCMAKE_DISABLE_FIND_PACKAGE_miniz=TRUE -DCMAKE_DISABLE_FIND_PACKAGE_pugixml=TRUE -DCMAKE_DISABLE_FIND_PACKAGE_lzmasdk=TRUE"
+          cmake -DCMAKE_BUILD_TYPE=Release $CORE_ARGS ${{ matrix.lto }} -DCMAKE_SHARED_LINKER_FLAGS="-static-libgcc -static-libstdc++" . -Bbuild/linux
+          cmake --build build/linux --target sm2_libretro --config Release -- -j $(nproc)
+          mv build/linux/libretro/sm2_libretro.so sm2_libretro.so
+          strip --strip-unneeded sm2_libretro.so
+          ls -la sm2_libretro.so
+          readelf -d sm2_libretro.so | grep NEEDED
+          nm -D --defined-only sm2_libretro.so | grep -c ' retro_'
+      - uses: actions/upload-artifact@v7
+        with:
+          name: sm2_libretro-linux-${{ matrix.arch }}
+          path: sm2_libretro.so
+
+  windows:
+    name: Windows x86_64 (MinGW, for MXE)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+          persist-credentials: false
+      - name: Toolchain in place of MXE's
+        run: sudo apt-get update -qq && sudo apt-get install -yqq g++-mingw-w64-x86-64-posix gcc-mingw-w64-x86-64-posix ninja-build glslc libvulkan-dev
+      - name: Build (the recipe's script)
+        run: |
+          mkdir -p vulkan-headers && cp -r /usr/include/vulkan /usr/include/vk_video vulkan-headers/
+          CORE_ARGS="-G Ninja -DSM2_BUILD_STANDALONE=OFF -DSM2_BUILD_TESTS=OFF -DSM2_BUILD_LIBRETRO=ON -DSM2_LIBRETRO_VULKAN=ON -DSM2_LIBRETRO_OPENGL=ON -DSM2_BUILD_OPENGL_DESKTOP=OFF -DCMAKE_DISABLE_FIND_PACKAGE_miniz=TRUE -DCMAKE_DISABLE_FIND_PACKAGE_pugixml=TRUE -DCMAKE_DISABLE_FIND_PACKAGE_lzmasdk=TRUE"
+          cmake -DCMAKE_SYSTEM_NAME=Windows -DCMAKE_C_COMPILER=x86_64-w64-mingw32-gcc-posix -DCMAKE_CXX_COMPILER=x86_64-w64-mingw32-g++-posix -DCMAKE_RC_COMPILER=x86_64-w64-mingw32-windres \
+            -DCMAKE_BUILD_TYPE=Release $CORE_ARGS -DSM2_VULKAN_INCLUDE_DIR=$PWD/vulkan-headers -DSM2_GLSLC=$(command -v glslc) . -Bbuild/windows
+          cmake --build build/windows --target sm2_libretro --config Release -- -j $(nproc)
+          mv build/windows/libretro/sm2_libretro.dll sm2_libretro.dll
+          x86_64-w64-mingw32-strip --strip-unneeded sm2_libretro.dll
+          ls -la sm2_libretro.dll
+          x86_64-w64-mingw32-objdump -p sm2_libretro.dll | grep 'DLL Name'
+      - uses: actions/upload-artifact@v7
+        with:
+          name: sm2_libretro-windows-x86_64
+          path: sm2_libretro.dll
+
+  android:
+    name: Android ${{ matrix.abi }}
+    strategy:
+      fail-fast: false
+      matrix:
+        abi: [arm64-v8a, x86_64]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+          persist-credentials: false
+      - name: Build (the recipe's script)
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -yqq ninja-build
+          NDK_ROOT=$ANDROID_NDK_LATEST_HOME
+          CORE_ARGS="-G Ninja -DSM2_BUILD_STANDALONE=OFF -DSM2_BUILD_TESTS=OFF -DSM2_BUILD_LIBRETRO=ON -DSM2_LIBRETRO_VULKAN=ON -DSM2_LIBRETRO_OPENGL=ON -DSM2_BUILD_OPENGL_DESKTOP=OFF -DCMAKE_DISABLE_FIND_PACKAGE_miniz=TRUE -DCMAKE_DISABLE_FIND_PACKAGE_pugixml=TRUE -DCMAKE_DISABLE_FIND_PACKAGE_lzmasdk=TRUE"
+          cmake -DCMAKE_BUILD_TYPE=Release $CORE_ARGS -DSM2_GLSLC=$NDK_ROOT/shader-tools/linux-x86_64/glslc -DANDROID_PLATFORM=android-24 -DCMAKE_TOOLCHAIN_FILE=$NDK_ROOT/build/cmake/android.toolchain.cmake -DANDROID_STL=c++_static -DANDROID_ABI=${{ matrix.abi }} . -Bbuild/android
+          cmake --build build/android --target sm2_libretro --config Release -- -j $(nproc)
+          mv build/android/libretro/sm2_libretro.so sm2_libretro_android.so
+          $NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip sm2_libretro_android.so
+          ls -la sm2_libretro_android.so
+          $NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf -d sm2_libretro_android.so | grep NEEDED
+      - uses: actions/upload-artifact@v7
+        with:
+          name: sm2_libretro-android-${{ matrix.abi }}
+          path: sm2_libretro_android.so
