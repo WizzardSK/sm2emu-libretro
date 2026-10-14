@@ -4,6 +4,8 @@
 name: Buildbot recipe preflight
 
 on:
+  push:
+    branches: [gitlab-ci]
   workflow_dispatch:
 
 permissions:
