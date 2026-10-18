@@ -3,11 +3,12 @@
 Historical source import: `5ddf84ae7970a9bce1d0a17b3900d26065de1996` (0.9.13).
 Previous reconciled coverage: `7db71083ac3419b0c17af74bc6a1640365226238` (0.9.44).
 New reconciled release: `90110c7ce2043960dac485a7305e6b56cacab11b` (0.9.51).
-Core release: **0.9.51.1**, following `UPSTREAM_VERSION.PORT_REVISION`.
+Core release: **0.9.51.2**, following `UPSTREAM_VERSION.PORT_REVISION`.
 
-Port revision 0 was tagged but not released after a Windows CRLF packaging
-failure. Revision 1 corrects checkout conversion without changing upstream
-coverage; the original tag remains intact.
+Port revisions 0 and 1 were tagged but not released after Windows text EOL
+mismatches in root files and then the ImGui submodule. Revision 2 sets
+canonical LF checkout even for submodule text attributes, without changing
+upstream coverage. Both original tags remain intact.
 
 All 48 commits in this release interval are classified below. Merge commits inherit
 their reviewed constituent changes; standalone version strings are not the port's

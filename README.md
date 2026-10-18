@@ -65,7 +65,7 @@ Rendering, input, NVRAM, and networking options are exposed through RetroArch's
 Core Options menu. Options that represent operator settings are shown only for
 the loaded game.
 
-## Latest Update — 0.9.51.1
+## Latest Update — 0.9.51.2
 
 This release reconciles the applicable upstream changes through **SM2-Emu
 0.9.51**, with port revision **0**. The historical full-source import remains
@@ -90,7 +90,7 @@ the current coverage. See the [reconciliation ledger](Docs/UPSTREAM_RECONCILIATI
 - **Distribution:** GPL-3.0-or-later with upstream NOTICE terms, retained MAME BSD
   credits, complete dependency notices and matching source archives with submodules.
 
-Read the [release notes](Docs/RELEASE_NOTES_0.9.51.1.md),
+Read the [release notes](Docs/RELEASE_NOTES_0.9.51.2.md),
 [roadmap](PORTING_PLAN.md) and
 [linked-cabinet launcher guide](Docs/LINKED_CABINET_LAUNCHER.md) for scope and limits.
 Widescreen and reconstructed Power Sled features remain experimental. Source,

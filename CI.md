@@ -40,10 +40,12 @@ revision and SHA-256. Tagged releases publish that source archive beside the
 platform binaries. Do not substitute GitHub's automatic archive, which omits
 submodule contents.
 
-Windows configures `core.autocrlf=false` before checkout and recursive submodule
+Windows configures `core.autocrlf=false` and `core.eol=lf` before checkout and recursive submodule
 initialization. This preserves canonical source bytes for exact cross-platform
 licence/info/database hash checks. Do not weaken those checks to hide line-ending
-conversion; 0.9.51.1 corrects the unpublished 0.9.51.0 packaging attempt.
+conversion. ImGui text attributes use the native EOL even with autocrlf
+disabled; this behavior and the LF fix were reproduced using checkout-index.
+0.9.51.2 corrects the two unpublished packaging attempts.
 
 Each binary package includes LICENSE, NOTICE, the retained MAME BSD text and
 component notices, including Dear ImGui. Validate the pair with:

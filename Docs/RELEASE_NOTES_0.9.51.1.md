@@ -1,4 +1,7 @@
-# SM2-Emu Libretro 0.9.51.1
+# SM2-Emu Libretro 0.9.51.1 — Unpublished Attempt
+
+The remaining ImGui submodule native-EOL mismatch prevented release packaging.
+No release assets were published. See [0.9.51.2](RELEASE_NOTES_0.9.51.2.md).
 
 Reconciled upstream **0.9.51** plus port revision **1**, following the mandatory
 version convention. The historical full-source import is 0.9.13; the
