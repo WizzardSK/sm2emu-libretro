@@ -231,6 +231,20 @@ I controlli ROM-free coprono i nove set, cablaggio VR, assi, pedali e cambio.
 Le prove RetroArch macOS hanno raggiunto gare reali con input registrato:
 Daytona a 300 km/h e Sega Rally a 127 km/h nei frame finali acquisiti.
 
+### Gear Shift Neutral Time
+
+Input groups **Gear Shift Neutral Time** immediately after **4-Speed Shifter**.
+It follows upstream: **100 ms** by default, **0–500 ms** in 10 ms steps. Shift
+Up/Down between nonzero gears temporarily sends neutral; direct gear selection
+and explicit neutral bypass/cancel the interval. At 100 ms this occupies six
+native machine frames. **0 ms** restores immediate shifting and cancels a
+pending interval. Changes apply on return to gameplay without a machine reset;
+nonzero edits affect subsequent shifts. The option is visible for every game
+and is a no-op outside the four-speed gearbox profiles (including their clones).
+It does not delay the two-button native sequential shifters used by Indy 500,
+Manx TT and similar titles. Save States preserve a pending interval.
+See `Docs/GEAR_SHIFT_NEUTRAL_TIME_2026-10-18.md`.
+
 ## Profili di guida con cambio sequenziale
 
 I tre parent Indy 500, Over Rev e Sega Touring Car Championship, con le loro
@@ -875,13 +889,14 @@ un CRC valido senza riapplicarli. Evidenze in
 
 La Core Option Video `Aspect Ratio` offre `Auto` (default), `4:3` e `16:9`.
 Le due scelte esplicite forzano soltanto il rapporto comunicato al frontend; il
-framebuffer emulato resta 496×384.
+framebuffer emulato resta 496×384 quando `Widescreen Mode` è Disabled.
 
 In `Auto` il core legge il tipo di cabinato dalla EEPROM attiva e aggiorna la
 geometria Libretro soltanto quando il valore cambia:
 
 - famiglia Indy 500: `Twin` usa 4:3, `Deluxe` usa 16:9;
 - famiglia Sega Touring Car Championship: `Twin` usa 4:3, `Deluxe` usa 16:9;
+- Super GT 24h: I/O Type B usa 16:9, A/C usano 4:3;
 - gli altri giochi usano 4:3.
 
 La EEPROM, inclusi i cambiamenti salvati dal Service Menu, resta la fonte
@@ -1300,3 +1315,17 @@ Resume or restart; the process exits 0. Legacy frontends without this callback
 retain the return-to-game refresh. Gameplay polling still follows the selected
 option when emulation runs; no machine reset or state change is introduced.
 Private evidence: `build-libretro-gpu/validation/controller-profile-type-20261012/menu-refresh/`.
+
+
+## Widescreen Mode
+
+Video → Widescreen Mode offers Disabled (default) and Expand 3D View Only.
+Disabled preserves Aspect Ratio/Auto; selecting 16:9 stretches the original
+image. Expand directly selects a 16:9 presentation and renders more 3D scenery
+on Vulkan/OpenGL/GLES, with Aspect Ratio set to Auto or 16:9; forced 4:3 suppresses expansion. HUD proportions
+are preserved and background side fill is automatic. Disabling it restores the
+saved Aspect Ratio selection. Native-capable Indy 500/STCC/Super GT 24h families
+and Software keep their existing behavior. Changes apply on return to game
+without resetting. Expansion is experimental; individual games can expose
+scenery missing from the original picture. See
+`Docs/WIDESCREEN_MODE_INTEGRATION_2026-10-18.md`.

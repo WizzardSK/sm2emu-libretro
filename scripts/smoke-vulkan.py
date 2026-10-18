@@ -24,6 +24,12 @@ def main():
     p=argparse.ArgumentParser(description=__doc__)
     for key in ['core','host','system','rom','output']:p.add_argument('--'+key,type=Path,required=True)
     p.add_argument('--frames',type=int,default=1800)
+    p.add_argument('--aspect-ratio', choices=['auto','4_3','16_9'], default='auto')
+    p.add_argument('--widescreen-mode', choices=['stretch','expand_3d'], default='stretch')
+    p.add_argument('--expect-width', type=int, default=496, help='Expected native framebuffer width')
+    p.add_argument('--expect-aspect', choices=['4:3','16:9'], help='Verify the final reported display aspect')
+    p.add_argument('--widescreen-switch-frame', type=int, default=0,
+                   help='Switch Stretch to Expand or vice versa at this frame')
     p.add_argument('--initial-nvram-setup',choices=['enabled','disabled'],default='enabled')
     p.add_argument('--hide-shot-flash',choices=['disabled','enabled'],default='disabled')
     p.add_argument('--gun-inputs',action='store_true',help='Replay coin, start, aim and lightgun shots')
@@ -35,6 +41,7 @@ def main():
     p.add_argument('--timing-overlay',choices=['disabled','auto','11','12','13','14'],default='disabled')
     p.add_argument('--reference',type=Path,help='Another run of this script; require exact final image and PCM')
     p.add_argument('--exercise',action='store_true',help='Additional reset/load/unload cycles')
+    p.add_argument('--save-state-test',action='store_true',help='Compare an eight-frame GPU/PCM Save State round-trip')
     a=p.parse_args();assert a.frames>0
     out=a.output.resolve();out.mkdir(parents=True,exist_ok=False);(out/'saves').mkdir()
     host=C.CDLL(str(a.host.resolve()));core=C.CDLL(str(a.core.resolve()))
@@ -45,7 +52,8 @@ def main():
     core.retro_load_game.argtypes=[C.POINTER(Game)];core.retro_load_game.restype=C.c_bool
     core.retro_get_system_av_info.argtypes=[C.POINTER(AV)]
     paths={9:str(a.system.resolve()).encode(),31:str(out/'saves').encode()}
-    options={b'sm2_hide_shot_flash':a.hide_shot_flash.encode(),
+    options={b'sm2_aspect_ratio':a.aspect_ratio.encode(),
+             b'sm2_widescreen_mode':a.widescreen_mode.encode(),b'sm2_hide_shot_flash':a.hide_shot_flash.encode(),
              b'sm2_gun_input':b'analog' if a.gun_inputs else b'hybrid',b'sm2_crosshairs':b'0' if a.gun_inputs else b'auto',
              b'sm2_renderer':b'vulkan',b'sm2_internal_resolution':str(a.scale).encode(),
              b'sm2_texture_filter':a.texture_filter.encode(),b'sm2_upscale_2d':a.upscale_2d.encode(),
@@ -74,7 +82,7 @@ def main():
             duplicates+=1
             if a.context_cycle and frame==a.context_cycle:context_cycle_hardware_frame=False
             return
-        if data!=C.c_void_p(-1).value or (w,h,pitch)!=(496*a.scale,384*a.scale,0):
+        if data!=C.c_void_p(-1).value or (w,h,pitch)!=((a.expect_width if not a.widescreen_switch_frame or frame >= a.widescreen_switch_frame else (496 if a.expect_width == 662 else 662))*a.scale,384*a.scale,0):
             errors.append('Invalid hardware frame');return
         if a.context_cycle and frame==a.context_cycle:context_cycle_hardware_frame=True
         # Capture the final two frames to retain the last presented image.
@@ -113,6 +121,8 @@ def main():
     assert abs(av.timing.fps-(60.0 if a.av_timing!='native' else native_fps))<1e-9
     started=time.monotonic()
     for frame in range(a.frames):
+        if a.widescreen_switch_frame and frame == a.widescreen_switch_frame:
+            options[b'sm2_widescreen_mode'] = b'expand_3d' if a.widescreen_mode == 'stretch' else b'stretch'
         if a.context_cycle and frame==a.context_cycle:
             host.sm2_gpu_stop();assert host.sm2_gpu_start(),host.sm2_gpu_error()
         if frame==a.frames//2:host.sm2_gpu_set_mask(15)
@@ -126,6 +136,33 @@ def main():
     overlays=[entry for entry in statuses if entry]
     if a.timing_overlay!='disabled':assert not overlays
     if a.context_cycle:assert context_cycle_hardware_frame is True
+    state_roundtrip = None
+    if a.save_state_test:
+        core.retro_serialize_size.restype = C.c_size_t
+        core.retro_serialize.argtypes = [C.c_void_p, C.c_size_t]
+        core.retro_serialize.restype = C.c_bool
+        core.retro_unserialize.argtypes = [C.c_void_p, C.c_size_t]
+        core.retro_unserialize.restype = C.c_bool
+        size = core.retro_serialize_size()
+        snapshot = C.create_string_buffer(size)
+        assert core.retro_serialize(snapshot, size)
+        original_last, original_pcm = last, len(pcm)
+        for frame in range(a.frames, a.frames + 8):
+            core.retro_run()
+        first_image, first_pcm = last, bytes(pcm[original_pcm:])
+        assert core.retro_unserialize(snapshot, size)
+        del pcm[original_pcm:]
+        for frame in range(a.frames, a.frames + 8):
+            core.retro_run()
+        state_roundtrip = {'image': last == first_image, 'pcm': bytes(pcm[original_pcm:]) == first_pcm}
+        assert all(state_roundtrip.values()) and not errors, (state_roundtrip, errors)
+        last = original_last
+        del pcm[original_pcm:]
+    core.retro_get_system_av_info(C.byref(av))
+    assert av.geometry.width == a.expect_width * a.scale
+    if a.expect_aspect:
+        expected_aspect = 16/9 if a.expect_aspect == '16:9' else 4/3
+        assert abs(av.geometry.aspect - expected_aspect) < 1e-6
     (out/'native_frame.ppm').write_bytes(last)
     with wave.open(str(out/'audio.wav'),'wb') as w:
         w.setparams((2,2,int(av.timing.rate),0,'NONE','none'));w.writeframes(pcm)
@@ -133,10 +170,11 @@ def main():
     host.sm2_gpu_stop();core.retro_unload_game()
     shutil.copytree(out/'saves',out/'baseline-nvram')
     report={'hide_shot_flash':a.hide_shot_flash,'gun_inputs':a.gun_inputs,'initial_nvram_setup':a.initial_nvram_setup,'frames':a.frames,'gpu_frames':gpu_frames,'duplicated_frames':duplicates,
-        'scale':a.scale,'texture_filter':a.texture_filter,'upscale_2d':a.upscale_2d,
+        'aspect_ratio':a.aspect_ratio,'widescreen_mode':a.widescreen_mode,
+        'expected_width':a.expect_width,'widescreen_switch_frame':a.widescreen_switch_frame,'scale':a.scale,'texture_filter':a.texture_filter,'upscale_2d':a.upscale_2d,
         'av_timing':a.av_timing,'timing_overlay':a.timing_overlay,
         'overlay_updates':len(overlays),'context_cycle':a.context_cycle,
-        'context_cycle_hardware_frame':context_cycle_hardware_frame,'sync_masks':[7,15,7],
+        'context_cycle_hardware_frame':context_cycle_hardware_frame,'state_roundtrip':state_roundtrip,'sync_masks':[7,15,7],
         'gpu_seconds':elapsed,'audio_frames':len(pcm)//4,
         'video_sha256':sha(last),'audio_sha256':sha(pcm),'nvram':nvram}
     if a.reference:

@@ -75,6 +75,8 @@ def main():
     parser.add_argument('--exercise', action='store_true')
     parser.add_argument('--audio-reset-test', action='store_true',
                         help='Check PCM recovery after repeated explicit and VF2 operator-option resets')
+    parser.add_argument('--gear-neutral-state-test', action='store_true',
+                        help='Save/replay a pending 100 ms Daytona/Sega Rally gear crossing')
     parser.add_argument('--save-state-test', action='store_true',
                         help='Verify deterministic Libretro save/load and corrupt-state rejection')
     parser.add_argument('--save-state-stress-cycles', type=int, default=0,
@@ -104,6 +106,10 @@ def main():
     parser.add_argument('--core-option', action='append', default=[], metavar='KEY=VALUE',
                         help='Supply an additional Libretro core option')
     args = parser.parse_args()
+    if args.gear_neutral_state_test:
+        if args.rom.stem not in {'daytona', 'srallyc'}:
+            parser.error('--gear-neutral-state-test requires Daytona or Sega Rally')
+        args.save_state_test = True
     if args.frames <= 0: parser.error('--frames must be positive')
     if args.save_state_stress_cycles < 0:
         parser.error('--save-state-stress-cycles must be non-negative')
@@ -220,6 +226,9 @@ def main():
         polls += 1
     @STATE
     def state(port, device, index, button):
+        if args.gear_neutral_state_test and not port and device == 1:
+            return int(button == (11 if args.rom.stem == 'srallyc' else 10)
+                       and frame == args.frames - 1)  # Shift to another nonzero gear
         if not args.press or port or device != 1: return 0
         if (800 <= frame < 810 or 820 <= frame < 830) and button == 2: return 1  # Coin
         if 850 <= frame < 860 and button == 3: return 1  # Start
@@ -280,6 +289,12 @@ def main():
             return data.raw
 
         state_a = save_state()
+        if args.gear_neutral_state_test:
+            tail = state_a[-96:]
+            assert tail[:8] == b'SM2LRTR1'
+            remaining = (int.from_bytes(tail[16:20], 'little') >> 8) & 31
+            assert remaining == 5, f'100 ms crossing must retain five frames: {remaining}'
+
         observer = (pixels, bytes(pcm), videos, polls, batches, duplicates,
                     list(statuses), list(geometry_updates), rumble_calls,
                     list(rumble_peak))
@@ -334,6 +349,12 @@ def main():
 
         state_a_buffer = C.create_string_buffer(state_a)
         assert lib.retro_unserialize(state_a_buffer, len(state_a))
+        if args.gear_neutral_state_test:
+            lib.retro_reset()
+            reset_tail = save_state()[-96:]
+            assert ((int.from_bytes(reset_tail[16:20], 'little') >> 8) & 31) == 0
+            assert lib.retro_unserialize(state_a_buffer, len(state_a))
+            assert save_state() == state_a
         (pixels, saved_pcm, videos, polls, batches, duplicates,
          statuses, geometry_updates, rumble_calls, rumble_peak) = observer
         pcm[:] = saved_pcm
@@ -342,7 +363,8 @@ def main():
                         'corrupt_state_rejected': True,
                         'stress_cycles': args.save_state_stress_cycles,
                         'run_ahead_pattern': args.save_state_stress_cycles > 0,
-                        'rewind_pattern': args.save_state_stress_cycles > 0}
+                        'rewind_pattern': args.save_state_stress_cycles > 0,
+                        'pending_gear_neutral': args.gear_neutral_state_test}
     if args.state_output:
         state_size = lib.retro_serialize_size()
         state_data = C.create_string_buffer(state_size)

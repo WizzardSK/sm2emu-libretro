@@ -2,6 +2,7 @@
 // Libretro owns presentation and pacing; the upstream machine owns emulation.
 #include "libretro.h"
 #include "core_options.h"
+#include "gun_flash_state.h"
 #include "crosshair.h"
 #include "audio_output.h"
 #include "timing_overlay.h"
@@ -17,6 +18,7 @@
 #if defined(SM2_LIBRETRO_VULKAN) || defined(SM2_LIBRETRO_OPENGL)
 #include "gpu.h"
 #endif
+#include "render/backend.h"
 #include "hw/machine_factory.h"
 #include "hw/m2comm.h"
 #include "hw/model2.h"
@@ -146,6 +148,7 @@ struct Content {
     u64 logged_comm_state = ~u64{0};
     unsigned linked_cabinets = 1;
     float aspect_ratio = 4.0f / 3.0f;
+    unsigned wide_columns = 0;
     std::chrono::steady_clock::time_point previous_run_start{};
     bool have_previous_run_start = false;
     double timing_machine_ms = 0;
@@ -195,6 +198,7 @@ void save_frontend_state(u8* destination, const Content& c)
     u32 flags = c.input_runtime.gear_initialized ? 1u : 0u;
     flags |= c.input_runtime.shift_up_held ? 1u << 1 : 0u;
     flags |= c.input_runtime.shift_down_held ? 1u << 2 : 0u;
+    flags |= (std::min(c.input_runtime.shift_neutral_frames, 29u) & 0x1fu) << 8;
     flags |= c.input_runtime.desert_shift ? 1u << 3 : 0u;
     flags |= c.input_runtime.desert_shift_held ? 1u << 4 : 0u;
     state_write<u32>(cursor, flags);
@@ -214,10 +218,7 @@ void save_frontend_state(u8* destination, const Content& c)
     state_write<u64>(cursor, c.audio_frame_remainder);
     state_write<u64>(cursor, static_cast<u64>(c.audio_frames_due));
     const auto flash = c.machine->video().gun_flash_state();
-    state_write<u32>(cursor, 0x47460000u | flash.triggers_held
-        | (flash.trigger_pressed ? 1u << 2 : 0u)
-        | (flash.window_mask_full ? 1u << 3 : 0u)
-        | (flash.hidden ? 1u << 4 : 0u) | (1u << 5)
+    state_write<u32>(cursor, libretro::gun_flash_flags(flash) | (1u << 5)
         | (c.power_sled_audio.active() ? 1u << 7 : 0u)
         | (c.power_sled_standalone ? 1u << 8 : 0u)
         | (c.power_sled_commands ? 1u << 9 : 0u));
@@ -240,6 +241,7 @@ bool load_frontend_state(const u8* source, libretro::InputRuntime& input_runtime
     input_runtime.gear_initialized = flags & 1u;
     input_runtime.shift_up_held = flags & (1u << 1);
     input_runtime.shift_down_held = flags & (1u << 2);
+    input_runtime.shift_neutral_frames = std::min((flags >> 8) & 0x1fu, 29u);
     input_runtime.desert_shift = flags & (1u << 3);
     input_runtime.desert_shift_held = flags & (1u << 4);
     input_runtime.desert_elevation = state_read<float>(cursor);
@@ -258,10 +260,7 @@ bool load_frontend_state(const u8* source, libretro::InputRuntime& input_runtime
     audio_frames_due = static_cast<size_t>(state_read<u64>(cursor));
     const u32 flash_flags = state_read<u32>(cursor);
     if ((flash_flags & 0xffff0000u) == 0x47460000u) {
-        flash.triggers_held = static_cast<u8>(flash_flags & 0x03u);
-        flash.trigger_pressed = flash_flags & (1u << 2);
-        flash.window_mask_full = flash_flags & (1u << 3);
-        flash.hidden = flash_flags & (1u << 4);
+        flash = libretro::gun_flash_state_from_flags(flash_flags);
         if (flash_flags & (1u << 5)) {
             for (float& value : output_dc.previous_input) value = state_read<float>(cursor);
             for (float& value : output_dc.previous_output) value = state_read<float>(cursor);
@@ -275,9 +274,13 @@ void message(enum retro_log_level level, const char* text, bool notify = false);
 
 bool automatic_widescreen(const Content& c)
 {
+    const std::string_view family = c.game.parent.empty() ? c.game.name : c.game.parent;
+    if (family == "sgt24h") {
+        const auto backup = c.machine->backup_ram();
+        return backup.size() > 0x0b && backup[0x0a] == 0x03 && backup[0x0b] == 0x00;
+    }
     const auto eeprom = c.machine->settings_eeprom();
     if (eeprom.size() <= 0x17) return false;
-    const std::string_view family = c.game.parent.empty() ? c.game.name : c.game.parent;
     if (family == "indy500")
         return eeprom[0x17] == 0x01;
     if (family == "stcc")
@@ -296,16 +299,46 @@ float selected_aspect_ratio(const Content& c)
     return 4.0f / 3.0f;
 }
 
+unsigned displayed_width(const Content& c)
+{
+    return width + 2 * c.wide_columns;
+}
+
+unsigned maximum_width(const Content& c)
+{
+    return (c.renderer_api == RendererApi::Software ? width : width + 2 * render::kWideColumns)
+        * c.requested_scale;
+}
+
 void update_aspect_ratio(Content& c)
 {
-    const float aspect_ratio = selected_aspect_ratio(c);
-    if (aspect_ratio == c.aspect_ratio) return;
+    const unsigned columns = libretro::expand_3d_view_for(
+        c.game, c.renderer_api != RendererApi::Software) ? render::kWideColumns : 0;
+    const float aspect_ratio = columns ? 16.0f / 9.0f : selected_aspect_ratio(c);
+    const bool changed = aspect_ratio != c.aspect_ratio || columns != c.wide_columns;
     c.aspect_ratio = aspect_ratio;
+    c.wide_columns = columns;
+    // Reapply after reset or state load; the machine owns the geometry changes.
+    c.machine->set_widescreen(columns);
+    if (!changed) return;
     retro_game_geometry geometry{
-        width * c.scale, height * c.scale, width * c.requested_scale, height * c.requested_scale,
-        c.aspect_ratio};
+        displayed_width(c) * c.scale, height * c.scale, maximum_width(c),
+        height * c.requested_scale, c.aspect_ratio};
     if (environment)
         environment(RETRO_ENVIRONMENT_SET_GEOMETRY, &geometry);
+}
+
+unsigned wide_background(const Content& c)
+{
+    if (!c.wide_columns || c.game.side_fill == rom::SideFill::Pillarbox) return 0;
+    const auto& polygons = c.machine->render_list().polygons;
+    const bool reaches_side = std::any_of(polygons.begin(), polygons.end(), [&](const auto& polygon) {
+        for (unsigned v = 0; v < polygon.num_vertices; ++v)
+            if (polygon.v[v].x < c.wide_columns || polygon.v[v].x > c.wide_columns + width)
+                return true;
+        return false;
+    });
+    return reaches_side ? 1u + static_cast<unsigned>(c.game.side_fill) : 0;
 }
 
 double elapsed_ms(std::chrono::steady_clock::time_point begin,
@@ -662,8 +695,8 @@ void context_reset()
         }
         if (content->scale != previous_scale && environment) {
             retro_game_geometry geometry{
-                width * content->scale, height * content->scale,
-                width * content->requested_scale, height * content->requested_scale,
+                displayed_width(*content) * content->scale, height * content->scale,
+                maximum_width(*content), height * content->requested_scale,
                 content->aspect_ratio};
             environment(RETRO_ENVIRONMENT_SET_GEOMETRY, &geometry);
         }
@@ -917,14 +950,15 @@ void retro_deinit()
 }
 void retro_get_system_info(retro_system_info* info)
 {
-    if (info) *info = {"SM2-Emu", "0.9.44.0", "zip|7z", true, true};
+    if (info) *info = {"SM2-Emu", "0.9.51.0", "zip|7z", true, true};
 }
 void retro_get_system_av_info(retro_system_av_info* info)
 {
     const unsigned scale = content ? content->scale : 1;
     const unsigned maximum_scale = content ? content->requested_scale : 1;
     const float aspect_ratio = content ? content->aspect_ratio : 4.0f / 3.0f;
-    if (info) *info = {{width * scale, height * scale, width * maximum_scale, height * maximum_scale, aspect_ratio},
+    if (info) *info = {{(content ? displayed_width(*content) : width) * scale, height * scale,
+                       content ? maximum_width(*content) : width, height * maximum_scale, aspect_ratio},
                       {content ? content->fps : board_fps<hw::Model2>(),
                        content ? static_cast<double>(content->rate) : 44100.0}};
 }
@@ -1074,6 +1108,7 @@ bool retro_load_game(const retro_game_info* game)
 #if defined(SM2_LIBRETRO_VULKAN) || defined(SM2_LIBRETRO_OPENGL)
         select_renderer(*content);
 #endif
+        update_aspect_ratio(*content);
         if (content->renderer_api == RendererApi::Software
             && libretro::software_renderer_async_enabled()) {
             content->async_renderer =
@@ -1196,6 +1231,8 @@ void retro_run()
         if (input_state_cb && devices[0] != RETRO_DEVICE_NONE)
             rumble_steering = input_state_cb(0, RETRO_DEVICE_ANALOG,
                 RETRO_DEVICE_INDEX_ANALOG_LEFT, RETRO_DEVICE_ID_ANALOG_X);
+        auto analog_options = libretro::special_analog_options();
+        analog_options.widescreen_columns = content->wide_columns;
         libretro::poll_input(content->machine->inputs(), content->game,
                              libretro::profile_devices(devices, libretro::controller_test_service_enabled()),
                              content->input_runtime, libretro::four_speed_h_gate(),
@@ -1205,7 +1242,7 @@ void retro_run()
                              libretro::desert_elevation_options(),
                              libretro::automatic_start_gear_enabled(),
                              libretro::mouse_edge_offscreen_reload_enabled(),
-                             libretro::special_analog_options());
+                             analog_options, libretro::gear_shift_neutral_ms());
         const auto machine_start = std::chrono::steady_clock::now();
         content->machine->run_frame();
         if (content->external_link_active) {
@@ -1255,7 +1292,8 @@ void retro_run()
                                               libretro::crosshair_mask(content->game),
                                               libretro::crosshair_style()),
                     content->timing_overlay_data, content->fps,
-                    libretro::texture_filter_quality(), libretro::upscale_2d_mode());
+                    libretro::texture_filter_quality(), libretro::upscale_2d_mode(),
+                    content->wide_columns, wide_background(*content));
 #else
                 throw std::runtime_error("This core was built without Vulkan support");
 #endif
@@ -1267,7 +1305,8 @@ void retro_run()
                                               libretro::crosshair_mask(content->game),
                                               libretro::crosshair_style()),
                     content->timing_overlay_data, content->fps,
-                    libretro::texture_filter_quality(), libretro::upscale_2d_mode());
+                    libretro::texture_filter_quality(), libretro::upscale_2d_mode(),
+                    content->wide_columns, wide_background(*content));
 #else
                 throw std::runtime_error("This core was built without OpenGL support");
 #endif

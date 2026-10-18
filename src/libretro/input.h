@@ -23,7 +23,6 @@ enum class InputProfile {
     Driving4SpeedVR4,
     Driving4SpeedVR1Handbrake,
     DrivingSequentialVR2,
-    DrivingSequentialVR1,
     DrivingSequentialManxTT,
     DrivingSequentialMotorRaid,
     JoystickAnalogSkyTarget,
@@ -75,8 +74,10 @@ struct DrivingAnalogOptions {
 
 struct SpecialAnalogOptions {
     bool top_skater_progressive = true;
+    bool gunblade_upstream = true;
     bool rail_chase_upstream = true;
     bool hotd_prototype_upstream = true;
+    unsigned widescreen_columns = 0;
 };
 
 struct InputRuntime {
@@ -84,6 +85,7 @@ struct InputRuntime {
     bool gear_initialized = false;
     bool shift_up_held = false;
     bool shift_down_held = false;
+    unsigned shift_neutral_frames = 0;
     bool desert_shift = false;
     bool desert_shift_held = false;
     float desert_elevation = 128.0f;
@@ -124,5 +126,6 @@ void poll_input(hw::Inputs& inputs, const rom::GameSpec& game,
                 DesertElevationOptions desert_elevation_options = {},
                 bool automatic_start_gear = true,
                 bool mouse_edge_offscreen_reload = false,
-                SpecialAnalogOptions special_options = {});
+                SpecialAnalogOptions special_options = {},
+                unsigned shift_neutral_ms = 0);
 }

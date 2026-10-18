@@ -13,7 +13,10 @@ software resta disponibile per confronti e frontend privi dei contesti richiesti
   non legge i pixel sulla CPU e non usa il renderer software per disegnare il 3D.
 - Internal resolution 1×–8×: from 496 × 384 to 3968 × 3072. Tilemaps
   retain their native detail. Final aspect and presentation scaling follow the
-  core Aspect Ratio option and the frontend.
+  core Aspect Ratio option and the frontend when Widescreen Mode is Disabled.
+  Expand 3D View Only adds 83 columns per side and reports 16:9 directly,
+  preserving HUD proportions and using automatic background side fill.
+  It is experimental, GPU-only and excluded for native-widescreen families.
 - Core Options v2, categoria Video: `sm2_renderer`
   (Auto/Vulkan/OpenGL/Software) e
   `sm2_internal_resolution` (1–8). Entrambe si applicano al successivo

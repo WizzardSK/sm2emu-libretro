@@ -162,7 +162,8 @@ che adatta le convenzioni del progetto personale Supermodel a Model 2.
 
 The approved TGPulse adaptation candidates are listed in section 8, and
 independent upstream follow-ups in section 9. Linked topology and Netpacket
-buffering have passed their bounded checks; true 3D widescreen is deferred.
+buffering have passed their bounded checks. True 3D Widescreen is now integrated
+as an optional hardware-renderer mode; see the current integration row below.
 Manx TT operator qualification is closed following the user’s positive tests
 on 2026-10-11. Rendering and Video Options is complete within its documented scope after
 the consolidated source/backend review and OpenGL context-loss correction.
@@ -170,8 +171,37 @@ Physical-device and subjective user checks retain their own status.
 Existing runtime and gameplay checks that need no new implementation remain in
 the final section.
 The user closed the current networking test campaign on 2026-10-18; future
-newly observed faults will be recorded as new activities. The remaining
-implementation candidate is True 3D Widescreen, deferred in section 8.
+newly observed faults will be recorded as new activities. The previous True 3D Widescreen candidate is implemented with the
+current shared direct-activation convention in section 8. The newer upstream candidates and their dispositions are below.
+
+## Upstream 0.9.45–0.9.51 Review — 2026-10-18
+
+Reference: `upstream/main` `ac373ee` (49 commits after the reconciled 0.9.44
+base `7db7108`; latest release tag `v0.9.51` is `90110c7`). This review is now reconciled through 0.9.51; the core release is 0.9.51.0.
+See `Docs/UPSTREAM_RECONCILIATION_0.9.51.md` for every commit disposition. Preserve the
+current port's published Save State, control and renderer contracts during
+integration; compare against pristine upstream of the same revision.
+
+| Status | Activity | Integration / Remaining Work |
+| --- | --- | --- |
+| 🟢 | Pilot Kids Tile RAM VBlank Latch | Integrated `05acaf9` across all four boards and adapted software, OpenGL and Vulkan to use the latched map. `pltkids` software ABI run and Save State round-trip pass; pristine-upstream headless comparison matches. Visual GPU/RetroArch confirmation remains a separate runtime check. |
+| 🟢 | Last Bronx Geometry Command | Integrated `e7692b6`'s one-word `0x1a` no-op. `lastbrnx` software ABI run and Save State round-trip pass; pristine-upstream headless comparison matches. Visual RetroArch confirmation remains a separate runtime check. |
+| 🟢 | Super GT 24h Pedal I/O Type | Adapted `83c6690` in the neutral Model 2B I/O path: A/B and C use their native pedal polarities, and invalid/uninitialized I/O TYPE becomes A. Automatic Initial NVRAM Setup and NVRAM Settings now default to B; existing valid saves and frontend pedal ranges retain precedence. `Aspect Ratio: Auto` presents B at 16:9 and A/C at 4:3. ROM-free I/O mux checks cover both pedals, A/B/C, endpoints, half travel and an unaffected Model 2B game. Earlier A/C comparisons and the pristine-upstream headless baseline remain recorded. On 2026-10-18 the user confirms the preceding Super GT 24h gameplay tests, including A/B driving response, successful; operator qualification is closed. |
+| 🟢 | Drive Boards And Force Effects | Sega Rally's native reply was already present. Added Indy-family port-D replies for Indy 500, Over Rev and Super GT 24h, plus Daytona's IN2 replies, matching upstream `091bf6a`, `e700c39` and `abf667c` where applicable. The centre is retained in version-12 Save States; version 11 loads with neutral centre. Model 2B/C reply and old/new state checks, core build and existing gamepad rumble checks pass. Continuous physical-wheel torque has no standard Libretro rumble equivalent, so the existing supported gamepad effects remain the output boundary. Super GT 24h gameplay response is closed following the user's positive confirmation on 2026-10-18; Daytona handle readback remains the separate open item below. See `LIBRETRO_DESIGN.md`. |
+| 🟢 | i960 Interrupt-Mask Timing | Integrated upstream `5ffe64f` across all four boards, replacing the earlier Over Rev B/BA and Model 2C consecutive-write shortcuts. No Save State format change. ROM-free slice-stop check passes; old/new Libretro Over Rev B output and old-state continuation match. New headless output matches pristine upstream after the change for Over Rev B/BA at 1,800 frames and all four board variants at 300 frames. See `LIBRETRO_DESIGN.md`. |
+| 🔵 | Daytona Drive Board Handle Readback — Optional Investigation | Operator observation in RetroArch: the Input Test steering value covers `00–FF`, while the Drive Board test shows `FF–1C`; the `1C` endpoint can vary. The user moves this to an optional investigation on 2026-10-18; the suspected upstream origin is not yet confirmed. It is not an integration or release gate. The displayed ranges differ and their relationship is not yet explained. Compare the board-test command/readback and any calibration transform with the matching upstream and original I/O-board behavior before changing mapping or saved calibration. Do not treat the observation alone as proof of a faulty steering range. |
+| 🟢 | games.xml Runtime Qualification | Gunblade NY Custom aiming is accepted following the user's positive verification on 2026-10-18. Its Custom (SM2-Emu) / Linear (MAME) selector and ROM-free checks remain. RC2 and HOTD Prototype aim mappings were already closed by user direction on 2026-10-11; Super GT 24h A/B driving response was accepted on 2026-10-18. No further operator campaign is scheduled for these changes. Daytona MAXX's preliminary flag changes its startup warning only. Ski Super G Credits and the other `<outputs>` fields remain unused; `side_fill` drives optional widescreen composition. |
+| 🟢 | Virtua Cop Flash Timing | Integrated `1d594ae`: filter covers the native two-frame shot delay and preserves fades/Disabled behavior. Presentation age uses reserved bits in the existing frontend tail, with legacy history decoding and unchanged state size. ROM-free detector/tile checks, old/new Disabled output, legacy-state continuation and Vulkan enabled image/PCM round-trip pass. No new operator campaign is required; full in-game visual suppression is not claimed by the synthetic checks. See `Docs/VCOP_FLASH_TIMING_2026-10-18.md`. |
+| 🟢 | Input And Gamepad Fixes — Applicability Review | Completed source review and full ROM-free input checks. SDL layouts/shoulder aliases and Sinden node enumeration belong to standalone/frontend ownership. Existing virtual pedal normalization, reversed ranges, direct/H-gate/neutral and sequential controls cover the native adapter requirements. Upstream `0ab3b02` was initially excluded from the correction review; the subsequent user request adds Gear Shift Neutral Time with the upstream 100 ms default, 0–500 ms selector and direct-selection bypass. Pending crossings persist in the existing state tail; see `Docs/GEAR_SHIFT_NEUTRAL_TIME_2026-10-18.md`. Added mixed gun/Mouse callback checks on either port for Virtua Cop/HOTD; source arbitration and Lightgun Only pass without changing Standard fallback. User gamepad/mouse checks are recorded; physical gun qualification remains optional, not a release gate. No production defect was found by the original review; timed neutral is a separately approved feature. See `Docs/INPUT_UPSTREAM_APPLICABILITY_2026-10-18.md`. |
+| — | Merged Clone ROM Lookup — Standalone Only | Upstream `34b9334` resolves the archive for a named clone in standalone `--game` and lists merged clones in its game picker. Content selection belongs to the frontend in Libretro; this is not a pending core integration. The core retains responsibility for extracting and assembling ROM regions from the supplied content and required parent/device archives. No clone selector or content-descriptor feature is scheduled by this upstream change. |
+| 🟢 | Experimental True 3D Widescreen | Adapted upstream `338ce10`: Widescreen Mode offers Disabled (default; saved `stretch`) / Expand 3D View Only (`expand_3d`). With Aspect Ratio Auto/16:9, Expand reports 16:9 and widens GPU rendering to 662×384 before internal scaling, with native HUD proportions and upstream background fill. Forced 4:3 suppresses expansion; Disabled restores normal Aspect Ratio authority. Native-capable Indy 500/STCC/Super GT families and Software retain their existing behavior. No machine reset; changes apply on return to game. Source, baseline, GPU and frontend evidence is recorded in `Docs/WIDESCREEN_MODE_INTEGRATION_2026-10-18.md`. Per-game rendering remains experimental. |
+| 🟢 | Source Licence And Distribution | Adopted upstream `8bd0f2b` GPL-3.0-or-later notices with retained MAME BSD provenance. User-approved distinct name remains SM2-Emu Libretro; technical identifiers remain compatible. Updated headers, metadata/credits, documents and binary licence inventory (including ImGui). CI now creates complete corresponding source with seven pinned submodules and publishes it beside binaries; package checks verify the source/archive hashes and reject dirty release snapshots. Local review evidence and limits are in `Docs/SOURCE_LICENCE_REVIEW_2026-10-18.md`; commit/push/release remain separate authorization. |
+
+Standalone-only SDL/ImGui windows, wheel-device ownership, game-state cabinet
+outputs, window drop, app-bundled dylibs, local audio-device format, standalone
+rewind and GUI translations have no direct Libretro import. GPU-without-Vulkan
+startup already has a frontend-owned software fallback; verify only any shared
+backend change. Record these exclusions in the later version reconciliation.
 
 ## 0. Baseline upstream — completata nei limiti indicati
 
@@ -281,8 +311,8 @@ VR, cambio e freno a mano IN2. Le ROM parent hanno raggiunto una gara reale in
 RetroArch macOS, a 300 km/h Daytona e 127 km/h Sega Rally nel frame acquisito.
 I profili Motorcycle sono coperti nei gruppi Manx TT e Motor Raid descritti sotto.
 
-Il secondo gruppo copre dieci set delle famiglie Indy 500, Over Rev e Sega
-Touring Car Championship con il profilo unico `Driving: Sequential + VR2`.
+Il secondo gruppo copre undici set delle famiglie Indy 500, Over Rev, Sega
+Touring Car Championship e Super GT 24h con il profilo unico `Driving: Sequential + VR2`.
 Descrizioni e posizioni derivano direttamente dalle tre righe approvate del
 foglio Excel. View 1/2 usano D-Pad Up/Down; Shift Down/Up usano L1/R1 e agiscono
 direttamente sui due ingressi momentanei hardware; Brake, Accelerator e Steering
@@ -294,9 +324,9 @@ replay di avvio: Indy 500 ha raggiunto
 la griglia di partenza, Over Rev la selezione modalità e STCC l'inserimento
 nome. Audio e Save RAM sono risultati validi in tutte le esecuzioni.
 
-Il terzo gruppo aggiunge il solo Super GT 24h come `Driving: Sequential + VR1`.
-Rispetto alla variante VR2 espone esclusivamente `VR1` su D-Pad Down; cambio,
-sterzo e pedali seguono le posizioni approvate nel foglio, con pedali analogici
+Super GT 24h espone View 1 su D-Pad Up e View 2 su D-Pad Down. Con I/O TYPE C
+il gioco utilizza solo View 1; il binding di entrambi resta disponibile per
+tutti i tipi. Cambio, sterzo e pedali seguono le posizioni approvate nel foglio, con pedali analogici
 e polarità invertita dichiarata dai metadata, senza correzioni aggiuntive nel
 binding. MAME segnala ancora sterzo non centrato e pedali pulsanti: il limite va
 indagato nell'emulazione analogica comune. La ROM parent ha raggiunto la
@@ -604,10 +634,11 @@ audio della macchina e non appartiene al mastering opzionale.
 della scheda musicale separata, senza alterare SCSP, effetti o voci. È attiva
 sulle famiglie STCC (DSB Z80) e Top Skater (DSB2); sugli altri set resta inerte.
 
-`Aspect Ratio` è implementata con `Auto` come default globale e override `4:3`
-o `16:9`. In Auto legge la configurazione attiva dalla NVRAM: Indy 500 e STCC
-usano 16:9 nei rispettivi cabinati Deluxe e 4:3 in Twin; gli altri giochi usano
-4:3. Il framebuffer resta 496×384 e il frontend riceve soltanto la geometria.
+`Aspect Ratio` uses `Auto` by default, with manual `4:3` and `16:9` overrides.
+Auto reads the active NVRAM configuration: Indy 500 and STCC use 16:9 in their
+respective Deluxe cabinets and 4:3 in Twin; Super GT 24h uses 16:9 for I/O
+Type B and 4:3 for Types A and C. Other games use 4:3. The framebuffer remains
+496×384; only the reported frontend geometry changes.
 
 Renderer Model 3, PowerPC/JIT e DSP specifici di Supermodel restano esclusi
 perché non applicabili.
@@ -863,7 +894,7 @@ interchange file.
 | 🟢 | **Linked Topology on Restart and Resume** | Actual Daytona Quick Menu return and `2 Cabinets → Disabled → 2 Cabinets` transitions pass, including native offline SRAM fields and coordinated Restart. Known-peer roster recovery repaired in NetBoard v3; both installed local cores updated. Individual reboot requires coordinated native Restart. No synchronized-gameplay claim. See `Docs/NETWORK_VALIDATION_2026-10-09.md`. |
 | 🟢 | **Netpacket Queue Stress Audit** | Existing burst/overflow/recovery gates pass. Isolated Daytona 2/20-second stalls show no overflow; closing/reopening the Slave and coordinated Restart recover the native link with clean process exits. Shared protocol advanced to v3; all peers must update together. Broader gameplay/platform qualification remains outside these bounded checks. |
 | 🟢 | **Automatic Linked-Cabinet Presets** | Bounded preset checks pass for the qualified cases: 17 original matrix cases, the longer Motor Raid Master/Slave/Live repeat and Motor Raid Deluxe's approved automatic Twin default. Existing saves retain precedence and Deluxe remains selectable. Manx TT Relay initialization is now qualified separately in section 9 for the parent and Revision C; synchronized gameplay remains outside this bounded preset qualification. SRAM fields, native handshake and gameplay remain distinct. See `Docs/NETWORK_VALIDATION_2026-10-09.md`. |
-| 🔵 | **True 3D Widescreen** | Consider an opt-in expansion of the 3D view after a renderer and per-game native-widescreen review. Define 2D composition, Software behavior and performance checks before implementation. |
+| 🟢 | **True 3D Widescreen** | Implemented through upstream `338ce10`, with Disabled default and direct Expand activation. See the current upstream integration row and `Docs/WIDESCREEN_MODE_INTEGRATION_2026-10-18.md`; no separate deferred implementation remains. |
 
 ## 9. Upstream Integration Candidates
 
@@ -957,7 +988,7 @@ port regressions solely because old hashes differ.
 | 🟢 | **Power Sled Pre-Race Relay Audio Review** | Native phase-6 entry explicitly stops selection and attract/race music. Selection music belongs to phase 5 and is successfully delivered in the retained Relay trace; phase 6 has no additional identified music initializer. Countdown and race audio resume later. Other scene callbacks share the theoretical enqueue-failure vulnerability, but it is not demonstrated as the cause of this interval. Code/table/retained-trace analysis only; production unchanged and factory acoustic fidelity unqualified. See `Docs/POWER_SLED_PRE_RACE_AUDIO_REVIEW_2026-10-11.md`. |
 
 | 🟢 | **Power Sled Arrival Rank Audio Separation** | Added Master Relay board no longer receives the two per-rider finish/control stops. Native scene stops and result-to-intro cleanup remain. Race music is retained through immediate rank display; result music keeps its native later initializer. Its callback retries native auxiliary stop and then start in separate scheduler stages to prevent race/result overlap and queue starvation. Observer confirms one result voice; normal user-state repeat and return to intro pass. Normal core installed with backup/hash verification. See `Docs/POWER_SLED_POST_RACE_AND_MASTER_RELAY_2026-10-11.md`. |
-| 🟢 | **VR1 Supplemental View Binding** | General review: all 13 single-View sets in six families expose D-Pad Up. Added the shared Start / VR alias to Manx TT and Motor Raid; Sega Rally, Super GT 24h, Sky Target and Wave Runner already comply. Profile descriptions identify VR1 as one View action, including shared Start/View. Existing aliases and multi-View layouts remain available. Cross-core handoff reviewed in both destination chats: Supermodel single-View and TGPulse-Next SWA profiles already have Up, so no destination implementation remains. See Docs/VR1_VIEW_BINDING_INTERCHANGE_2026-10-11.md. |
+| 🟢 | **VR1 Supplemental View Binding** | Current catalog: all 12 single-View sets in five families expose D-Pad Up. Added the shared Start / VR alias to Manx TT and Motor Raid; Sega Rally, Sky Target and Wave Runner already comply. Super GT 24h was subsequently corrected to VR2, with independent View 1/2 bindings. Profile descriptions identify VR1 as one View action, including shared Start/View. Cross-core handoff reviewed in both destination chats: Supermodel single-View and TGPulse-Next SWA profiles already have Up, so no destination implementation remains. See Docs/VR1_VIEW_BINDING_INTERCHANGE_2026-10-11.md. |
 | 🟢 | **Standard Gun Input Fallback** | Fixed idle Lightgun off-screen status monopolizing Standard and suppressing Mouse/Analog Stick movement. Existing input regression checks cover positional BEL and serial Virtua Cop, retaining real Lightgun trigger/off-screen reload checks. Physical Mouse behavior in the reported RetroArch session remains to confirm. See Docs/GUN_STANDARD_FALLBACK_2026-10-11.md. |
 | 🟢 | **Country Default Priority** | Approved priority Export → Europe → U.S.A. applied to Country/Nation selector defaults and Automatic Initial NVRAM Setup. Over Rev (`overrev`, `overrevb`, `overrevba`) and Super GT 24h now prefer Europe; Export remains the default where supported. Existing saved Core Option choices and valid frontend/native NVRAM retain their existing precedence. Value order, native labels and encodings remain intact. Catalog audit passes for 87 sets / 332 options; initial-selection and persistence checks pass. |
 | 🟢 | **NVRAM Reset Notification Reference Alignment** | Fixed the silent automatic reset after changed operator options: Info logging alone did not reach the frontend. SM2 now sends the exact TGPulse-Next notification "Applied NVRAM Settings; machine reset" through queued SET_MESSAGE_EXT (5 seconds), with SET_MESSAGE fallback (300 frames). Actual-core VF2 callback checks verify exactly one notification for a changed persisted option and no repeats during unchanged frames, for both interfaces. Existing startup logs stay silent; reset/persistence behavior is unchanged. |
@@ -1067,12 +1098,13 @@ Batocera nella roadmap corrente.
 
 ## Vincolo esterno prima della pubblicazione
 
-L'audit di distribuzione è concluso: il pacchetto contiene 15 file previsti,
-licenze delle dipendenze, revisione sorgente e checksum completi, senza ROM o
-contenuti inattesi. Rimane una decisione del titolare upstream, non una verifica
-tecnica locale: `LICENSE` dichiara BSD-3-Clause, mentre 114 intestazioni vietano
-l'uso commerciale senza permesso. Prima di un PR o di una pubblicazione esterna
-va chiarito quale dei due testi governi quei file.
+The upstream licensing transition is adopted and the local packaging checks
+are complete. SM2-Emu Libretro is the user-approved distinct name. Matching
+source and retained dependency notices are part of the current CI/release
+contract. Historical BSD reports describe earlier artifacts and do not override
+the new source terms. See [Source Licence Review](Docs/SOURCE_LICENCE_REVIEW_2026-10-18.md).
+Publishing binaries still requires the user's normal commit/push/release request;
+this completed roadmap item does not authorize publication.
 
 
 ## Audio Recovery After Reset — Framework Follow-Up 2026-10-18

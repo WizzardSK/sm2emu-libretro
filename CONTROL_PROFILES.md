@@ -65,8 +65,11 @@ esempio, Ski Super G a Ski Champ o le motociclette al profilo Harley-Davidson.
 - **Driving:** Steering sullo stick sinistro X, Brake su L2, Accelerator su R2,
   Shift Down/Up su L/R; per quattro marce, stesso H-Gate/Standard sullo stick
   destro e Neutral su West. Daytona usa VR1 Red/Down, VR2 Blue/Left,
-  VR3 Yellow/Right, VR4 Green/Up. Sega Rally e Super GT 24h usano VR1 su Down, con Up supplementare. Sega Rally porta
+  VR3 Yellow/Right, VR4 Green/Up. Sega Rally usa VR1 su Down, con Up supplementare; Super GT 24h usa View 1 su Up e View 2 su Down. Sega Rally porta
   `Handbrake (Analog)` su South, traducendolo negli estremi 0x00/0xFF di IN2.
+  Four-speed sequential steps use Gear Shift Neutral Time (100 ms default,
+  0–500 ms); direct positions/Neutral bypass it. Native two-button sequential
+  profiles are unaffected.
 - **Gun:** riusare il nome di famiglia `Gun`; `Gun (Lightgun)`, `Gun (Mouse)`,
   `Gun (Mouse + Analog Stick)` e `Gun (Analog Sticks)` indicano la sorgente
   selezionata come in Supermodel. Tutti i sei parent usano
@@ -116,8 +119,7 @@ separatamente l'eventuale integrazione dei metadati upstream.
 | Joystick (Analog): Sky Target + VR1 | stickx/sticky; joystick centrato, comandi di azione digitali | Sky Target | 1 |
 | Driving: 4-Speed + VR4 | steer/accel/brake + gearbox, famiglia daytona con quattro VR verificati | Daytona USA | 4 |
 | Driving: 4-Speed + VR1 + Handbrake | steer/accel/brake + gearbox, famiglia srallyc; Handbrake analogico su IN2 | Sega Rally | 5 |
-| Driving: Sequential + VR2 | steer/accel/brake + shift_buttons; due View | Indy 500, Over Rev, Sega Touring Car | 10 |
-| Driving: Sequential + VR1 | steer/accel/brake + shift_buttons; un View | Super GT 24h | 1 |
+| Driving: Sequential + VR2 | steer/accel/brake + shift_buttons; due View | Indy 500, Over Rev, Sega Touring Car, Super GT 24h | 11 |
 | Driving: Sequential + VR1 (Manx TT Superbike) | bank/throttle/brake + shift_buttons; Start condiviso con VR su Start, D-Pad Down e D-Pad Up | Manx TT | 3 |
 | Driving: Sequential + VR1 (Motor Raid) | bank/throttle/brake; Kick su South/L1 e Punch su East/R1 | Motor Raid | 2 |
 | Gun — seriale lightgun | Interfaccia seriale lightgun, coordinate a 10 bit | Virtua Cop 1/2, The House of the Dead | 6 |
@@ -224,8 +226,7 @@ possono mantenere esplicitamente un set nel gruppo da verificare.
 - **Driving: 4-Speed + VR1 (5):** `srallyc`, `srallycb`, `srallycc`, `srallycdx`, `srallycdxa`.
 - **Special: Baseball (2):** `dynabb`, `dynabb97`.
 - **Gun — posizionale, Shot (3):** `gunblade`, `rchase2`, `rchase2a`.
-- **Driving: Sequential + VR2 (10):** `indy500`, `indy500d`, `indy500to`, `overrev`, `overrevb`, `overrevba`, `stcc`, `stcca`, `stccb`, `stcco`.
-- **Driving: Sequential + VR1 (1):** `sgt24h`.
+- **Driving: Sequential + VR2 (11):** `indy500`, `indy500d`, `indy500to`, `overrev`, `overrevb`, `overrevba`, `stcc`, `stcca`, `stccb`, `stcco`, `sgt24h`.
 - **Driving: Sequential + VR1 (Manx TT Superbike) (3):** `manxtt`, `manxttc`, `manxttdx`.
 - **Driving: Sequential + VR1 (Motor Raid) (2):** `motoraid`, `motoraiddx`.
 - **Special: Water Ski (1):** `segawski`.
@@ -306,13 +307,14 @@ camera input. Multiple-View profiles retain their VR2/VR3/VR4 layouts.
 | Single-View Family | Sets | D-Pad Up | Other Existing View Bindings |
 | --- | --- | --- | --- |
 | Sega Rally | srallyc, srallycb, srallycc, srallycdx, srallycdxa | VR1, already present | Down |
-| Super GT 24h | sgt24h | VR1, already present | Down |
 | Manx TT | manxtt, manxttc, manxttdx | Start / VR, added | Start, Down |
 | Motor Raid | motoraid, motoraiddx | Start / VR, added | Start |
 | Sky Target | skytargt | View Change, already present | — |
 | Wave Runner | waverunr | View, already present | — |
 
-The catalogue review covers 13 sets in six single-View families. No independent
+The corrected catalogue covers 12 sets in five single-View families; Super GT
+24h uses two independent View inputs even though I/O TYPE C uses only View 1.
+No independent
 Up action conflicts with the new motorcycle aliases. Native calibration,
 analogue axes, gear/actions and multi-View layouts are unchanged. Verification
 uses the existing ROM-free input checks; physical-pad/gameplay behavior is a

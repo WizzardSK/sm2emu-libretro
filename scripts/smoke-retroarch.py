@@ -105,6 +105,8 @@ def main():
     p.add_argument('--source-gain',action='append',default=[],metavar='SOURCE=PERCENT',
                    help='Set a fitted source Gain (scsp, dsb, multipcm1, multipcm2, ym3438) to 0–200%%')
     p.add_argument('--aspect-ratio',choices=['auto','4_3','16_9'],default='auto')
+    p.add_argument('--widescreen-mode',choices=['stretch','expand_3d'],default='stretch')
+    p.add_argument('--menu-driver',help='Optional isolated menu driver, e.g. rgui for asset-free tests')
     p.add_argument('--initial-nvram-setup',choices=['enabled','disabled'],default='enabled')
     p.add_argument('--nvram-settings',choices=['disabled','enabled'],default='disabled')
     p.add_argument('--vf2-country',choices=['japan','usa','export'],default='japan')
@@ -271,6 +273,7 @@ def main():
     for key in ['content_history_path','content_favorites_path','content_image_history_path',
                 'content_music_history_path','content_video_history_path']:
         cfg[key]=str(out/(key+'.lpl'))
+    if a.menu_driver: cfg['menu_driver'] = a.menu_driver
     cfg['video_gpu_record']='true' if hardware else 'false'
     cfg['core_options_path']=str(out/'core-options.cfg')
     (out/'core-options.cfg').write_text(
@@ -285,6 +288,7 @@ def main():
         f'sm2_scsp_output_low_pass_filter = "{a.scsp_output_low_pass_filter}"\n'
         f'sm2_music_volume = "{a.music_volume}"\n'
         f'sm2_aspect_ratio = "{a.aspect_ratio}"\n'
+        f'sm2_widescreen_mode = "{a.widescreen_mode}"\n'
         f'sm2_gun_input = "{"analog" if gun_inputs else "hybrid"}"\n'
         f'sm2_offscreen_reload_shortcut = "{a.offscreen_reload_shortcut}"\n'
         f'sm2_gamepad_rumble = "{a.gamepad_rumble}"\n'

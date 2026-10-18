@@ -21,7 +21,9 @@ Each package contains:
 
 - the Libretro core and matching `.info` file;
 - `system/sm2-emu/games.xml`;
-- licence notices and checksums.
+- licence notices, checksums and a matching-source archive reference.
+
+The release also provides the complete source archive, including pinned submodules.
 
 ROMs are not included. Use legally obtained sets that match the game definitions
 shipped with the core.
@@ -63,48 +65,36 @@ Rendering, input, NVRAM, and networking options are exposed through RetroArch's
 Core Options menu. Options that represent operator settings are shown only for
 the loaded game.
 
-## Latest Update — 0.9.44.0
+## Latest Update — 0.9.51.0
 
-This release corrects the version numbering: applicable upstream changes are
-reconciled through 0.9.44, with Libretro adaptations and documented exclusions.
-Its emulation and frontend behavior are unchanged from 0.9.13.1.
+This release reconciles the applicable upstream changes through **SM2-Emu
+0.9.51**, with port revision **0**. The historical full-source import remains
+0.9.13; selective integrations and documented frontend exclusions establish
+the current coverage. See the [reconciliation ledger](Docs/UPSTREAM_RECONCILIATION_0.9.51.md).
 
-- Power Sled: Relay-derived undumped Master, linked play, experimental Master
-  Standalone and Relay Attract modes, Relay audio/commands on Master, and
-  validated operator settings.
-- Manx TT: cabinet-aware audio selection and Deluxe hardware responses.
-- Behind Enemy Lines: upstream aiming conversion with validated calibration
-  defaults. Rail Chase 2 and House of the Dead prototype offer
-  `Linear (MAME)` and `Custom (SM2-Emu)` aiming.
-- Consistent NVRAM reset notifications, region defaults, single-view-button
-  aliases, and frontend-aware rumble deadzone handling.
-- Generic local linked-cabinet launcher with persistent per-instance settings,
-  independent gamepad assignments, and desktop-sized window layouts.
+- **Experimental Widescreen Mode:** Disabled by default, or Expand 3D View Only
+  with Aspect Ratio Auto/16:9. Forced 4:3 suppresses expansion; native-widescreen
+  titles retain their existing behavior.
+- **Super GT 24h:** native A/B/C pedal handling, View 1/2 controls, Type B initial
+  defaults and Auto 16:9 presentation for B. Valid existing saves retain priority.
+- **Machine corrections:** Pilot Kids VBlank tile-RAM latch, Last Bronx geometry,
+  deferred i960 interrupt-mask timing, drive-board replies and Virtua Cop's late
+  shot-flash filtering.
+- **Gear Shift Neutral Time:** 100 ms default, configurable from 0 to 500 ms for
+  four-speed sequential steps; direct gear selection bypasses the interval.
+- **Gunblade NY aiming:** Custom (SM2-Emu) and Linear (MAME) selector.
+- **Daytona GTX 2004:** preliminary protection, content and initial NVRAM support.
+- **Frontend conventions:** independent Linked Cabinets / Auto Network Role
+  Settings, upstream loopback, global Controller Profile Type and reviewed menu
+  wording/order. Existing Power Sled and other approved control integrations remain.
+- **Distribution:** GPL-3.0-or-later with upstream NOTICE terms, retained MAME BSD
+  credits, complete dependency notices and matching source archives with submodules.
 
-See the [release notes](Docs/RELEASE_NOTES_0.9.44.0.md) and
-[linked-cabinet launcher guide](Docs/LINKED_CABINET_LAUNCHER.md).
-Experimental Power Sled features reconstruct missing behavior; they do not
-represent a verified dump of the original Master board. Existing saves take
-precedence over first-boot defaults.
-
-## Current `main` since 0.9.44.0
-
-The development branch includes changes made after the latest packaged release:
-
-- Preliminary Daytona USA GTX 2004 Edition support, including its banked
-  protection and reviewed initial NVRAM setup. A bounded RetroArch test reached
-  a race; full-game and linked-play qualification are not claimed.
-- The shared two-option networking model: **Linked Cabinets** controls external
-  cabinet count, while **Auto Network Role Settings** selects the native role
-  and game identity independently. With external linking disabled, this Model 2
-  port keeps the upstream communication board in local loopback.
-- **Controller Profile Type** selects Normal or Normal + Test/Service globally;
-  the latter is the default. The Core Options menus use the reviewed Framework
-  wording and functional order.
-
-See the [roadmap](PORTING_PLAN.md) and [network review](Docs/NETWORK_TWO_OPTION_2026-10-17.md)
-for status, verification scope and limitations. These changes are in source on
-`main`; the download link above still points to the latest packaged release.
+Read the [release notes](Docs/RELEASE_NOTES_0.9.51.0.md),
+[roadmap](PORTING_PLAN.md) and
+[linked-cabinet launcher guide](Docs/LINKED_CABINET_LAUNCHER.md) for scope and limits.
+Widescreen and reconstructed Power Sled features remain experimental. Source,
+ABI and bounded frontend checks do not establish every game/device combination.
 
 ## Platform notes
 

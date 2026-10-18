@@ -382,23 +382,26 @@ u8 tune_steering(u8 value, const DrivingAnalogOptions& options)
     return static_cast<u8>(std::clamp(
         0x80 + ((target - 0x80) * output_range) / 100, 0, 0xff));
 }
-u8 scale_fraction(const rom::AnalogChannel& channel, float fraction, bool use_points = true)
+u8 scale_fraction(const rom::AnalogChannel& channel, float fraction, bool use_points = true, float reach = 0.0f)
 {
-    fraction = std::clamp(fraction, 0.0f, 1.0f);
+    fraction = std::clamp(fraction, -reach, 1.0f + reach);
     if (use_points && channel.point_count >= 2) {
         size_t next = 1;
         while (next + 1 < channel.point_count && fraction > channel.points[next].at)
             ++next;
         const auto& a = channel.points[next - 1];
         const auto& b = channel.points[next];
-        const float t = std::clamp((fraction - a.at) / (b.at - a.at), 0.0f, 1.0f);
+        float t = (fraction - a.at) / (b.at - a.at);
+        if (reach == 0.0f || (next > 1 && t < 0.0f)
+            || (next + 1 < channel.point_count && t > 1.0f))
+            t = std::clamp(t, 0.0f, 1.0f);
         const float value = std::lerp(static_cast<float>(a.value),
                                       static_cast<float>(b.value), t);
-        return static_cast<u8>(value + 0.5f);
+        return static_cast<u8>(std::clamp(value, 0.0f, 255.0f) + 0.5f);
     }
     if (channel.reverse) fraction = 1.0f - fraction;
     const float span = static_cast<float>(channel.maximum - channel.minimum);
-    return static_cast<u8>(static_cast<float>(channel.minimum) + fraction * span + 0.5f);
+    return static_cast<u8>(std::clamp(static_cast<float>(channel.minimum) + fraction * span, 0.0f, 255.0f) + 0.5f);
 }
 u8 scale_pedal(const rom::AnalogChannel& channel, s16 raw, int output_range_per_mille)
 {
@@ -436,11 +439,11 @@ void set_analog_control(hw::Inputs& inputs, const rom::GameSpec& game,
     }
 }
 void set_analog_fraction(hw::Inputs& inputs, const rom::GameSpec& game,
-                         rom::AnalogControl control, float fraction, bool use_points = true)
+                         rom::AnalogControl control, float fraction, bool use_points = true, float reach = 0.0f)
 {
     for (size_t channel = 0; channel < game.analog.size(); ++channel)
         if (game.analog[channel].control == control)
-            inputs.analog[channel] = scale_fraction(game.analog[channel], fraction, use_points);
+            inputs.analog[channel] = scale_fraction(game.analog[channel], fraction, use_points, reach);
 }
 }
 InputProfile recognize_profile(const rom::GameSpec& game)
@@ -476,10 +479,8 @@ InputProfile recognize_profile(const rom::GameSpec& game)
              && (root == "vcop" || root == "vcop2" || root == "hotd"))))
         return InputProfile::Gun;
     if (expected_sequential_driving_signature(game)
-        && (root == "indy500" || root == "overrev" || root == "stcc"))
+        && (root == "indy500" || root == "overrev" || root == "stcc" || root == "sgt24h"))
         return InputProfile::DrivingSequentialVR2;
-    if (expected_sequential_driving_signature(game) && root == "sgt24h")
-        return InputProfile::DrivingSequentialVR1;
     if (expected_motorcycle_signature(game) && root == "manxtt")
         return InputProfile::DrivingSequentialManxTT;
     if (expected_motorcycle_signature(game) && root == "motoraid")
@@ -515,7 +516,6 @@ const char* profile_name(InputProfile profile)
     case InputProfile::Driving4SpeedVR4: return "Driving: 4-Speed + VR4";
     case InputProfile::Driving4SpeedVR1Handbrake: return "Driving: 4-Speed + VR1 + Handbrake";
     case InputProfile::DrivingSequentialVR2: return "Driving: Sequential + VR2";
-    case InputProfile::DrivingSequentialVR1: return "Driving: Sequential + VR1";
     case InputProfile::DrivingSequentialManxTT: return "Driving: Sequential + VR1 (Manx TT Superbike)";
     case InputProfile::DrivingSequentialMotorRaid: return "Driving: Sequential + VR1 (Motor Raid)";
     case InputProfile::JoystickAnalogSkyTarget: return "Joystick (Analog): Sky Target + VR1";
@@ -541,7 +541,6 @@ unsigned profile_players(InputProfile profile)
     return profile == InputProfile::Twin || profile == InputProfile::Driving4SpeedVR4
         || profile == InputProfile::Driving4SpeedVR1Handbrake
         || profile == InputProfile::DrivingSequentialVR2
-        || profile == InputProfile::DrivingSequentialVR1
         || profile == InputProfile::DrivingSequentialManxTT
         || profile == InputProfile::DrivingSequentialMotorRaid
         || profile == InputProfile::JoystickAnalogSkyTarget
@@ -842,19 +841,11 @@ std::vector<retro_input_descriptor> descriptors(
             }
             continue;
         }
-        if (profile == InputProfile::DrivingSequentialVR2
-            || profile == InputProfile::DrivingSequentialVR1) {
+        if (profile == InputProfile::DrivingSequentialVR2) {
             add(RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_LEFT,
                 RETRO_DEVICE_ID_ANALOG_X, "Steering");
-            add(RETRO_DEVICE_JOYPAD, 0,
-                profile == InputProfile::DrivingSequentialVR1
-                    ? RETRO_DEVICE_ID_JOYPAD_DOWN
-                    : RETRO_DEVICE_ID_JOYPAD_UP,
-                profile == InputProfile::DrivingSequentialVR1 ? "VR1" : "View 1");
-            if (profile == InputProfile::DrivingSequentialVR1)
-                add(RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_UP, "VR1");
-            if (profile == InputProfile::DrivingSequentialVR2)
-                add(RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_DOWN, "View 2");
+            add(RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_UP, "View 1");
+            add(RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_DOWN, "View 2");
             add(RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L, "Shift Down");
             add(RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R, "Shift Up");
             add(RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L2, "Brake");
@@ -902,7 +893,8 @@ void poll_input(hw::Inputs& inputs, const rom::GameSpec& game,
                 DrivingAnalogOptions driving_options,
                 DesertElevationOptions desert_elevation_options,
                 bool automatic_start_gear,
-                bool mouse_edge_offscreen_reload, SpecialAnalogOptions special_options)
+                bool mouse_edge_offscreen_reload, SpecialAnalogOptions special_options,
+                unsigned shift_neutral_ms)
 {
     inputs.in0 = inputs.in1 = inputs.in2 = inputs.in3 = inputs.in4 = 0xff;
     inputs.player_starts = 0xff;
@@ -1064,6 +1056,7 @@ void poll_input(hw::Inputs& inputs, const rom::GameSpec& game,
                     gy.minimum = 87;
                     gy.maximum = 380;
                 }
+                gx = rom::widened_axis(gx, special_options.widescreen_columns, width);
                 if (p == 0) {
                     inputs.gun_p1x = scale_lightgun(x, gx, runtime.gun_aim_offscreen[p]);
                     inputs.gun_p1y = scale_lightgun(y, gy, runtime.gun_aim_offscreen[p]);
@@ -1072,12 +1065,27 @@ void poll_input(hw::Inputs& inputs, const rom::GameSpec& game,
                     inputs.gun_p2y = scale_lightgun(y, gy, runtime.gun_aim_offscreen[p]);
                 }
             } else {
+                const auto root = root_name(game);
+                const bool gunblade_linear = root == "gunblade" && !special_options.gunblade_upstream;
+                const bool use_points = !gunblade_linear
+                    && (root != "rchase2" || special_options.rail_chase_upstream);
+                const float side = static_cast<float>(special_options.widescreen_columns) / width;
+                const float wide_x = x * (1.0f + 2.0f * side) - side;
                 set_analog_fraction(inputs, game,
-                    p == 0 ? rom::AnalogControl::Gun1X : rom::AnalogControl::Gun2X, x,
-                    root_name(game) != "rchase2" || special_options.rail_chase_upstream);
-                set_analog_fraction(inputs, game,
-                    p == 0 ? rom::AnalogControl::Gun1Y : rom::AnalogControl::Gun2Y, y,
-                    root_name(game) != "rchase2" || special_options.rail_chase_upstream);
+                    p == 0 ? rom::AnalogControl::Gun1X : rom::AnalogControl::Gun2X,
+                    wide_x, use_points, side);
+                const auto y_control = p == 0 ? rom::AnalogControl::Gun1Y : rom::AnalogControl::Gun2Y;
+                if (gunblade_linear) {
+                    for (size_t channel = 0; channel < game.analog.size(); ++channel) {
+                        if (game.analog[channel].control != y_control) continue;
+                        auto previous = game.analog[channel];
+                        previous.minimum = 0x11;
+                        previous.maximum = 0xae;
+                        inputs.analog[channel] = scale_fraction(previous, y, false);
+                    }
+                } else {
+                    set_analog_fraction(inputs, game, y_control, y, use_points);
+                }
             }
             if (shot) {
                 if (p == 0) clear(inputs.in1, 0x01);
@@ -1373,19 +1381,35 @@ void poll_input(hw::Inputs& inputs, const rom::GameSpec& game,
                 else if (gate_x < -standard_threshold) gate = 3;
                 else if (gate_x > standard_threshold) gate = 4;
             }
-            if (gate != 0) runtime.gear = gate;
             const bool down = pressed(RETRO_DEVICE_ID_JOYPAD_L);
             const bool up = pressed(RETRO_DEVICE_ID_JOYPAD_R);
-            if (down && !runtime.shift_down_held && runtime.gear > 0) --runtime.gear;
-            if (up && !runtime.shift_up_held && runtime.gear < 4) ++runtime.gear;
+            const bool neutral = pressed(RETRO_DEVICE_ID_JOYPAD_Y);
+            if (gate != 0 || neutral) {
+                // A directly selected position wins over sequential steps.
+                runtime.gear = neutral ? 0 : gate;
+                runtime.shift_neutral_frames = 0;
+            } else {
+                const unsigned previous = runtime.gear;
+                if (down && !runtime.shift_down_held && runtime.gear > 0) --runtime.gear;
+                if (up && !runtime.shift_up_held && runtime.gear < 4) ++runtime.gear;
+                if (runtime.gear != previous) {
+                    // Match upstream's native-frame rounding; frontend 60 Hz
+                    // pacing does not change how many machine frames we run.
+                    constexpr double frame_hz = 57.5245;
+                    runtime.shift_neutral_frames = previous != 0 && runtime.gear != 0
+                        ? static_cast<unsigned>(std::min(shift_neutral_ms, 500u)
+                                                * frame_hz / 1000.0 + 0.999)
+                        : 0;
+                }
+            }
+            if (shift_neutral_ms == 0) runtime.shift_neutral_frames = 0;
             runtime.shift_down_held = down;
             runtime.shift_up_held = up;
-            if (pressed(RETRO_DEVICE_ID_JOYPAD_Y)) runtime.gear = 0;
-            inputs.gears = static_cast<u8>(1u << runtime.gear);
+            inputs.gears = static_cast<u8>(runtime.shift_neutral_frames ? 0x01 : 1u << runtime.gear);
+            if (runtime.shift_neutral_frames) --runtime.shift_neutral_frames;
             continue;
         }
-        if (profile == InputProfile::DrivingSequentialVR2
-            || profile == InputProfile::DrivingSequentialVR1) {
+        if (profile == InputProfile::DrivingSequentialVR2) {
             if (p != 0) continue;
             const auto analog = [&](unsigned index, unsigned id) {
                 return state(0, RETRO_DEVICE_ANALOG, index, id);
@@ -1404,12 +1428,9 @@ void poll_input(hw::Inputs& inputs, const rom::GameSpec& game,
                 const auto [port, bit] = game.wheel_button_bits[index];
                 if (port < std::size(ports)) clear(*ports[port], bit);
             };
-            if (pressed(RETRO_DEVICE_ID_JOYPAD_UP)
-                || (profile == InputProfile::DrivingSequentialVR1
-                    && pressed(RETRO_DEVICE_ID_JOYPAD_DOWN)))
+            if (pressed(RETRO_DEVICE_ID_JOYPAD_UP))
                 press_wheel_button(0);
-            if (profile == InputProfile::DrivingSequentialVR2
-                && pressed(RETRO_DEVICE_ID_JOYPAD_DOWN))
+            if (pressed(RETRO_DEVICE_ID_JOYPAD_DOWN))
                 press_wheel_button(1);
             if (pressed(RETRO_DEVICE_ID_JOYPAD_R)) clear(inputs.in1, 0x10);
             if (pressed(RETRO_DEVICE_ID_JOYPAD_L)) clear(inputs.in1, 0x20);

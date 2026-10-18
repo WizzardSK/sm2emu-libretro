@@ -419,6 +419,16 @@ inline void build_option_definitions()
     aspect_ratio.default_value = "auto";
     registered_definitions.push_back(aspect_ratio);
 
+    retro_core_option_v2_definition widescreen{};
+    widescreen.key = "sm2_widescreen_mode";
+    widescreen.desc = "Widescreen Mode";
+    widescreen.info = "Expand the 3D field of view and report 16:9 automatically, with experimental background side fill. Requires hardware rendering and Aspect Ratio Auto or 16:9; 4:3 suppresses expansion. Disabled preserves Aspect Ratio and native monitor settings. Native widescreen is unchanged. Applies on return to game without a reset.";
+    widescreen.category_key = "video";
+    widescreen.values[0] = {"stretch", "Disabled"};
+    widescreen.values[1] = {"expand_3d", "Expand 3D View Only"};
+    widescreen.default_value = "stretch";
+    registered_definitions.push_back(widescreen);
+
     retro_core_option_v2_definition timing{};
     timing.key = "sm2_av_timing";
     timing.desc = "A/V Timing (Restart Required)";
@@ -572,6 +582,18 @@ inline void build_option_definitions()
 
     {
         retro_core_option_v2_definition mapping{};
+        mapping.key = "sm2_gunblade_aim_mapping";
+        mapping.desc = "Gunblade NY: Aim Mapping";
+        mapping.info = "Select custom horizontal aiming tables and vertical range, or the previous linear mapping.";
+        mapping.category_key = "input";
+        mapping.values[0] = {"upstream", "Custom (SM2-Emu)"};
+        mapping.values[1] = {"previous", "Linear (MAME)"};
+        mapping.default_value = "upstream";
+        registered_definitions.push_back(mapping);
+    }
+
+    {
+        retro_core_option_v2_definition mapping{};
         mapping.key = "sm2_rail_chase_aim_mapping";
         mapping.desc = "Rail Chase 2: Aim Mapping";
         mapping.info = "Select calibrated coordinate-table aiming or linear coordinate mapping.";
@@ -646,6 +668,20 @@ inline void build_option_definitions()
     shifter.values[1] = {"standard", "Standard"};
     shifter.default_value = "h_gate";
     registered_definitions.push_back(shifter);
+
+    retro_core_option_v2_definition neutral_time{};
+    neutral_time.key = "sm2_gear_shift_neutral_time";
+    neutral_time.desc = "Gear Shift Neutral Time";
+    neutral_time.info = "Set the time spent in neutral between gears when using Shift Up/Down in 4-speed driving games. Direct gear selection bypasses the delay. 0 disables it. Applies to subsequent shifts on return to gameplay without a machine reset; 0 also cancels a pending delay.";
+    neutral_time.category_key = "input";
+    for (unsigned step = 0; step <= 50; ++step) {
+        option_value_label_storage.push_back(std::to_string(step * 10));
+        const char* value = option_value_label_storage.back().c_str();
+        option_value_label_storage.push_back(std::to_string(step * 10) + " ms");
+        neutral_time.values[step] = {value, option_value_label_storage.back().c_str()};
+    }
+    neutral_time.default_value = "100";
+    registered_definitions.push_back(neutral_time);
 
     retro_core_option_v2_definition automatic_start_gear{};
     automatic_start_gear.key = "sm2_automatic_start_gear";
@@ -766,26 +802,27 @@ inline void build_option_definitions()
 
     // Keep functional controls together, then place game-specific controls last.
     // System retains its native/operator order.
-    constexpr std::array<std::string_view, 8> video_order{{
+    constexpr std::array<std::string_view, 9> video_order{{
         "sm2_renderer", "sm2_software_renderer_threading",
         "sm2_internal_resolution", "sm2_upscale_2d", "sm2_texture_filter",
-        "sm2_aspect_ratio", "sm2_av_timing", "sm2_timing_overlay"}};
+        "sm2_aspect_ratio", "sm2_widescreen_mode", "sm2_av_timing", "sm2_timing_overlay"}};
     constexpr std::array<std::string_view, 10> audio_order{{
         "sm2_music_volume", "sm2_audio_balance", "sm2_scsp_gain", "sm2_dsb_gain",
         "sm2_multipcm1_gain", "sm2_multipcm2_gain", "sm2_ym3438_gain",
         "sm2_scsp_output_low_pass_filter",
         "sm2_manxtt_cabinet_audio", "sm2_power_sled_relay_audio_gain"}};
-    constexpr std::array<std::string_view, 20> input_order{{
+    constexpr std::array<std::string_view, 22> input_order{{
         "sm2_controller_profile_type", "sm2_gamepad_rumble",
         "sm2_hide_shot_flash",
         "sm2_crosshairs", "sm2_crosshair_style", "sm2_gun_input",
         "sm2_offscreen_reload_shortcut", "sm2_mouse_edge_offscreen_reload",
-        "sm2_four_speed_shifter",
+        "sm2_four_speed_shifter", "sm2_gear_shift_neutral_time",
         "sm2_automatic_start_gear", "sm2_steering_response",
         "sm2_steering_output_range", "sm2_accelerator_output_range",
         "sm2_brake_output_range", "sm2_desert_elevation_control",
         "sm2_desert_elevation_speed", "sm2_desert_elevation_axis",
-        "sm2_hotd_prototype_aim_mapping", "sm2_rail_chase_aim_mapping",
+        "sm2_gunblade_aim_mapping", "sm2_hotd_prototype_aim_mapping",
+        "sm2_rail_chase_aim_mapping",
         "sm2_top_skater_curving_response"}};
     const auto order_category = [](std::string_view category, const auto& order) {
         const auto first = std::find_if(registered_definitions.begin(),
@@ -842,6 +879,13 @@ inline bool i960_round_nearest_even_enabled()
            && option.value && std::strcmp(option.value, "enabled") == 0;
 }
 
+inline bool expand_3d_view()
+{
+    retro_variable option{"sm2_widescreen_mode", nullptr};
+    return option_environment && option_variable(option) && option.value
+        && std::strcmp(option.value, "expand_3d") == 0;
+}
+
 inline AspectRatioMode aspect_ratio_mode()
 {
     retro_variable option{"sm2_aspect_ratio", nullptr};
@@ -851,6 +895,13 @@ inline AspectRatioMode aspect_ratio_mode()
     if (std::strcmp(option.value, "4_3") == 0) return AspectRatioMode::FourThree;
     if (std::strcmp(option.value, "16_9") == 0) return AspectRatioMode::SixteenNine;
     return AspectRatioMode::Automatic;
+}
+
+inline bool expand_3d_view_for(const rom::GameSpec& game, bool hardware)
+{
+    const std::string_view family = game.parent.empty() ? game.name : game.parent;
+    return hardware && aspect_ratio_mode() != AspectRatioMode::FourThree && expand_3d_view()
+        && family != "indy500" && family != "stcc" && family != "sgt24h";
 }
 
 inline unsigned timing_overlay_font_pixels()
@@ -910,6 +961,19 @@ inline bool four_speed_h_gate()
     retro_variable option{"sm2_four_speed_shifter", nullptr};
     return !(option_environment && option_variable(option)
              && option.value && std::strcmp(option.value, "standard") == 0);
+}
+
+inline unsigned gear_shift_neutral_ms()
+{
+    retro_variable option{"sm2_gear_shift_neutral_time", nullptr};
+    if (option_environment && option_variable(option) && option.value) {
+        char* end = nullptr;
+        const unsigned long value = std::strtoul(option.value, &end, 10);
+        if (option.value[0] >= '0' && option.value[0] <= '9'
+            && end && *end == '\0' && value <= 500 && value % 10 == 0)
+            return static_cast<unsigned>(value);
+    }
+    return 100;
 }
 
 inline bool automatic_start_gear_enabled()
@@ -1028,7 +1092,8 @@ inline SpecialAnalogOptions special_analog_options()
     if (option_environment && option_variable(response)
         && response.value)
         options.top_skater_progressive = std::strcmp(response.value, "linear") != 0;
-    for (auto [key, enabled] : {std::pair{"sm2_rail_chase_aim_mapping", &options.rail_chase_upstream},
+    for (auto [key, enabled] : {std::pair{"sm2_gunblade_aim_mapping", &options.gunblade_upstream},
+                                std::pair{"sm2_rail_chase_aim_mapping", &options.rail_chase_upstream},
                                 std::pair{"sm2_hotd_prototype_aim_mapping", &options.hotd_prototype_upstream}}) {
         retro_variable mapping{key, nullptr};
         if (option_environment && option_variable(mapping)

@@ -17,7 +17,7 @@ public:
     void render(hw::Model2MachineBase& machine, retro_video_refresh_t video,
                 const CrosshairState& crosshairs, const TimingOverlayData& timing,
                 double frames_per_second, unsigned texture_quality,
-                unsigned upscale_2d);
+                unsigned upscale_2d, unsigned columns = 0, unsigned wide_background = 0);
 private:
     struct Impl;
     std::unique_ptr<Impl> impl;
@@ -35,7 +35,7 @@ public:
     void render(hw::Model2MachineBase& machine, retro_video_refresh_t video,
                 const CrosshairState& crosshairs, const TimingOverlayData& timing,
                 double frames_per_second, unsigned texture_quality,
-                unsigned upscale_2d);
+                unsigned upscale_2d, unsigned columns = 0, unsigned wide_background = 0);
 private:
     struct Impl;
     std::unique_ptr<Impl> impl;

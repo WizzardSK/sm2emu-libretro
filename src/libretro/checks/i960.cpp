@@ -17,6 +17,7 @@ struct Memory : cpu::Bus {
     s32 waits=0;
     unsigned accesses=0;
     unsigned fetches=0;
+    bool stop_on_write=false;
     u8 read8(u32 a) override {return data.at(a);}
     u16 read16(u32 a) override {u16 v;std::memcpy(&v,&data.at(a),2);return v;}
     u32 read32(u32 a) override {
@@ -26,7 +27,10 @@ struct Memory : cpu::Bus {
     u32 fetch32(u32 a) override {++fetches;u32 v;std::memcpy(&v,&data.at(a),4);return v;}
     void write8(u32 a,u8 v) override {data.at(a)=v;}
     void write16(u32 a,u16 v) override {std::memcpy(&data.at(a),&v,2);}
-    void write32(u32 a,u32 v) override {std::memcpy(&data.at(a),&v,4);}
+    void write32(u32 a,u32 v) override {
+        std::memcpy(&data.at(a),&v,4);
+        if(stop_on_write && a==4096 && processor) processor->end_slice();
+    }
 };
 struct Program {
     Memory memory;
@@ -46,6 +50,20 @@ u32 regop(unsigned major,unsigned minor,unsigned dst,unsigned src1,unsigned src2
 }
 int main() {
     try {
+        {
+            Program p;
+            p.constant(16,123);
+            p.instruction(0x92803000);p.instruction(4096); // st g0, absolute address
+            p.constant(17,456);
+            p.memory.stop_on_write=true;
+            const s32 used=p.cpu.run(1000);
+            check(used>0 && used<1000 && p.memory.read32(4096)==123,
+                  "A bus write ends the current CPU slice after its instruction");
+            check(p.cpu.reg(17)==0 && p.cpu.ip()==272,
+                  "The following instruction waits for the next slice");
+            p.execute();
+            check(p.cpu.reg(17)==456,"The CPU resumes at the next instruction");
+        }
         for(unsigned bytes : {0u,3u,4u,7u,8u}) {
             Program p;p.constant(16,123);
             p.cpu.bind_fetch_window(0,256,p.memory.data.data()+256,bytes,8);

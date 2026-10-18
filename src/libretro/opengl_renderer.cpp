@@ -65,6 +65,7 @@ bool request_opengl(retro_environment_t env, retro_hw_context_reset_t reset,
 struct OpenGlRenderer::Impl {
     bool es = false;
     unsigned scale = 1;
+    unsigned current_columns = 0;
     render::gl::TilemapPass tilemaps;
     render::gl::Poly3DPass polygons;
     render::gl::PresentPass present;
@@ -138,8 +139,18 @@ struct OpenGlRenderer::Impl {
     void render(hw::Model2MachineBase& machine, retro_video_refresh_t video,
                 const CrosshairState& crosshairs, const TimingOverlayData& timing,
                 double frames_per_second, unsigned texture_quality,
-                unsigned upscale_2d)
+                unsigned upscale_2d, unsigned columns, unsigned wide_background)
     {
+        if (columns != current_columns) {
+            present.shutdown();
+            tilemaps.shutdown();
+            if (!tilemaps.init(columns) || !present.init(scale, render::frame_width(columns)))
+                throw std::runtime_error("Cannot resize OpenGL widescreen targets");
+            current_columns = columns;
+        }
+        const unsigned output_width = render::frame_width(columns) * scale;
+        polygons.set_width(render::frame_width(columns));
+        tilemaps.set_wide_below(wide_background);
         auto& frame = machine.video();
         polygons.set_texture_quality(texture_quality);
         tilemaps.set_upscale_2d(upscale_2d);
@@ -163,12 +174,12 @@ struct OpenGlRenderer::Impl {
         const uintptr_t target = gl_callback.get_current_framebuffer();
         if (target > std::numeric_limits<u32>::max())
             throw std::runtime_error("Frontend OpenGL framebuffer name is out of range");
-        // Libretro advertises the 4:3 display aspect separately; its frontend
-        // owns the final fit.  Copy the complete 496x384 raster here instead of
+        // Libretro advertises the display aspect separately; its frontend
+        // owns the final fit. Copy the complete selected raster rather than
         // applying the standalone window letterbox inside the core as well.
-        present.present(496 * scale, 384 * scale, static_cast<u32>(target), false);
+        present.present(output_width, 384 * scale, static_cast<u32>(target), false);
         const CrosshairGeometry geometry = crosshair_geometry(
-            crosshairs, 496 * scale, 384 * scale);
+            crosshairs, output_width, 384 * scale);
         if (geometry.count) {
             render::gl::Enable(GL_SCISSOR_TEST);
             render::gl::ColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
@@ -187,10 +198,10 @@ struct OpenGlRenderer::Impl {
         if (timing.enabled && timing.valid) {
             ImGui_ImplOpenGL3_NewFrame();
             if (ImDrawData* overlay = build_timing_overlay(
-                    timing, 496 * scale, 384 * scale, frames_per_second))
+                    timing, output_width, 384 * scale, frames_per_second))
                 ImGui_ImplOpenGL3_RenderDrawData(overlay);
         }
-        if (video) video(RETRO_HW_FRAME_BUFFER_VALID, 496 * scale, 384 * scale, 0);
+        if (video) video(RETRO_HW_FRAME_BUFFER_VALID, output_width, 384 * scale, 0);
     }
 };
 
@@ -205,9 +216,9 @@ void OpenGlRenderer::abandon_context() { impl->abandon_context(); }
 void OpenGlRenderer::render(hw::Model2MachineBase& machine, retro_video_refresh_t video,
                             const CrosshairState& crosshairs, const TimingOverlayData& timing,
                             double frames_per_second, unsigned texture_quality,
-                            unsigned upscale_2d)
+                            unsigned upscale_2d, unsigned columns, unsigned wide_background)
 {
     impl->render(machine, video, crosshairs, timing, frames_per_second,
-                 texture_quality, upscale_2d);
+                 texture_quality, upscale_2d, columns, wide_background);
 }
 }

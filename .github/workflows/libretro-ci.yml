@@ -102,6 +102,9 @@ jobs:
       - name: Check inputs and Libretro ABI without ROMs
         run: |
           ./build-ci/bin/sm2-libretro-daytona-gtx-checks
+          ./build-ci/bin/sm2-libretro-drive-reply-checks
+          ./build-ci/bin/sm2-libretro-sgt24h-pedals-checks
+          ./build-ci/bin/sm2-libretro-gun-flash-checks
           ./build-ci/bin/sm2-libretro-i960-checks
           ./build-ci/bin/sm2-libretro-audio-balance-checks
           ./build-ci/bin/sm2-libretro-audio-checks

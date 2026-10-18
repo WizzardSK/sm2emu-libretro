@@ -56,3 +56,11 @@ Other Model 1 profiles have independent VR4/movement actions or no View.
 No destination code change is required for the current catalogues. Both
 roadmap entries were verified in their files; the handoff is closed and this
 file remains provenance. Future applicable profiles retain this shared rule.
+
+## Catalog Correction — 2026-10-18
+
+Super GT 24h was removed from the single-View coverage after the user confirmed
+its two independent View inputs. Its I/O TYPE C uses only View 1 in game, but
+the Libretro profile exposes View 1 and View 2 for every I/O TYPE. The current
+single-View coverage is 12 sets in five families; the earlier six-family count
+above records the original handoff state, not the current catalog.

@@ -165,6 +165,30 @@ int main()
         const auto* left = find_definition(first);
         return left && left[1].key && second == left[1].key;
     };
+    const auto* widescreen = find_definition("sm2_widescreen_mode");
+    expect(widescreen && adjacent("sm2_aspect_ratio", "sm2_widescreen_mode")
+        && std::string_view(widescreen->default_value) == "stretch"
+        && std::string_view(widescreen->values[0].label) == "Disabled"
+        && std::string_view(widescreen->values[1].label) == "Expand 3D View Only"
+        && !libretro::expand_3d_view(),
+        "Widescreen follows Aspect Ratio in the menu and defaults to Disabled");
+    option_values["sm2_widescreen_mode"] = "expand_3d";
+    expect(libretro::expand_3d_view(), "Expand 3D View reads the frontend selection");
+    for (const char* name : {"vf2", "daytona", "indy500", "stcc", "sgt24h"}) {
+        rom::GameSpec game;
+        game.name = name;
+        const bool native = game.name == "indy500" || game.name == "stcc" || game.name == "sgt24h";
+        for (const char* aspect : {"auto", "4_3", "16_9"}) {
+            option_values["sm2_aspect_ratio"] = aspect;
+            expect(libretro::expand_3d_view_for(game, true) == (!native && std::string_view(aspect) != "4_3")
+                       && !libretro::expand_3d_view_for(game, false),
+                   "Expand accepts Auto/16:9, honors forced 4:3 and preserves native-capable games and Software");
+            expect(option_values["sm2_aspect_ratio"] == aspect,
+                   "Expand does not rewrite the saved Aspect Ratio");
+        }
+    }
+    option_values.erase("sm2_aspect_ratio");
+    option_values.erase("sm2_widescreen_mode");
     expect(adjacent("sm2_renderer", "sm2_software_renderer_threading")
                && adjacent("sm2_software_renderer_threading", "sm2_internal_resolution")
                && adjacent("sm2_internal_resolution", "sm2_upscale_2d")
@@ -186,7 +210,8 @@ int main()
            "lightgun controls retain their approved order");
     expect(adjacent("sm2_desert_elevation_control", "sm2_desert_elevation_speed")
                && adjacent("sm2_desert_elevation_speed", "sm2_desert_elevation_axis")
-               && adjacent("sm2_four_speed_shifter", "sm2_automatic_start_gear")
+               && adjacent("sm2_four_speed_shifter", "sm2_gear_shift_neutral_time")
+               && adjacent("sm2_gear_shift_neutral_time", "sm2_automatic_start_gear")
                && adjacent("sm2_steering_response", "sm2_steering_output_range")
                && adjacent("sm2_steering_output_range", "sm2_accelerator_output_range")
                && adjacent("sm2_accelerator_output_range", "sm2_brake_output_range"),
@@ -231,6 +256,19 @@ int main()
     expect(!libretro::special_analog_options().top_skater_progressive,
            "Top Skater Linear is read from frontend settings");
     option_values.erase("sm2_top_skater_curving_response");
+    const auto* gunblade_mapping = find_definition("sm2_gunblade_aim_mapping");
+    expect(gunblade_mapping
+        && std::string_view(gunblade_mapping->desc) == "Gunblade NY: Aim Mapping"
+        && std::string_view(gunblade_mapping->default_value) == "upstream"
+        && std::string_view(gunblade_mapping->values[0].label) == "Custom (SM2-Emu)"
+        && std::string_view(gunblade_mapping->values[1].label) == "Linear (MAME)"
+        && adjacent("sm2_gunblade_aim_mapping", "sm2_hotd_prototype_aim_mapping")
+        && libretro::special_analog_options().gunblade_upstream,
+        "Gunblade offers the established mapping selector and defaults to Custom");
+    option_values["sm2_gunblade_aim_mapping"] = "previous";
+    expect(!libretro::special_analog_options().gunblade_upstream,
+           "Gunblade Linear is read from frontend settings");
+    option_values.erase("sm2_gunblade_aim_mapping");
     const auto* flash = find_definition("sm2_hide_shot_flash");
     expect(flash && std::string_view(flash->desc) == "Hide Shot Flash"
         && std::string_view(flash->default_value) == "disabled"
@@ -340,9 +378,9 @@ int main()
                && std::string_view(stcc_cabinet->values[1].label) == "Deluxe",
            "STCC displays Deluxe without changing its native NVRAM key");
     expect(sgt24h_io_type && std::string_view(sgt24h_io_type->desc) == "I/O Type"
-               && std::string_view(sgt24h_io_type->default_value) == "c"
-               && std::string_view(sgt24h_io_type->values[2].label) == "C (Default)",
-           "Super GT 24h I/O Type core option defaults to C");
+               && std::string_view(sgt24h_io_type->default_value) == "b"
+               && std::string_view(sgt24h_io_type->values[1].label) == "B (Default)",
+           "Super GT 24h I/O Type core option defaults to B");
     expect(steering_response && std::string_view(steering_response->default_value) == "linear"
                && std::string_view(steering_response->values[1].label)
                     == "Progressive (Fine Center)"
@@ -388,6 +426,23 @@ int main()
                && std::string_view(automatic_start_gear->values[0].label) == "Enabled"
                && std::string_view(automatic_start_gear->values[1].label) == "Disabled",
            "Automatic Start Gear exposes the upstream rolling-start behaviour");
+    const auto* neutral_time = find_definition("sm2_gear_shift_neutral_time");
+    expect(neutral_time && std::string_view(neutral_time->default_value) == "100"
+        && std::string_view(neutral_time->category_key) == "input"
+        && std::string_view(neutral_time->values[0].value) == "0"
+        && std::string_view(neutral_time->values[50].value) == "500"
+        && neutral_time->values[51].value == nullptr,
+        "Gear neutral interval exposes upstream 0-500 ms, 10 ms steps, default 100");
+    expect(libretro::gear_shift_neutral_ms() == 100, "Absent neutral interval uses upstream default");
+    for (unsigned value = 0; value <= 500; value += 10) {
+        option_values["sm2_gear_shift_neutral_time"] = std::to_string(value);
+        expect(libretro::gear_shift_neutral_ms() == value, "Neutral interval parses registered values");
+    }
+    for (const char* value : {"bad", "-10", "501", "100ms", "", "9999999999999999999999", "105"}) {
+        option_values["sm2_gear_shift_neutral_time"] = value;
+        expect(libretro::gear_shift_neutral_ms() == 100, "Invalid neutral interval uses default");
+    }
+    option_values.erase("sm2_gear_shift_neutral_time");
     expect(libretro::audio_balance_enabled(), "Enhanced Audio Balance is enabled by default");
     expect(audio_balance
                && std::string_view(audio_balance->desc) == "Enhanced Audio Balance"
@@ -1391,8 +1446,8 @@ int main()
         expect(settings_backup[0x14] == 0 && settings_backup[0x1c] == 0 &&
                settings_backup[0x1e] == 0 && settings_backup[0x20] == 0,
                "Super GT 24h gameplay and sound defaults are stored");
-        expect(settings_backup[0x0a] == 0,
-               "Super GT 24h defaults to I/O Type C");
+        expect(settings_backup[0x0a] == 3,
+               "Super GT 24h defaults to I/O Type B");
         expect(settings_backup[0x68] == 0x12 && settings_backup[0x69] == 0x34 &&
                settings_backup[0x6a] == 0x56 && settings_backup[0x6b] == 0x78,
                "Super GT 24h runtime counter is not treated as integrity data");

@@ -70,6 +70,7 @@ struct VulkanRenderer::Impl final : render::vk::PassContext {
     std::array<VkFence, kFramesInFlight> fences{};
     unsigned slot = 0, scale = 1;
     uint32_t sync_mask = 0;
+    unsigned current_columns = 0;
     VkFormat stencil = VK_FORMAT_UNDEFINED;
     render::vk::TilemapPass tilemaps;
     render::vk::Poly3DPass polygons;
@@ -165,7 +166,7 @@ struct VulkanRenderer::Impl final : render::vk::PassContext {
         VkFenceCreateInfo fi{};
         fi.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO; fi.flags = VK_FENCE_CREATE_SIGNALED_BIT;
         for (auto& fence : fences) check(vkCreateFence(device(), &fi, nullptr, &fence), "Create frame fence");
-        if (!tilemaps.init(*this, scale) || !polygons.init(*this, scale))
+        if (!tilemaps.init(*this, scale, 0) || !polygons.init(*this, scale))
             throw std::runtime_error("Cannot initialize upstream Vulkan passes");
         ImGuiVkLoader imgui_loader{*vk, log};
         missing_imgui_vk_function = nullptr;
@@ -205,7 +206,7 @@ struct VulkanRenderer::Impl final : render::vk::PassContext {
         image.flags = VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT;
         image.imageType = VK_IMAGE_TYPE_2D;
         image.format = render::vk::kNativeColourFormat;
-        image.extent = {496 * scale, 384 * scale, 1};
+        image.extent = {render::frame_width(current_columns) * scale, 384 * scale, 1};
         image.mipLevels = image.arrayLayers = 1;
         image.samples = VK_SAMPLE_COUNT_1_BIT;
         image.tiling = VK_IMAGE_TILING_OPTIMAL;
@@ -224,7 +225,18 @@ struct VulkanRenderer::Impl final : render::vk::PassContext {
     void render(hw::Model2MachineBase& machine, retro_video_refresh_t video,
                 const CrosshairState& crosshairs, const TimingOverlayData& timing,
                 double frames_per_second, unsigned texture_quality,
-                unsigned upscale_2d) {
+                unsigned upscale_2d, unsigned columns, unsigned wide_background) {
+        if (columns != current_columns) {
+            idle();
+            destroy_outputs();
+            tilemaps.shutdown();
+            if (!tilemaps.init(*this, scale, columns))
+                throw std::runtime_error("Cannot resize Vulkan widescreen targets");
+            current_columns = columns;
+        }
+        const unsigned output_width = render::frame_width(columns) * scale;
+        polygons.set_width(render::frame_width(columns));
+        tilemaps.set_wide_below(wide_background);
         const uint32_t mask = vk->get_sync_index_mask(vk->handle);
         const unsigned index = vk->get_sync_index(vk->handle);
         if (index >= outputs.size() || !(mask & (1u << index)))
@@ -260,11 +272,11 @@ struct VulkanRenderer::Impl final : render::vk::PassContext {
         if (!render_test) polygons.draw_polygons();
         tilemaps.record_above();
         const CrosshairGeometry geometry = crosshair_geometry(
-            crosshairs, 496 * scale, 384 * scale);
+            crosshairs, output_width, 384 * scale);
         ImDrawData* overlay = nullptr;
         if (timing.enabled && timing.valid) {
             ImGui_ImplVulkan_NewFrame();
-            overlay = build_timing_overlay(timing, 496 * scale, 384 * scale,
+            overlay = build_timing_overlay(timing, output_width, 384 * scale,
                                            frames_per_second);
         }
         if (geometry.count || overlay) {
@@ -276,7 +288,7 @@ struct VulkanRenderer::Impl final : render::vk::PassContext {
             colour.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
             VkRenderingInfo rendering{};
             rendering.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
-            rendering.renderArea.extent = {496 * scale, 384 * scale};
+            rendering.renderArea.extent = {output_width, 384 * scale};
             rendering.layerCount = 1;
             rendering.colorAttachmentCount = 1;
             rendering.pColorAttachments = &colour;
@@ -314,7 +326,7 @@ struct VulkanRenderer::Impl final : render::vk::PassContext {
         submit.commandBufferCount = 1; submit.pCommandBuffers = &commands[slot];
         { QueueLock lock(*vk); check(vkQueueSubmit(vk->queue, 1, &submit, fences[slot]), "Submit GPU frame"); }
         vk->set_image(vk->handle, &out.frontend, 0, nullptr, vk->queue_index);
-        if (video) video(RETRO_HW_FRAME_BUFFER_VALID, 496 * scale, 384 * scale, 0);
+        if (video) video(RETRO_HW_FRAME_BUFFER_VALID, output_width, 384 * scale, 0);
         slot = (slot + 1) % kFramesInFlight;
     }
 };
@@ -328,9 +340,9 @@ unsigned VulkanRenderer::init(retro_environment_t env, unsigned scale, retro_log
 void VulkanRenderer::render(hw::Model2MachineBase& machine, retro_video_refresh_t video,
                             const CrosshairState& crosshairs, const TimingOverlayData& timing,
                             double frames_per_second, unsigned texture_quality,
-                            unsigned upscale_2d)
+                            unsigned upscale_2d, unsigned columns, unsigned wide_background)
 {
     impl->render(machine, video, crosshairs, timing, frames_per_second,
-                 texture_quality, upscale_2d);
+                 texture_quality, upscale_2d, columns, wide_background);
 }
 }

@@ -20,6 +20,12 @@ def main():
     p=argparse.ArgumentParser(description=__doc__)
     for key in ['core','host','system','rom','output']:p.add_argument('--'+key,type=Path,required=True)
     p.add_argument('--frames',type=int,default=1800)
+    p.add_argument('--aspect-ratio', choices=['auto','4_3','16_9'], default='auto')
+    p.add_argument('--widescreen-mode', choices=['stretch','expand_3d'], default='stretch')
+    p.add_argument('--expect-width', type=int, default=496, help='Expected native framebuffer width')
+    p.add_argument('--expect-aspect', choices=['4:3','16:9'], help='Verify the final reported display aspect')
+    p.add_argument('--widescreen-switch-frame', type=int, default=0,
+                   help='Switch Stretch to Expand or vice versa at this frame')
     p.add_argument('--initial-nvram-setup',choices=['enabled','disabled'],default='enabled')
     p.add_argument('--api',choices=['gles','desktop'],default='gles')
     p.add_argument('--hide-shot-flash',choices=['disabled','enabled'],default='disabled')
@@ -44,7 +50,8 @@ def main():
     core.retro_load_game.argtypes=[C.POINTER(Game)];core.retro_load_game.restype=C.c_bool
     core.retro_get_system_av_info.argtypes=[C.POINTER(AV)]
     paths={9:str(a.system.resolve()).encode(),31:str(out/'saves').encode()}
-    options={b'sm2_hide_shot_flash':a.hide_shot_flash.encode(),
+    options={b'sm2_aspect_ratio':a.aspect_ratio.encode(),
+             b'sm2_widescreen_mode':a.widescreen_mode.encode(),b'sm2_hide_shot_flash':a.hide_shot_flash.encode(),
              b'sm2_gun_input':b'analog' if a.gun_inputs else b'hybrid',b'sm2_crosshairs':b'0' if a.gun_inputs else b'auto',
              b'sm2_renderer':b'opengl',b'sm2_internal_resolution':str(a.scale).encode(),
              b'sm2_texture_filter':a.texture_filter.encode(),b'sm2_upscale_2d':a.upscale_2d.encode(),
@@ -74,7 +81,7 @@ def main():
             if (a.context_cycle or a.context_loss_cycle) and frame in (a.context_cycle,a.context_loss_cycle):
                 cycle_hardware_frame=False
             return
-        if data!=C.c_void_p(-1).value or (w,h,pitch)!=(496*a.scale,384*a.scale,0):
+        if data!=C.c_void_p(-1).value or (w,h,pitch)!=((a.expect_width if not a.widescreen_switch_frame or frame >= a.widescreen_switch_frame else (496 if a.expect_width == 662 else 662))*a.scale,384*a.scale,0):
             errors.append('Invalid hardware frame');return
         if (a.context_cycle or a.context_loss_cycle) and frame in (a.context_cycle,a.context_loss_cycle):
             cycle_hardware_frame=True
@@ -114,6 +121,8 @@ def main():
     assert abs(av.timing.fps-(60 if a.av_timing!='native' else native_fps))<1e-9
     started=time.monotonic()
     for frame in range(a.frames):
+        if a.widescreen_switch_frame and frame == a.widescreen_switch_frame:
+            options[b'sm2_widescreen_mode'] = b'expand_3d' if a.widescreen_mode == 'stretch' else b'stretch'
         if a.context_cycle and frame==a.context_cycle:
             host.sm2_gl_stop();assert host.sm2_gl_start(),host.sm2_gl_error()
         if a.context_loss_cycle and frame==a.context_loss_cycle:
@@ -127,12 +136,18 @@ def main():
     overlays=[entry for entry in statuses if entry]
     if a.timing_overlay!='disabled':assert not overlays
     if a.context_cycle or a.context_loss_cycle:assert cycle_hardware_frame is True
+    core.retro_get_system_av_info(C.byref(av))
+    assert av.geometry.width == a.expect_width * a.scale
+    if a.expect_aspect:
+        expected_aspect = 16/9 if a.expect_aspect == '16:9' else 4/3
+        assert abs(av.geometry.aspect - expected_aspect) < 1e-6
     (out/'native_frame.ppm').write_bytes(last)
     with wave.open(str(out/'audio.wav'),'wb') as wav:
         wav.setparams((2,2,int(av.timing.rate),0,'NONE','none'));wav.writeframes(pcm)
     nvram=api['capture_save_ram'](core,a.rom.stem,out/'saves')
     host.sm2_gl_stop();core.retro_unload_game();shutil.copytree(out/'saves',out/'baseline-nvram')
-    report={'hide_shot_flash':a.hide_shot_flash,'gun_inputs':a.gun_inputs,'initial_nvram_setup':a.initial_nvram_setup,'frames':a.frames,'gl_frames':gl_frames,'duplicated_frames':duplicates,'api':a.api,'scale':a.scale,
+    report={'hide_shot_flash':a.hide_shot_flash,'gun_inputs':a.gun_inputs,'initial_nvram_setup':a.initial_nvram_setup,'frames':a.frames,'gl_frames':gl_frames,'duplicated_frames':duplicates,'api':a.api,'aspect_ratio':a.aspect_ratio,'widescreen_mode':a.widescreen_mode,
+        'expected_width':a.expect_width,'widescreen_switch_frame':a.widescreen_switch_frame,'scale':a.scale,
         'texture_filter':a.texture_filter,'upscale_2d':a.upscale_2d,
         'av_timing':a.av_timing,'timing_overlay':a.timing_overlay,'overlay_updates':len(overlays),
         'context_cycle':a.context_cycle,'context_loss_cycle':a.context_loss_cycle,

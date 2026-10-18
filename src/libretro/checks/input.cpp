@@ -165,7 +165,7 @@ int main()
         {"stcca", libretro::InputProfile::DrivingSequentialVR2},
         {"stccb", libretro::InputProfile::DrivingSequentialVR2},
         {"stcco", libretro::InputProfile::DrivingSequentialVR2},
-        {"sgt24h", libretro::InputProfile::DrivingSequentialVR1},
+        {"sgt24h", libretro::InputProfile::DrivingSequentialVR2},
         {"manxtt", libretro::InputProfile::DrivingSequentialManxTT},
         {"manxttc", libretro::InputProfile::DrivingSequentialManxTT},
         {"manxttdx", libretro::InputProfile::DrivingSequentialManxTT},
@@ -638,8 +638,9 @@ int main()
               && stcc_metadata->drive_board
               && stcc_metadata->drive_protocol == rom::DriveProtocol::Stcc,
           "Sega Rally and STCC retain their upstream drive-board protocols");
-    check(!sgt24h_metadata->drive_board,
-          "Super GT drive-board metadata remains unchanged");
+    check(sgt24h_metadata->drive_board
+          && sgt24h_metadata->drive_protocol == rom::DriveProtocol::Indy,
+          "Super GT uses the upstream shared Indy drive-board protocol");
     for (const char* name : {"indy500", "indy500d", "indy500to", "overrev", "overrevb", "overrevba"}) {
         const auto* set = database.find(name);
         check(set && set->drive_board && set->drive_protocol == rom::DriveProtocol::Indy,
@@ -691,6 +692,49 @@ int main()
     check(inputs.gears == 0x02,
           "Disabling Automatic Start Gear starts Daytona in first gear");
 
+    const auto poll_neutral = [&](const rom::GameSpec& target, unsigned ms) {
+        libretro::poll_input(inputs, target, devices, runtime, true, state,
+                             libretro::GunInputMode::Hybrid, true, {}, {}, true, false, {}, ms);
+    };
+    for (const auto* target : {daytona, srally}) {
+        for (unsigned ms = 0; ms <= 500; ms += 10) {
+            runtime = {}; runtime.gear_initialized = true; runtime.gear = 2;
+            pressed = {}; axes = {}; analog_buttons = {};
+            pressed[0] = 1u << RETRO_DEVICE_ID_JOYPAD_L;
+            const unsigned duration = static_cast<unsigned>(ms * 57.5245 / 1000.0 + 0.999);
+            for (unsigned frame = 0; frame <= duration + 1; ++frame) {
+                poll_neutral(*target, ms);
+                check(runtime.gear == 1 && inputs.gears == (frame < duration ? 1 : 2),
+                      "Sequential shift emits exactly the upstream neutral interval without repeating held steps");
+            }
+        }
+    }
+    runtime = {}; runtime.gear_initialized = true; runtime.gear = 2;
+    pressed = {}; pressed[0] = 1u << RETRO_DEVICE_ID_JOYPAD_R;
+    poll_neutral(*daytona, 100);
+    check(inputs.gears == 1 && runtime.gear == 3 && runtime.shift_neutral_frames == 5,
+          "100 ms starts a six-native-frame neutral crossing with the destination gear retained");
+    pressed = {}; pressed[0] = 1u << RETRO_DEVICE_ID_JOYPAD_Y;
+    poll_neutral(*daytona, 100);
+    check(inputs.gears == 1 && runtime.gear == 0 && runtime.shift_neutral_frames == 0,
+          "Explicit neutral cancels a pending crossing");
+    pressed[0] = 1u << RETRO_DEVICE_ID_JOYPAD_R;
+    poll_neutral(*daytona, 100);
+    check(inputs.gears == 2 && runtime.shift_neutral_frames == 0,
+          "Leaving neutral selects first gear without a synthetic crossing");
+    pressed[0] = 0; poll_neutral(*daytona, 100);
+    pressed[0] = 1u << RETRO_DEVICE_ID_JOYPAD_R;
+    poll_neutral(*daytona, 100);
+    axes[0][RETRO_DEVICE_INDEX_ANALOG_RIGHT] = {-20000, -20000};
+    poll_neutral(*daytona, 100);
+    check(inputs.gears == 2 && runtime.gear == 1 && runtime.shift_neutral_frames == 0,
+          "A held direct H-gate position bypasses and cancels the timed crossing");
+    axes = {}; pressed = {}; poll_neutral(*daytona, 100);
+    pressed[0] = 1u << RETRO_DEVICE_ID_JOYPAD_R;
+    poll_neutral(*daytona, 100);
+    poll_neutral(*daytona, 0);
+    check(inputs.gears == 4 && runtime.shift_neutral_frames == 0,
+          "Changing the neutral interval to zero restores direct shifting without reset");
     pressed = {(1u << RETRO_DEVICE_ID_JOYPAD_UP)
                    | (1u << RETRO_DEVICE_ID_JOYPAD_DOWN)
                    | (1u << RETRO_DEVICE_ID_JOYPAD_LEFT)
@@ -885,16 +929,21 @@ int main()
     const auto* sgt24h = database.find("sgt24h");
     check(sgt24h != nullptr, "Super GT 24h parent game exists");
     check(std::string_view(libretro::profile_name(libretro::recognize_profile(*sgt24h)))
-              == "Driving: Sequential + VR1",
-          "Super GT 24h uses the approved Sequential VR1 profile");
+              == "Driving: Sequential + VR2",
+          "Super GT 24h uses the Sequential VR2 profile");
+    check(sgt24h->wheel_button_bits[0] == std::pair<u8, u8>{1, 0x01}
+          && sgt24h->wheel_button_bits[1] == std::pair<u8, u8>{1, 0x02},
+          "Super GT 24h maps both native view inputs");
     libretro::configure_controllers(*sgt24h, controllers);
     check(std::string_view(controllers.descriptions[0][0].desc)
-              == "Driving: Sequential + VR1 + Test/Service slots"
+              == "Driving: Sequential + VR2 + Test/Service slots"
           && controllers.ports[0].num_types == 1,
-          "Sequential VR1 exposes the one game-specific controller type");
+          "Super GT exposes the VR2 controller type");
     driving_desc = libretro::descriptors(*sgt24h, devices);
     check(has_descriptor(driving_desc, 0, RETRO_DEVICE_JOYPAD, 0,
-                         RETRO_DEVICE_ID_JOYPAD_DOWN, "VR1")
+                         RETRO_DEVICE_ID_JOYPAD_UP, "View 1")
+              && has_descriptor(driving_desc, 0, RETRO_DEVICE_JOYPAD, 0,
+                                RETRO_DEVICE_ID_JOYPAD_DOWN, "View 2")
               && has_descriptor(driving_desc, 0, RETRO_DEVICE_JOYPAD, 0,
                                 RETRO_DEVICE_ID_JOYPAD_L, "Shift Down")
               && has_descriptor(driving_desc, 0, RETRO_DEVICE_JOYPAD, 0,
@@ -906,18 +955,16 @@ int main()
               && has_descriptor(driving_desc, 0, RETRO_DEVICE_ANALOG,
                                 RETRO_DEVICE_INDEX_ANALOG_LEFT,
                                 RETRO_DEVICE_ID_ANALOG_X, "Steering"),
-          "Sequential VR1 descriptions match the approved workbook");
-    check(has_descriptor(driving_desc, 0, RETRO_DEVICE_JOYPAD, 0,
-                         RETRO_DEVICE_ID_JOYPAD_UP, "VR1"),
-          "Sequential VR1 exposes the approved supplemental Up binding");
-    pressed = {(1u << RETRO_DEVICE_ID_JOYPAD_DOWN)
+          "Super GT VR2 descriptions match the common layout");
+    pressed = {(1u << RETRO_DEVICE_ID_JOYPAD_UP)
+                   | (1u << RETRO_DEVICE_ID_JOYPAD_DOWN)
                    | (1u << RETRO_DEVICE_ID_JOYPAD_L)
                    | (1u << RETRO_DEVICE_ID_JOYPAD_R), 0};
     axes = {};
     analog_buttons = {};
     libretro::poll_input(inputs, *sgt24h, devices, runtime, true, state);
-    check(inputs.in1 == 0xce,
-          "Sequential VR1 writes only VR1 and Shift Down/Up");
+    check(inputs.in1 == 0xcc,
+          "Super GT writes both views and Shift Down/Up independently");
     check(inputs.analog[1] == 0xff && inputs.analog[2] == 0xff,
           "Super GT released pedals retain their declared reversed calibration");
     analog_buttons[0][RETRO_DEVICE_ID_JOYPAD_R2] = 32767;
@@ -1965,6 +2012,46 @@ int main()
                                     RETRO_DEVICE_ID_LIGHTGUN_RELOAD),
           "Positional Gun profile exposes no unsupported reload action");
 
+    // Standard arbitrates sources per frontend port, including mixed devices.
+    for (const auto* target : {vcop, hotd}) {
+        for (unsigned gun_player = 0; gun_player < 2; ++gun_player) {
+            runtime = {}; pressed = {}; axes = {}; analog_buttons = {};
+            mouse_axes = {}; mouse_buttons = {}; lightgun_axes = {}; lightgun_buttons = {};
+            libretro::poll_input(inputs, *target, devices, runtime, true, state);
+            const unsigned mouse_player = 1 - gun_player;
+            const int before = runtime.gun_cursor_x[mouse_player];
+            lightgun_axes[gun_player] = {12000, -9000};
+            lightgun_buttons[gun_player] = 1u << RETRO_DEVICE_ID_LIGHTGUN_TRIGGER;
+            mouse_axes[mouse_player][0] = 7;
+            libretro::poll_input(inputs, *target, devices, runtime, true, state);
+            const auto shooting = [&](unsigned player) {
+                return player == 0 ? !(inputs.in1 & 1)
+                    : target->lightgun.p2_trigger_on_in2 ? !(inputs.in2 & 1)
+                    : !(inputs.in1 & 2);
+            };
+            check(runtime.gun_cursor_x[mouse_player] == before + 7
+                && shooting(gun_player) && !shooting(mouse_player),
+                "A gun on either port neither steals the other port's Mouse nor duplicates Shot");
+            const int gun_x = runtime.gun_cursor_x[gun_player];
+            lightgun_buttons = {};
+            mouse_buttons[mouse_player] = 1u << RETRO_DEVICE_ID_MOUSE_LEFT;
+            libretro::poll_input(inputs, *target, devices, runtime, true, state);
+            check(runtime.gun_cursor_x[gun_player] == gun_x
+                && runtime.gun_cursor_x[mouse_player] == before + 14
+                && !shooting(gun_player) && shooting(mouse_player),
+                "Mixed-device trigger release and Mouse Shot remain independent on both ports");
+            mouse_axes = {}; mouse_buttons = {};
+            libretro::poll_input(inputs, *target, devices, runtime, true, state,
+                                 libretro::GunInputMode::Lightgun);
+            const auto only_gun_cursors = runtime.gun_cursor_x;
+            mouse_axes[mouse_player][0] = 12;
+            mouse_buttons[mouse_player] = 1u << RETRO_DEVICE_ID_MOUSE_LEFT;
+            libretro::poll_input(inputs, *target, devices, runtime, true, state,
+                                 libretro::GunInputMode::Lightgun);
+            check(runtime.gun_cursor_x == only_gun_cursors && !shooting(mouse_player),
+                  "Lightgun Only ignores Mouse on either port");
+        }
+    }
     // An idle off-screen Lightgun report must not monopolize Standard's cursor.
     for (const auto* target : {bel, vcop}) {
         runtime = {};
@@ -2039,6 +2126,27 @@ int main()
     mouse_buttons = {};
     lightgun_buttons = {};
     lightgun_axes = {};
+    for (s16 edge : {static_cast<s16>(-32768), static_cast<s16>(32767)}) {
+        lightgun_axes = {{{edge, edge}, {edge, edge}}};
+        runtime = {};
+        libretro::poll_input(inputs, *gunblade, devices, runtime, true, state,
+                             libretro::GunInputMode::Lightgun);
+        check(inputs.analog[0] == (edge < 0 ? 0x72 : 0xf5)
+                  && inputs.analog[1] == (edge < 0 ? 0x0b : 0x8e)
+                  && inputs.analog[2] == (edge < 0 ? 0x1d : 0xa4)
+                  && inputs.analog[3] == inputs.analog[2],
+              "Gunblade Custom uses the imported aim table and vertical range for both players");
+        libretro::SpecialAnalogOptions previous;
+        previous.gunblade_upstream = false;
+        libretro::poll_input(inputs, *gunblade, devices, runtime, true, state,
+                             libretro::GunInputMode::Lightgun, true, {}, {}, true, false, previous);
+        check(inputs.analog[0] == (edge < 0 ? 0x69 : 0xff)
+                  && inputs.analog[1] == (edge < 0 ? 0x00 : 0x96)
+                  && inputs.analog[2] == (edge < 0 ? 0x11 : 0xae)
+                  && inputs.analog[3] == inputs.analog[2],
+              "Gunblade Linear restores the previous mux limits for both players");
+    }
+    lightgun_axes = {};
     for (const char* name : {"rchase2", "rchase2a"}) {
         const auto* target = database.find(name);
         check(target != nullptr, "Rail Chase revision exists");
@@ -2061,6 +2169,30 @@ int main()
             check(inputs.analog[axis] == expected,
                   "Rail Chase Linear restores the previous midpoint for each mux channel");
         }
+    }
+    libretro::SpecialAnalogOptions wide;
+    wide.widescreen_columns = 83;
+    for (s16 edge : {static_cast<s16>(-32768), static_cast<s16>(32767)}) {
+        lightgun_axes = {{{edge, edge}, {edge, edge}}};
+        runtime = {};
+        libretro::poll_input(inputs, *vcop, devices, runtime, true, state,
+                             libretro::GunInputMode::Lightgun);
+        const auto narrow_inputs = inputs;
+        libretro::poll_input(inputs, *vcop, devices, runtime, true, state,
+                             libretro::GunInputMode::Lightgun, true, {}, {}, true, false, wide);
+        check((edge < 0 ? inputs.gun_p1x < narrow_inputs.gun_p1x
+                        && inputs.gun_p2x < narrow_inputs.gun_p2x
+                       : inputs.gun_p1x > narrow_inputs.gun_p1x
+                        && inputs.gun_p2x > narrow_inputs.gun_p2x)
+                  && inputs.gun_p1y == narrow_inputs.gun_p1y
+                  && inputs.gun_p2y == narrow_inputs.gun_p2y
+                  && inputs.gun_offscreen == 0,
+              "Expanded gun travel reaches both side columns without offscreen reload or Y changes");
+        libretro::poll_input(inputs, *gunblade, devices, runtime, true, state,
+                             libretro::GunInputMode::Lightgun, true, {}, {}, true, false, wide);
+        check(inputs.analog[0] == (edge < 0 ? 0x5d : 0xff)
+                  && inputs.analog[1] == (edge < 0 ? 0x00 : 0xa3),
+              "Gunblade extrapolates end segments into widescreen and clamps the 8-bit ADC");
     }
     const auto* prototype = database.find("hotdp");
     for (s16 edge : {static_cast<s16>(-32768), static_cast<s16>(32767)}) {

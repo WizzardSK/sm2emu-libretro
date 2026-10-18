@@ -159,7 +159,7 @@ def expected_default(game: str, option: dict[str, object], native: str) -> str:
         ("manxtt", "cabinet_type"): "TWIN",
         ("motoraiddx", "cabinet_type"): "TWIN",
         ("overrev", "hardware_type"): "SEGA STCC",
-        ("sgt24h", "io_type"): "C",
+        ("sgt24h", "io_type"): "B",
         # LINK MAX is unavailable while LINK TYPE is NOT LINK. Its first real
         # selectable value is therefore the only meaningful option default.
         ("sgt24h", "link_max"): "2",

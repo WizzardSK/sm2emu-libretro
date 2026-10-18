@@ -126,12 +126,30 @@ calibrazione differenti dal preset non vengono sostituiti.
 Correzioni hardware selettive riprese dall'upstream 0.9.7 senza aggiornare la
 baseline completa: `b93e73c` lascia scollegati i canali analogici non dichiarati
 su Model 2A/2B/2C, affinché restituiscano il valore aperto `0xff`; il solo hunk
-Model 2B di `f415009` completa in ordine le scritture INTENA differite usate da
-`overrevb` e `overrevba`. Il bilanciamento dello stesso commit resta nel motore
+Model 2B di `f415009` completava in ordine le scritture INTENA differite usate da
+`overrevb` e `overrevba`; è stato poi sostituito dalla temporizzazione generale
+descritta sotto. Il bilanciamento dello stesso commit resta nel motore
 audio condiviso: `Model2Sound` conserva i coefficienti upstream e l'accessore
 neutrale `SoundBoard::set_audio_balance_enabled()` consente all'adattatore di
 ripristinare unity gain senza introdurre dipendenze Libretro nell'hardware.
 L'opzione globale non duplica la tabella e si applica a tutte le schede SCSP.
+
+Upstream `5ffe64f` now ends an i960 slice after an interrupt-mask write and
+commits the new mask two emulated cycles later on all four Model 2 boards. On
+Model 2B/C, interrupt requests already accepted under the mask continue to
+drive the CPU line until acknowledged. This replaces the Over Rev B/BA and
+Model 2C consecutive-write flushes. The slice-stop flags are transient: each
+machine clears its flag after the CPU slice, and the i960 resets its flag at
+the next run. The existing pending mask and deadline remain in the unchanged
+Save State layout. The frontend has
+no new option or callback. A focused ROM-free CPU check covers stopping on a
+bus write and resuming at the next instruction. At 1,200 frames, old and new
+Libretro Over Rev B runs have identical video, PCM and NVRAM hashes, and an old
+Save State produces identical 120-frame continuations in both cores. The new
+headless runner matches pristine upstream after `5ffe64f` for Over Rev B/BA
+(1,800 frames each) and one game on every board variant (300 frames each).
+These automated checks do not establish physical controller or RetroArch
+gameplay behavior.
 
 Il core i960 può correggere il rounding mode `00` secondo il manuale Intel:
 `roundr`, `roundrl`, `cvtri` e `cvtril` arrotondano al più vicino con gli exact
@@ -267,12 +285,13 @@ si applicano. Soltanto i campi NVRAM sono filtrati per gioco. I descrittori dei
 controlli devono sempre corrispondere al gioco caricato e una voce non
 applicabile non deve alterare altri profili.
 
-`Aspect Ratio` è una Core Option Video globale con default unico `Auto`.
-L'adattatore legge il tipo di cabinato dalla EEPROM attiva per le famiglie
-Indy 500 e STCC e comunica 4:3 o 16:9 al frontend con
-`RETRO_ENVIRONMENT_SET_GEOMETRY`; 4:3 e 16:9 restano override manuali. Questa
-logica appartiene all'adattatore perché riguarda la presentazione del frame,
-senza modificare renderer, macchina emulata o formato della NVRAM.
+`Aspect Ratio` is a global Video Core Option with `Auto` as its default.
+The adapter reads the active cabinet setting from EEPROM for Indy 500 and STCC,
+and I/O Type from backup RAM for Super GT 24h. Super GT 24h Type B uses 16:9;
+Types A and C use 4:3. The adapter reports the aspect through
+`RETRO_ENVIRONMENT_SET_GEOMETRY`; 4:3 and 16:9 remain manual overrides. This
+presentation logic belongs in the adapter because it concerns the displayed frame
+without changing NVRAM. With Widescreen Mode Disabled, the original rendering is preserved. The optional expansion described below can override the displayed ratio for non-native-capable games on hardware renderers.
 
 ## Controlli e preferenze da conservare
 
@@ -488,6 +507,17 @@ Standalone keeps the upstream transient presentation behavior across loads;
 only Libretro uses the reserved frontend extension. No emulated RAM is altered.
 See `Docs/UPSTREAM_GUN_FLASH_PACKAGE_2026-10-08.md`.
 
+The 2026-10-18 follow-up imports upstream `1d594ae4822a80d84d436488be971eb39953aaad`:
+Virtua Cop can raise the shot mask two frames after the trigger edge. The
+shared detector retains ages 0–2 and expires after that, preserving existing
+fades, disabled behavior and unmodified emulated RAM. The same four-byte
+presentation word now sets bit 10 to identify the age field in bits 11–12
+(0/1/2 active, 3 expired). Bit 2 retains the old preceding-press meaning for
+older readers. New readers accept legacy bit-2 history and zero-filled tails;
+legacy states cannot reconstruct an age they never stored. Other tail flags,
+archive format, ABI size and option contract are unchanged. See
+`Docs/VCOP_FLASH_TIMING_2026-10-18.md` for bounded replay evidence.
+
 ### Split Device Firmware and Power Sled — 2026-10-08
 
 Upstream `600f1c8` supplies Daytona/Desert Tank device-set metadata without
@@ -560,6 +590,24 @@ binding limitations or gameplay evidence justify it; exact equivalence of
 upstream response and rounding is not established.
 
 ## Drive Board and Rumble Reconciliation — 2026-10-08
+
+### Native board replies — 2026-10-18
+
+The Sega Rally port-D command replies from upstream `091bf6a` were already
+present. Model 2B/C now return the Indy-family EPR-18261 board's wheel ADC,
+status, DIP and centre replies on port D (`e700c39`); the last command remains
+the existing drive-board latch. The invalid historical centre `0xff` answers
+as neutral `0x80`. Original Model 2 Daytona returns its EPR-16488A replies on
+the Model 1 I/O board's IN2 port (`abf667c`). These are machine-side answers
+read by the game; they do not change the controller profile or gamepad rumble.
+
+The Indy centre is appended to the version-12 machine Save State payload.
+Version-11 images remain readable: the saved command is restored from the
+existing latch and the previously unavailable centre starts at `0x80`.
+ROM-free Model 2B/C checks exercise replies and both state versions. The
+Libretro rumble decoder continues to translate supported impacts to the
+frontend's strong/weak gamepad motors; continuous wheel torque has no equivalent
+in that interface and is not emitted as rumble.
 
 The neutral shared `src/osd/drive_command.*` decoder is imported verbatim from
 upstream `868dce7`, including preceding Daytona spring/Kick and Rally brake/chop
@@ -1073,7 +1121,7 @@ text-only correction. Usage meter remains 5% (integer-rounded).
 
 ### Upstream Gun Mapping Integration (2026-10-11)
 
-The shared AnalogChannel point schema/parser and standalone interpolation follow upstream `b4c0931`; Model 2C removes the old BEL calibration seed rather than retaining frontend-specific RAM overrides. The Libretro adapter adds optional RC2 and HOTDP mappings with Custom (SM2-Emu) default and Linear (MAME) selectable, as approved. These frontend selectors do not alter machine code. BEL initial-template calibration is generated separately from source provenance in `data/bel-calibration-defaults.json`; valid saves remain authoritative. See `Docs/GUN_MAPPING_INTEGRATION_2026-10-11.md`.
+The shared AnalogChannel point schema/parser and standalone interpolation follow upstream `b4c0931`; Model 2C removes the old BEL calibration seed rather than retaining frontend-specific RAM overrides. The Libretro adapter adds optional RC2 and HOTDP mappings with Custom (SM2-Emu) default and Linear (MAME) selectable, as approved. Gunblade NY now follows the same option convention: Custom uses the imported horizontal point tables and vertical `0x1d–0xa4` range; Linear restores the prior straight-line X mapping and vertical `0x11–0xae` range for both players. These frontend selectors do not alter machine code. BEL initial-template calibration is generated separately from source provenance in `data/bel-calibration-defaults.json`; valid saves remain authoritative. See `Docs/GUN_MAPPING_INTEGRATION_2026-10-11.md`.
 
 ### Country Default Priority (2026-10-11)
 
@@ -1134,6 +1182,69 @@ unchanged gameplay bindings and Controls listing only None/current profile. The
 owned process exits 0 with no residuals; no physical-controller test is claimed.
 See `Docs/CONTROLLER_PROFILE_TYPE_FRAMEWORK_INTERCHANGE_2026-10-12.md`.
 
+## Selective Upstream Video And Geometry Imports — 2026-10-18
+
+`05acaf9` moves System 24 tilemap visibility to a VBlank snapshot on all four
+Model 2 board variants. The emulated machines retain live Tile RAM for CPU
+access, while software video, OpenGL and Vulkan consume the same latched bytes.
+The GPU tilemap passes use the latched snapshot generation for uploads; their
+previous live-write generation would expose changes before VBlank. Loading a
+machine Save State refreshes the snapshot from restored RAM without changing
+the serialized format. The shot-flash check now advances the VBlank latch when
+its synthetic test writes Tile RAM.
+
+`e7692b6` changes geometrizer opcode `0x1a` to the upstream one-word no-op,
+preserving command-stream alignment in Last Bronx. These are selective imports;
+they do not advance the reconciled upstream release baseline. Software ABI
+smokes, Save State round-trips and matching pristine-upstream headless runs
+passed for `pltkids` and `lastbrnx`. The Pilot Kids capture shows `CREDIT: 1`,
+and the Last Bronx capture reaches character select. A separate Vulkan host
+attempt failed during context initialization (`Vulkan result -9`), before any
+rendering; GPU and interactive RetroArch visual confirmation remain distinct.
+See `PORTING_PLAN.md` for the other 0.9.45–0.9.51 candidates.
+
+### Super GT 24h Pedal I/O Type — 2026-10-18
+
+Super GT 24h uses the common Sequential + VR2 controller profile: View 1 and
+View 2 are independent native inputs on IN1 bits 0x01 and 0x02. Both remain
+mapped for every I/O TYPE, although the game uses only View 1 with Type C.
+This corrects the earlier VR1-only catalog entry without changing the pedal
+calibration or operator selection.
+
+The full `games.xml` from `upstream/main` at `ac373ee` is the catalog baseline.
+It adds `drive_board="true"` and `drive_protocol="indy"` for this title, so the
+existing Indy decoder can handle native A/B drive-board commands. The upstream
+single-view declaration remains overridden by the approved VR2 mapping above.
+
+The frontend continues to supply the approved reversed pedal ADC values and
+independent output ranges. The Model 2B I/O mux now adapts only Super GT 24h's
+accelerator and brake to the game's active native I/O TYPE: C reads those bytes
+directly, while A and B read their complementary polarity. Blank/invalid
+backup-RAM I/O TYPE becomes native A, matching upstream `83c6690` and the test
+menu. The initial and operator default is B; valid saved NVRAM and user-selected
+A/B/C remain authoritative. `Aspect Ratio: Auto` presents B at 16:9 and A/C at
+4:3. No new Core Option or frontend curve was added. The machine/renderer Save
+State layout is unchanged.
+
+The real I/O-mux check covers A/B/C, both pedals and an unaffected Model 2B
+title. The existing C Software ABI result, PCM and NVRAM are unchanged; an A
+selection persists through the NVRAM Settings writer. Fresh headless startup
+matches pristine upstream at `83c6690` for video, PCM, NVRAM, cycles and CPU
+state. On 2026-10-18 the user confirms the preceding Super GT 24h gameplay
+tests, including A/B driving response, successful. Operator qualification is
+closed; these user results are distinct from the automated I/O-mux checks.
+
+The imported XML also contains upstream `<outputs>` and `side_fill` metadata.
+The port does not consume `<outputs>`; the optional widescreen composition now
+consumes `side_fill`. Its gun coordinate tables,
+including Gunblade NY and Rail Chase 2, are active through the existing parser
+and approved RC2 selector. The only catalog divergences retained are the
+port-supported Daytona GTX set, Power Sled's reconstructed/link fixes, Super
+GT's VR2 mapping and STCC's continuous-force rumble adaptation. This XML import
+alone does not advance the advertised upstream version.
+Ski Super G's upstream `<outputs>` addition publishes Credits; its existing
+Inclining/Swing channels already matched upstream and are unchanged here.
+
 ## Daytona GTX Banked Protection — 2026-10-12
 
 `daytona-gtx` is a frontend-neutral Model2Original protection mode derived from
@@ -1162,3 +1273,48 @@ Resume or restart; the process exits 0. Legacy frontends without this callback
 retain the return-to-game refresh. Gameplay polling still follows the selected
 option when emulation runs; no machine reset or state change is introduced.
 Private evidence: `build-libretro-gpu/validation/controller-profile-type-20261012/menu-refresh/`.
+
+
+### Widescreen Mode — 2026-10-18
+
+Video places Widescreen Mode immediately after Aspect Ratio. The saved values
+are `stretch` (displayed Disabled; default) and `expand_3d` (Expand 3D View Only).
+The disabled choice preserves the existing frontend aspect behavior, including
+full-image stretch when 16:9 is selected. On Vulkan/OpenGL/GLES, Expand directly
+reports 16:9 and adds 83 native columns on each side (662×384 before scaling),
+when Aspect Ratio is Auto or 16:9; forced 4:3 suppresses expansion. It does not rewrite that saved selection;
+disabling expansion restores its authority. Software and the native-widescreen
+families Indy 500, STCC and Super GT 24h retain their prior behavior, including
+Auto, cabinet/Service Menu settings and manual overrides.
+
+Upstream `338ce10` supplies the shared geometry/visibility changes, panorama
+tracker, side-fill metadata, GPU composition and expanded gun travel. The
+adapter retains explicit off-screen status, selectable gun curves, tile RAM
+VBlank latching and frontend-owned graphics contexts. HUD layers retain native
+proportions; background sides use the upstream per-game panorama/cache/mirror
+or black rules. This is not a Stretch 2D mode. The option remains visible for
+all games and is inert with Software or native-capable families. Changes apply
+on return to game without resetting the machine or reloading content. Existing
+state payload layouts remain unchanged. See
+`Docs/WIDESCREEN_MODE_INTEGRATION_2026-10-18.md` for verification and limits.
+
+## Sequential Four-Speed Neutral Interval — 2026-10-18
+
+User-approved adaptation of upstream `0ab3b02d0429794d60d097fd5ae9378333ba227c`.
+Input option `sm2_gear_shift_neutral_time` is always visible, with 0–500 ms
+in 10 ms steps, default/fallback 100. It applies only to four-speed profiles
+and their clones; other inputs are unchanged. Hardware device ownership stays
+with the frontend. An edge-triggered Shift Up/Down between nonzero gears
+retains the destination gear and emits neutral for ceil(ms*57.5245/1000)
+native frames, matching upstream rounding; held input does not repeat. Direct
+positions/Neutral cancel the timer and take precedence over step buttons.
+Zero also cancels a pending timer. Changes apply on Resume without reset;
+nonzero values affect subsequent steps. Native two-button shifters are unchanged.
+
+InputRuntime retains the remaining frame count. The existing frontend tail's
+first flags word (offset 16) uses formerly zero bits 8–12 for 0–29 remaining
+frames. State size/version and machine archives do not change. Old states load
+with no pending interval; machine reset clears it. Readers from before this
+feature cannot reproduce a pending interval in a newer state. No new public
+cross-version or cross-platform state guarantee is introduced. See
+`Docs/GEAR_SHIFT_NEUTRAL_TIME_2026-10-18.md` for verification and boundaries.
