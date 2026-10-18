@@ -84,6 +84,25 @@ Experimental Power Sled features reconstruct missing behavior; they do not
 represent a verified dump of the original Master board. Existing saves take
 precedence over first-boot defaults.
 
+## Current `main` since 0.9.44.0
+
+The development branch includes changes made after the latest packaged release:
+
+- Preliminary Daytona USA GTX 2004 Edition support, including its banked
+  protection and reviewed initial NVRAM setup. A bounded RetroArch test reached
+  a race; full-game and linked-play qualification are not claimed.
+- The shared two-option networking model: **Linked Cabinets** controls external
+  cabinet count, while **Auto Network Role Settings** selects the native role
+  and game identity independently. With external linking disabled, this Model 2
+  port keeps the upstream communication board in local loopback.
+- **Controller Profile Type** selects Normal or Normal + Test/Service globally;
+  the latter is the default. The Core Options menus use the reviewed Framework
+  wording and functional order.
+
+See the [roadmap](PORTING_PLAN.md) and [network review](Docs/NETWORK_TWO_OPTION_2026-10-17.md)
+for status, verification scope and limitations. These changes are in source on
+`main`; the download link above still points to the latest packaged release.
+
 ## Platform notes
 
 | Platform | Release target | Notes |
