@@ -261,6 +261,7 @@ void Model2::reset()
     m_intreq = 0;
     m_intena = 0;
     m_pending_intena_valid = false;
+    m_intena_written       = false;
     m_timers.fill(Timer{});
 
     m_videocontrol = 0;
@@ -401,6 +402,9 @@ void Model2::run_frame()
             // constantly. Nothing would be lost, but the host would spend the
             // time halted.
             target = std::min(target, m_cycles + kCoproInterleave);
+            if (m_pending_intena_valid) {
+                target = std::min(target, std::max(m_pending_intena_cycle, m_cycles + 1));
+            }
 
             const s32 slice = static_cast<s32>(std::min<u64>(target - m_cycles, 1u << 20));
             s32 used;
@@ -409,6 +413,11 @@ void Model2::run_frame()
                 used = m_cpu.run(slice);
             }
             m_cycles += static_cast<u64>(used);
+            if (m_intena_written) {
+                // The slice ended on the write, so this is when it happened.
+                m_intena_written       = false;
+                m_pending_intena_cycle = m_cycles + 2;
+            }
             {
                 CoreScope scope(m_core_profile, m_core_profile.copro_ns);
                 step_copro(static_cast<u32>(used > 0 ? used : 0));
@@ -538,6 +547,7 @@ void Model2::service_timers()
 
 void Model2::on_vblank_start()
 {
+    m_video.latch_tile_ram();
     // The geometry engine starts a new frame here. Bit 0 of the video control
     // register selects 30 Hz geometry, in which case it runs on even frames only
     // and the renderer shows the previous result again.
@@ -1195,6 +1205,8 @@ void Model2::register_write(u32 address, u32 value, u32 width)
             m_pending_intena       = value;
             m_pending_intena_cycle = m_cycles + 2;
             m_pending_intena_valid = true;
+            m_intena_written       = true;
+            m_cpu.end_slice();
         }
         return;
     }
@@ -1589,7 +1601,6 @@ void Model2::note_video_write(const Window& w, u32 width)
             ++m_table_generation;
             return;
         case Notify::TileRam:
-            m_video.tiles().note_tile_write(w.offset, width);
             ++m_tile_generation;
             return;
         case Notify::CharRam:
@@ -1768,6 +1779,9 @@ void Model2::serialize(Archive& ar)
     ar.bytes(m_scratch_ram.data(), m_scratch_ram.size());
     ar.bytes(m_buffer_ram.data(), m_buffer_ram.size());
     ar.bytes(m_tile_ram.data(), m_tile_ram.size());
+    if (ar.loading()) {
+        m_video.latch_tile_ram();
+    }
     ar.bytes(m_char_ram.data(), m_char_ram.size());
     ar.bytes(m_palette_ram.data(), m_palette_ram.size());
     ar.bytes(m_colorxlat.data(), m_colorxlat.size());

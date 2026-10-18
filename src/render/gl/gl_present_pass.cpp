@@ -35,9 +35,10 @@ PresentPass::~PresentPass()
     shutdown();
 }
 
-bool PresentPass::init(u32 render_scale)
+bool PresentPass::init(u32 render_scale, u32 width)
 {
     m_render_scale = render_scale;
+    m_native_width = width;
     return create_target() && create_program();
 }
 

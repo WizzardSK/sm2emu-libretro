@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <cstring>
 
 namespace sm2::hw {
 namespace {
@@ -66,10 +67,35 @@ void Model2Video::attach(std::span<const u8>  tile_ram,
                          std::span<const u16> palette_ram,
                          std::span<const u16> colour_translate)
 {
-    m_tiles.attach(tile_ram, char_ram);
+    m_tile_ram_live = tile_ram;
+    m_tile_ram_shown.assign(tile_ram.begin(), tile_ram.end());
+    ++m_tile_ram_shown_generation;
+    m_tiles.attach(m_tile_ram_shown, char_ram);
     m_palette_ram      = palette_ram;
     m_colour_translate = colour_translate;
     refresh_pens();
+}
+
+void Model2Video::latch_tile_ram()
+{
+    const usize size = std::min(m_tile_ram_live.size(), m_tile_ram_shown.size());
+    bool changed = false;
+    for (usize at = 0; at + 8 <= size; at += 8) {
+        u64 live, shown;
+        std::memcpy(&live, m_tile_ram_live.data() + at, 8);
+        std::memcpy(&shown, m_tile_ram_shown.data() + at, 8);
+        if (live == shown) {
+            continue;
+        }
+        for (usize word = at; word < at + 8; word += 2) {
+            if (std::memcmp(m_tile_ram_live.data() + word, m_tile_ram_shown.data() + word, 2) != 0) {
+                m_tiles.note_tile_write(static_cast<u32>(word), 2);
+            }
+        }
+        std::memcpy(m_tile_ram_shown.data() + at, &live, 8);
+        changed = true;
+    }
+    if (changed) ++m_tile_ram_shown_generation;
 }
 
 void Model2Video::reset()
@@ -157,31 +183,37 @@ void Model2Video::build_tone_curve(std::span<u32> out) const
 
 Model2Video::GunFlashState Model2Video::gun_flash_state() const
 {
-    return {m_triggers_held, m_trigger_pressed, m_window_mask_a_full,
+    return {m_triggers_held, m_frames_since_press, m_window_mask_a_full,
             m_tiles.window_mask_a_hidden()};
 }
 
 void Model2Video::set_gun_flash_state(const GunFlashState& state)
 {
     m_triggers_held = static_cast<u8>(state.triggers_held & 0x03);
-    m_trigger_pressed = state.trigger_pressed;
+    m_frames_since_press = state.frames_since_press;
     m_window_mask_a_full = state.window_mask_full;
     m_tiles.set_window_mask_a_hidden(state.hidden);
 }
 
 void Model2Video::filter_gun_flash(bool enabled, u8 in1)
 {
-    const u8   held    = static_cast<u8>(~in1 & 0x03);
-    const bool pressed = (held & ~m_triggers_held) != 0;
-    const bool full    = m_tiles.window_mask_a_full();
+    // Virtua Cop's flash lands up to two frames after the press.
+    constexpr u8 kFlashLatency = 2;
+
+    const u8   held = static_cast<u8>(~in1 & 0x03);
+    const bool full = m_tiles.window_mask_a_full();
+    if ((held & ~m_triggers_held) != 0) {
+        m_frames_since_press = 0;
+    } else if (m_frames_since_press <= kFlashLatency) {
+        ++m_frames_since_press;
+    }
 
     // A flash shows the front tilemap pair's window over the whole screen for one
     // frame after a shot. Fades hold the same mask, so one already up is left alone.
     m_tiles.set_window_mask_a_hidden(enabled && full && !m_window_mask_a_full
-                                     && (pressed || m_trigger_pressed));
+                                     && m_frames_since_press <= kFlashLatency);
 
-    m_triggers_held      = held;
-    m_trigger_pressed    = pressed;
+    m_triggers_held = held;
     m_window_mask_a_full = full;
 }
 

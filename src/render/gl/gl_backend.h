@@ -62,6 +62,7 @@ public:
     void submit_native_frame(std::span<const u32> pixels) override;
     [[nodiscard]] bool request_capture() override;
     [[nodiscard]] bool save_capture(const std::string& path) const override;
+    void set_widescreen(u32 columns, u32 wide_background) override;
     void blit_to_swapchain() override;
     void begin_overlay_frame() override;
     void draw_overlay(bool active) override;
@@ -79,7 +80,7 @@ public:
         return m_context.device_name().c_str();
     }
 
-    [[nodiscard]] u32          native_width() const override { return PresentPass::kWidth; }
+    [[nodiscard]] u32          native_width() const override { return m_present.native_width(); }
     [[nodiscard]] u32          native_height() const override { return PresentPass::kHeight; }
     [[nodiscard]] NativeFormat native_format() const override
     {
@@ -103,6 +104,7 @@ private:
     /// Internal 3D render scale (1..kMaxRenderScale). Stored from the config;
     /// at 1 every target is native size and nothing behaves differently.
     u32 m_render_scale = 1;
+    u32 m_columns = 0;
 };
 
 }  // namespace sm2::render::gl

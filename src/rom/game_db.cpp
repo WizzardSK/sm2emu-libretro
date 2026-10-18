@@ -139,6 +139,15 @@ namespace {
     return false;
 }
 
+[[nodiscard]] bool parse_side_fill(std::string_view text, SideFill* out)
+{
+    if (text == "mirror")     { *out = SideFill::Mirror;    return true; }
+    if (text == "black")      { *out = SideFill::Black;     return true; }
+    if (text == "menu")       { *out = SideFill::Menu;      return true; }
+    if (text == "pillarbox")  { *out = SideFill::Pillarbox; return true; }
+    return false;
+}
+
 /// Names match MAME's ioport tags for these controls, lowercased, so a reader
 /// can grep either source for the same word.
 [[nodiscard]] bool parse_analog_control(std::string_view text, AnalogControl* out)
@@ -365,6 +374,13 @@ bool GameDatabase::load(const std::string& path)
             && !parse_protection(protection_attribute.value(), &game.protection)) {
             SM2_ERROR("%s: unrecognised protection '%s'", context.c_str(),
                       protection_attribute.value());
+            return false;
+        }
+
+        const pugi::xml_attribute side_fill_attribute = game_node.attribute("side_fill");
+        if (side_fill_attribute && !parse_side_fill(side_fill_attribute.value(), &game.side_fill)) {
+            SM2_ERROR("%s: unrecognised side_fill '%s'", context.c_str(),
+                      side_fill_attribute.value());
             return false;
         }
 
@@ -788,6 +804,7 @@ bool GameDatabase::merge_clones(const std::set<std::string>& board_inherited)
         if (game.start_gear == 1)      { game.start_gear = parent.start_gear; }
         if (game.texture_wait == 0)    { game.texture_wait = parent.texture_wait; }
         if (!game.shift_buttons)       { game.shift_buttons = parent.shift_buttons; }
+        if (game.side_fill == SideFill::Mirror) { game.side_fill = parent.side_fill; }
         if (!game.drive_board)         { game.drive_board = parent.drive_board; }
         if (game.drive_protocol == DriveProtocol::Daytona) {
             game.drive_protocol = parent.drive_protocol;

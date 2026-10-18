@@ -60,6 +60,15 @@ public:
 
     void reset();
 
+    /// Take the tile RAM the display reads from. The beam scans the map during
+    /// the picture, so a game writing through vblank and into the next frame's
+    /// first lines still shows whole; call this at the start of vblank.
+    void latch_tile_ram();
+
+    /// The tile RAM as last latched.
+    [[nodiscard]] std::span<const u8> tile_ram_shown() const { return m_tile_ram_shown; }
+    [[nodiscard]] u64 tile_ram_shown_generation() const { return m_tile_ram_shown_generation; }
+
     [[nodiscard]] Segaic24Tile& tiles() { return m_tiles; }
     [[nodiscard]] const Segaic24Tile& tiles() const { return m_tiles; }
 
@@ -80,7 +89,7 @@ public:
     // Presentation history, kept outside the emulated machine archive.
     struct GunFlashState {
         u8 triggers_held = 0;
-        bool trigger_pressed = false;
+        u8 frames_since_press = 0xff;
         bool window_mask_full = false;
         bool hidden = false;
     };
@@ -177,8 +186,12 @@ private:
 
     Segaic24Tile m_tiles;
 
+    std::span<const u8> m_tile_ram_live;
+    std::vector<u8>     m_tile_ram_shown;
+    u64                 m_tile_ram_shown_generation = 0;
+
     u8   m_triggers_held      = 0;
-    bool m_trigger_pressed    = false;
+    u8   m_frames_since_press = 0xff;
     bool m_window_mask_a_full = false;
 
     std::span<const u16> m_palette_ram;

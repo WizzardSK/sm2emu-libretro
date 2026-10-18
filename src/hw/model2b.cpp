@@ -134,6 +134,20 @@ constexpr u32 kFramebufferB    = 0x11680000;  // 512 KB
     return folded >= base && folded < base + size;
 }
 
+/// Super GT 24h leaves I/O TYPE untouched when formatting blank backup RAM.
+/// Values outside the native table must become A before the game reads pedals.
+void repair_sgt24h_io_type(std::span<u8> nvram)
+{
+    constexpr usize kIoType = 0x0a;
+    if (nvram.size() <= kIoType + 1) return;
+    const u32 io_type = static_cast<u32>(nvram[kIoType])
+                      | (static_cast<u32>(nvram[kIoType + 1]) << 8);
+    if (io_type <= 4) return;
+    nvram[kIoType] = 0x01;
+    nvram[kIoType + 1] = 0x00;
+    SM2_INFO("sgt24h: the I/O TYPE in the backup RAM was %04X, no type; set to A", io_type);
+}
+
 }  // namespace
 
 // ===========================================================================
@@ -176,6 +190,54 @@ void CoproSharc::reset()
     m_cpu.set_flag_input(1, 0);
 }
 
+// The test loads the limit as an immediate, "R13 = -248.0" and four words on
+// "R13 = 248.0", each followed by a compare against the projected x. A loaded
+// state may hold the widened pair, so the scan matches the shape, not 248.
+void CoproSharc::find_view_tests()
+{
+    constexpr u32 kProgramStart = 0x20000;
+    constexpr u32 kProgramEnd   = 0x28000;
+    constexpr u64 kLoadR13      = 0x0f0d00000000ull;
+    constexpr u64 kOpcodeMask   = 0xffff00000000ull;
+
+    m_view_tests.clear();
+    for (u32 address = kProgramStart; address + 4 < kProgramEnd; ++address) {
+        const u64 minus = m_cpu.program_word(address);
+        const u64 plus  = m_cpu.program_word(address + 4);
+        if ((minus & kOpcodeMask) != kLoadR13 || (minus ^ plus) != 0x80000000ull) {
+            continue;
+        }
+        float limit = 0.0F;
+        const u32 bits = static_cast<u32>(plus & 0xffffffffull);
+        std::memcpy(&limit, &bits, sizeof(limit));
+        if (limit >= static_cast<float>(kScreenHalfWidth)
+            && limit <= static_cast<float>(kScreenHalfWidth + 256)) {
+            m_view_tests.push_back(address);
+        }
+    }
+    if (!m_view_tests.empty()) {
+        SM2_INFO("copro_sharc: %zu screen-width test(s) in the program", m_view_tests.size());
+    }
+}
+
+void CoproSharc::apply_view_half_width()
+{
+    const float half = static_cast<float>(m_view_half_width);
+    u32         plus = 0;
+    std::memcpy(&plus, &half, sizeof(plus));
+    const u32 minus = plus | 0x80000000u;
+    for (const u32 address : m_view_tests) {
+        m_cpu.set_program_word(address, 0x0f0d00000000ull | minus);
+        m_cpu.set_program_word(address + 4, 0x0f0d00000000ull | plus);
+    }
+}
+
+void CoproSharc::set_view_half_width(u32 pixels)
+{
+    m_view_half_width = pixels;
+    apply_view_half_width();
+}
+
 void CoproSharc::serialize(Archive& ar)
 {
     // The SHARC keeps its program on-chip, so its serialize covers the SRAM; no
@@ -187,6 +249,10 @@ void CoproSharc::serialize(Archive& ar)
     m_fifo_out.serialize(ar);
     ar.raw(m_control);
     ar.raw(m_upload_count);
+    if (ar.loading()) {
+        find_view_tests();
+        apply_view_half_width();
+    }
 }
 
 s32 CoproSharc::run(s32 cycles)
@@ -213,6 +279,8 @@ void CoproSharc::control_write(u32 value)
             // NOT reset the core: a reset would clear the on-chip SRAM banks
             // that the microcode was just DMA'd into.
             m_cpu.set_halted(false);
+            find_view_tests();
+            apply_view_half_width();
         }
     }
     m_control = value;
@@ -350,6 +418,7 @@ bool Model2B::init(const rom::GameSpec& game, rom::RomSet roms)
     // i960 instruction fetch straight from ROM and work RAM (the hot_read windows).
     m_cpu.bind_fetch_window(0, kRomMainCpu, m_rom_maincpu.data(), m_rom_maincpu.size(), 0x200000);
     m_cpu.bind_fetch_window(1, kWorkRam, m_work_ram.data(), m_work_ram.size(), 0x100000);
+    find_view_tests();
     m_scratch_ram.assign(0x40000, 0);
     m_buffer_ram.assign(0x20000 / 4, 0);
     m_tile_ram.assign(0x10000, 0);
@@ -422,6 +491,7 @@ void Model2B::reset()
     m_intreq = 0;
     m_intena = 0;
     m_pending_intena_valid = false;
+    m_intena_written = false;
     m_timers.fill(Timer{});
 
     m_videocontrol = 0;
@@ -487,12 +557,17 @@ void Model2B::reset()
     m_io.set_input(6, [this] { return m_inputs.dipswitches; });
     for (u32 channel = 0; channel < Io315_5649::kAnalogCount; ++channel) {
         if (m_game.analog[channel].control != rom::AnalogControl::None) {
-            m_io.set_analog(channel, [this, channel] { return m_inputs.analog[channel]; });
+            m_io.set_analog(channel, [this, channel] { return analog_value(channel); });
         }
     }
 
     if (m_game.drive_board) {
         m_io.set_output(4, [this](u8 value) { drive_board_write(value); });
+        if (m_game.drive_protocol == rom::DriveProtocol::Indy) {
+            m_drive_board_latch = 0;
+            m_indy_reply = {};
+            m_io.set_input(3, [this] { return m_indy_reply.read(steering_value()); });
+        }
     }
 
     // Power Sled reads IN3 on port E, where other 2B cabinets have an output.
@@ -530,6 +605,9 @@ void Model2B::run_frame()
             u64 target = std::min(line_end, next_timer_deadline());
             if (target <= m_cycles) target = m_cycles + 1;
             target = std::min(target, m_cycles + kCoproInterleave);
+            if (m_pending_intena_valid) {
+                target = std::min(target, std::max(m_pending_intena_cycle, m_cycles + 1));
+            }
 
             const s32 slice = static_cast<s32>(std::min<u64>(target - m_cycles, 1u << 20));
             s32 used;
@@ -538,6 +616,10 @@ void Model2B::run_frame()
                 used = m_cpu.run(slice);
             }
             m_cycles += static_cast<u64>(used);
+            if (m_intena_written) {
+                m_intena_written = false;
+                m_pending_intena_cycle = m_cycles + 2;
+            }
             {
                 CoreScope scope(m_core_profile, m_core_profile.copro_ns);
                 step_copro(static_cast<u32>(used > 0 ? used : 0));
@@ -628,6 +710,7 @@ void Model2B::service_timers()
 
 void Model2B::on_vblank_start()
 {
+    m_video.latch_tile_ram();
     if ((m_videocontrol & 1) == 0 || (m_frames & 1) == 0) {
         m_geometry.set_read_start_address(m_geo_read_start_address);
         // The CRTC sync registers move the projected image relative to the
@@ -658,7 +741,8 @@ void Model2B::raise_interrupt(u32 line)
 
 void Model2B::irq_update()
 {
-    const u32 active = m_intreq & m_intena;
+    // Interrupt requests were gated by the mask when they were latched.
+    const u32 active = m_intreq;
     m_cpu.set_irq_line(cpu::i960::I960_IRQ0,
                        (active & 0x0001) != 0 ? cpu::i960::kAssertLine
                                               : cpu::i960::kClearLine);
@@ -735,9 +819,39 @@ void Model2B::io_port_a_write(u8 value)
 
 void Model2B::lamp_output_w(u8 /*value*/) {}
 
+u8 Model2B::analog_value(u32 channel) const
+{
+    // Type C uses the reversed values declared in games.xml. A and B expect
+    // the complementary polarity, never zero (the native 256 - raw result
+    // overflows to a released byte at zero). Treat uninitialized RAM as A.
+    const u8 value = m_inputs.analog[channel];
+    const rom::AnalogControl control = m_game.analog[channel].control;
+    if ((m_game.name != "sgt24h" && m_game.parent != "sgt24h")
+        || (control != rom::AnalogControl::Accel && control != rom::AnalogControl::Brake)
+        || m_nvram.size() < 0x0c) {
+        return value;
+    }
+    const bool set_up = m_nvram[0x00] == 0x85 && m_nvram[0x01] == 0xad;
+    const u32 io_type = static_cast<u32>(m_nvram[0x0a])
+                      | (static_cast<u32>(m_nvram[0x0b]) << 8);
+    if (set_up && io_type == 0) return value;
+    return std::max<u8>(static_cast<u8>(0xff - value), 0x01);
+}
+
+u8 Model2B::steering_value() const
+{
+    for (usize channel = 0; channel < m_game.analog.size(); ++channel) {
+        if (m_game.analog[channel].control == rom::AnalogControl::Steer) {
+            return m_inputs.analog[channel];
+        }
+    }
+    return 0x80;
+}
+
 void Model2B::drive_board_write(u8 value)
 {
     m_drive_board_latch = value;
+    if (m_game.drive_protocol == rom::DriveProtocol::Indy) m_indy_reply.write(value);
     record_drive_board_write(value);
 }
 
@@ -1135,20 +1249,13 @@ void Model2B::register_write(u32 address, u32 value, u32 width)
             m_intreq &= value;
             irq_update();
         } else {
-            // The Model 2B Over Rev sound driver acknowledges one timer IRQ with
-            // three writes. It needs the preceding delayed write serviced before
-            // the next one replaces it, otherwise sound eventually stalls.
-            if ((m_game.name == "overrevb" || m_game.name == "overrevba")
-                && m_pending_intena_valid) {
-                m_intena = m_pending_intena;
-                m_pending_intena_valid = false;
-                sound_ready_w();
-                irq_update();
-                service_timers();
-            }
+            // Process the delayed mask at its actual deadline, before the CPU
+            // can execute another mask write in the same slice.
             m_pending_intena       = value;
             m_pending_intena_cycle = m_cycles + 2;
             m_pending_intena_valid = true;
+            m_intena_written       = true;
+            m_cpu.end_slice();
         }
         return;
     }
@@ -1473,7 +1580,6 @@ void Model2B::note_video_write(const Window& w, u32 width)
             ++m_table_generation;
             return;
         case Notify::TileRam:
-            m_video.tiles().note_tile_write(w.offset, width);
             ++m_tile_generation;
             return;
         case Notify::CharRam:
@@ -1570,7 +1676,12 @@ void Model2B::seed_eeprom_from_rom()
 
 void Model2B::load_nvram()
 {
-    if (m_nvram_directory.empty() || m_game.name.empty()) return;
+    if (m_game.name.empty()) return;
+    const bool sgt24h = m_game.name == "sgt24h" || m_game.parent == "sgt24h";
+    if (m_nvram_directory.empty()) {
+        if (sgt24h) repair_sgt24h_io_type(m_nvram);
+        return;
+    }
     // A set can ship power-on images for both, and MAME applies those before it
     // reads any saved file. Do the same, so a saved image still wins.
     (void)apply_default_image(m_roms.region("backup1"), m_nvram);
@@ -1592,6 +1703,7 @@ void Model2B::load_nvram()
         }
     }
 
+    if (sgt24h) repair_sgt24h_io_type(m_nvram);
     (void)m_eeprom.load((base / (m_game.name + ".eeprom")).string());
 }
 
@@ -1644,6 +1756,9 @@ void Model2B::serialize(Archive& ar)
     ar.bytes(m_scratch_ram.data(), m_scratch_ram.size());
     ar.bytes(m_buffer_ram.data(), m_buffer_ram.size());
     ar.bytes(m_tile_ram.data(), m_tile_ram.size());
+    if (ar.loading()) {
+        m_video.latch_tile_ram();
+    }
     ar.bytes(m_char_ram.data(), m_char_ram.size());
     ar.bytes(m_palette_ram.data(), m_palette_ram.size());
     ar.bytes(m_colorxlat.data(), m_colorxlat.size());
@@ -1684,6 +1799,12 @@ void Model2B::serialize(Archive& ar)
     ar.raw(m_pending_intena_valid);
     ar.raw(m_copro_debt);
     ar.raw(m_inputs);
+    if (ar.format_version() >= 12) {
+        ar.raw(m_indy_reply.centre);
+    } else if (ar.loading()) {
+        m_indy_reply.centre = 0x80;
+    }
+    if (ar.loading()) m_indy_reply.command = m_drive_board_latch;
 }
 
 bool Model2B::save_state(const std::string& path) const
@@ -1730,6 +1851,62 @@ bool Model2B::load_state(const u8* data, usize size)
     m_palette_dirty = true;
     m_render_list.clear();
     return true;
+}
+
+// The AM2 library classifies a projected point against the screen with an
+// outcode: "lda -248.0; cmpr; bg; setbit 0; lda 248.0; cmpr; bl; setbit 1",
+// then culls objects whose points all fall off the same side. A wider picture
+// needs the wider limits in those tests, so they are found by shape and the
+// immediates rewritten in place.
+void Model2B::find_view_tests()
+{
+    constexpr u32 kLdaImmediate     = 0x8c003000;
+    constexpr u32 kLdaImmediateMask = 0xff07ffff;
+    constexpr u32 kMinusHalf        = 0xc3780000;  // -248.0f
+    constexpr u32 kPlusHalf         = 0x43780000;  //  248.0f
+
+    const auto word = [&](u32 address) {
+        u32 value = 0;
+        if (address + 4 <= m_rom_maincpu.size()) {
+            std::memcpy(&value, m_rom_maincpu.data() + address, 4);
+        }
+        return value;
+    };
+    const auto setbit = [&](u32 address, u32 bit) {
+        const u32 value = word(address);
+        return (value >> 24) == 0x58 && (value & 0xff) == bit;
+    };
+
+    m_view_tests.clear();
+    for (u32 address = 0; address + 40 <= m_rom_maincpu.size(); address += 4) {
+        const u32 lda = word(address);
+        if ((lda & kLdaImmediateMask) != kLdaImmediate || word(address + 4) != kMinusHalf) {
+            continue;
+        }
+        if (word(address + 20) == lda && word(address + 24) == kPlusHalf
+            && setbit(address + 16, 0x80) && setbit(address + 36, 0x81)) {
+            m_view_tests.push_back(address);
+        }
+    }
+    if (!m_view_tests.empty()) {
+        SM2_INFO("model2b: %zu screen-edge test(s) in the program", m_view_tests.size());
+    }
+}
+
+void Model2B::set_widescreen(u32 columns)
+{
+    m_geometry.set_widescreen(columns);
+    m_copro.set_view_half_width(CoproSharc::kScreenHalfWidth + columns);
+
+    const float half = static_cast<float>(CoproSharc::kScreenHalfWidth + columns);
+    u32         plus = 0;
+    std::memcpy(&plus, &half, sizeof(plus));
+    const u32 minus = plus | 0x80000000u;
+    u8* const rom   = const_cast<u8*>(m_rom_maincpu.data());
+    for (const u32 address : m_view_tests) {
+        std::memcpy(rom + address + 4, &minus, 4);
+        std::memcpy(rom + address + 24, &plus, 4);
+    }
 }
 
 }  // namespace sm2::hw

@@ -94,6 +94,24 @@ bool GlBackend::init(osd::Window& window, const BackendConfig& config)
     return true;
 }
 
+void GlBackend::set_widescreen(u32 columns, u32 wide_background)
+{
+    m_tilemaps.set_wide_below(wide_background);
+    if (columns == m_columns) {
+        return;
+    }
+    // GL is synchronous, so the 2D surfaces and the native frame can be
+    // recreated at their new width straight away.
+    m_present.shutdown();
+    m_tilemaps.shutdown();
+    m_columns = columns;
+    if (!m_tilemaps.init(m_columns) || !m_present.init(m_render_scale, frame_width(m_columns))) {
+        SM2_ERROR("gl: could not resize the native frame for widescreen");
+    }
+    m_tilemaps.set_wide_below(wide_background);
+    m_polygons.set_width(frame_width(m_columns));
+}
+
 void GlBackend::shutdown()
 {
     m_present.shutdown();
@@ -109,6 +127,7 @@ Capabilities GlBackend::capabilities() const
     caps.compute_shaders = true;
     // No GPU timer queries wired up yet (GL_TIME_ELAPSED could be added later).
     caps.gpu_timing = false;
+    caps.widescreen = true;
     return caps;
 }
 

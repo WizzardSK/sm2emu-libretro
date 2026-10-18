@@ -96,6 +96,9 @@ public:
     /// interruptible.
     s32 run(s32 cycles);
 
+    /// Finish the running slice after the current instruction.
+    void end_slice() { m_end_slice = true; }
+
     /// Change the state of an external interrupt line.
     void set_irq_line(int line, int state);
 
@@ -188,6 +191,7 @@ private:
 
     bool        m_stalled = false;
     bool        m_halted  = false;
+    bool        m_end_slice = false;
     bool        m_faulted = false;
     bool        m_round_nearest_even = false;
     std::string m_fault_message;

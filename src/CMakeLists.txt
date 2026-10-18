@@ -36,6 +36,7 @@ target_link_libraries(sm2_core PRIVATE sm2_warnings)
 add_library(sm2_render STATIC
     render/geometry.cpp
     render/image_write.cpp
+    render/panorama.cpp
 )
 target_link_libraries(sm2_render
     PUBLIC

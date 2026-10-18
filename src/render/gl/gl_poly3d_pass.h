@@ -57,6 +57,9 @@ public:
     /// `render_scale` (N) scales the per-batch scissor to the N*native target;
     /// the vertex path stays in native coordinates. Identity at N=1.
     [[nodiscard]] bool init(u32 render_scale);
+
+    /// Raster width to draw at, in native pixels; live.
+    void set_width(u32 width) { m_width = width; }
     void shutdown();
     void abandon_context();
 
@@ -122,6 +125,7 @@ private:
 
     /// Internal 3D render scale; the per-batch scissor is scaled by N.
     u32 m_render_scale = 1;
+    u32 m_width        = kWidth;
 
     u32 m_texture_quality = 0;  ///< 0 = faithful single-tap, else tap ceiling
 };

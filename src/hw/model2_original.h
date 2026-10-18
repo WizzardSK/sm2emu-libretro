@@ -174,6 +174,11 @@ public:
 
     [[nodiscard]] const RenderList& render_list() const override { return m_render_list; }
 
+    void set_widescreen(u32 columns) override;
+    [[nodiscard]] const SkyPanorama* sky_panorama() const override
+    {
+        return m_sky.rows != 0 ? &m_sky : nullptr;
+    }
     [[nodiscard]] u64 geometry_stage_nanoseconds() const override
     {
         return m_geometry.last_run_nanoseconds();
@@ -206,7 +211,7 @@ public:
     void log_burst_summary() const override;
     void log_unmapped_summary() const override;
 
-    [[nodiscard]] std::span<const u8>  tile_ram() const override { return m_tile_ram; }
+    [[nodiscard]] std::span<const u8>  tile_ram() const override { return m_video.tile_ram_shown(); }
     [[nodiscard]] std::span<const u8>  char_ram() const override { return m_char_ram; }
     [[nodiscard]] std::span<const u16> palette_ram() const override { return m_palette_ram; }
     [[nodiscard]] std::span<const u16> colour_translate() const override { return m_colorxlat; }
@@ -265,6 +270,16 @@ public:
     u16 write32_flags(u32 address, u32 value) override;
 
 private:
+    void find_sky_streamer();
+    void update_sky();
+
+    u32         m_widescreen_columns = 0;
+    bool        m_sky_scanned        = false;
+    u32         m_sky_scroll         = 0;  ///< work RAM: the sky's 16-bit scroll
+    u32         m_sky_descriptor     = 0;  ///< work RAM: pointer to its page table
+    u32         m_sky_table          = 0;
+    u32         m_sky_rows_cached    = 0;
+    SkyPanorama m_sky;
     enum class Notify : u8 { None, Palette, TileRam, CharRam };
 
     struct Window {
@@ -451,6 +466,7 @@ private:
     u32  m_pending_intena       = 0;
     u64  m_pending_intena_cycle = 0;
     bool m_pending_intena_valid = false;
+    bool m_intena_written       = false;  ///< In the slice now running.
 
     Inputs     m_inputs;
     RenderList m_render_list;

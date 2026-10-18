@@ -24,6 +24,7 @@
 #include "hw/eeprom_93c46.h"
 #include "hw/i8251.h"
 #include "hw/io_315_5649.h"
+#include "hw/indy_drive_reply.h"
 #include "hw/m2comm.h"
 #include "hw/model2_machine_base.h"
 #include "hw/model2_sound.h"
@@ -73,6 +74,12 @@ public:
 
     [[nodiscard]] cpu::sharc::SHARC& cpu() { return m_cpu; }
     [[nodiscard]] const cpu::sharc::SHARC& cpu() const { return m_cpu; }
+
+    /// Half the screen width the program's point-visibility test uses. The
+    /// host asks the SHARC whether a point projects inside the screen before
+    /// sending its object, so a wider picture needs a wider test.
+    static constexpr u32 kScreenHalfWidth = 248;
+    void set_view_half_width(u32 pixels);
 
     [[nodiscard]] CoproFifo& fifo_in() { return m_fifo_in; }
     [[nodiscard]] CoproFifo& fifo_out() { return m_fifo_out; }
@@ -148,6 +155,12 @@ private:
 
     u32 m_control      = 0;
     u32 m_upload_count = 0;
+
+    void find_view_tests();
+    void apply_view_half_width();
+
+    u32              m_view_half_width = kScreenHalfWidth;
+    std::vector<u32> m_view_tests;  ///< program words loading -/+ the half width
 };
 
 // ===========================================================================
@@ -228,6 +241,7 @@ public:
 
     [[nodiscard]] const RenderList& render_list() const override { return m_render_list; }
 
+    void set_widescreen(u32 columns) override;
     [[nodiscard]] u64 geometry_stage_nanoseconds() const override
     {
         return m_geometry.last_run_nanoseconds();
@@ -259,7 +273,7 @@ public:
     void log_burst_summary() const override;
     void log_unmapped_summary() const override;
 
-    [[nodiscard]] std::span<const u8>  tile_ram() const override { return m_tile_ram; }
+    [[nodiscard]] std::span<const u8>  tile_ram() const override { return m_video.tile_ram_shown(); }
     [[nodiscard]] std::span<const u8>  char_ram() const override { return m_char_ram; }
     [[nodiscard]] std::span<const u16> palette_ram() const override { return m_palette_ram; }
     [[nodiscard]] std::span<const u16> colour_translate() const override { return m_colorxlat; }
@@ -359,6 +373,10 @@ private:
     void io_port_a_write(u8 value);
     void lamp_output_w(u8 value);
 
+    /// Adjust Super GT 24h's pedal ADC bytes to the configured native I/O TYPE.
+    [[nodiscard]] u8 analog_value(u32 channel) const;
+    [[nodiscard]] u8 steering_value() const;
+
     /// Any Power Sled set: the unit programs differ, the cabinet wiring does not.
     [[nodiscard]] bool is_power_sled() const
     {
@@ -399,6 +417,10 @@ private:
     rom::GameSpec m_game;
 
     std::span<const u8> m_rom_maincpu;
+
+    /// Program ROM offsets of the screen-edge tests (see find_view_tests()).
+    std::vector<u32> m_view_tests;
+    void find_view_tests();
     std::span<const u8> m_rom_main_data;
     std::span<const u8> m_rom_copro_data;
     std::span<const u8> m_rom_polygons;
@@ -454,6 +476,7 @@ private:
 
     u8  m_gear_selected      = 0;
     u8  m_drive_board_latch  = 0;
+    IndyDriveReply m_indy_reply{};
     u8  m_motion_command     = 0;
     bool m_doa_unk_toggle    = false;
     bool m_palette_dirty     = true;
@@ -474,6 +497,7 @@ private:
     u32  m_pending_intena       = 0;
     u64  m_pending_intena_cycle = 0;
     bool m_pending_intena_valid = false;
+    bool m_intena_written       = false;  ///< In the slice now running.
 
     Inputs m_inputs;
     RenderList m_render_list;

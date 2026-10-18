@@ -36,7 +36,7 @@
 namespace sm2 {
 
 namespace state {
-inline constexpr u32 kFormatVersion = 11;
+inline constexpr u32 kFormatVersion = 12;
 }
 
 class Archive {

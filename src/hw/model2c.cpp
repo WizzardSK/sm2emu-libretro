@@ -441,6 +441,7 @@ void Model2C::reset()
     m_intreq = 0;
     m_intena = 0;
     m_pending_intena_valid = false;
+    m_intena_written       = false;
     m_timers.fill(Timer{});
 
     m_videocontrol = 0;
@@ -512,6 +513,11 @@ void Model2C::reset()
 
     if (m_game.drive_board) {
         m_io.set_output(4, [this](u8 value) { drive_board_write(value); });
+        if (m_game.drive_protocol == rom::DriveProtocol::Indy) {
+            m_drive_board_latch = 0;
+            m_indy_reply = {};
+            m_io.set_input(3, [this] { return m_indy_reply.read(steering_value()); });
+        }
     }
 
     if (m_game.name == "skisuprg") {
@@ -556,6 +562,9 @@ void Model2C::run_frame()
             u64 target = std::min(line_end, next_timer_deadline());
             if (target <= m_cycles) target = m_cycles + 1;
             target = std::min(target, m_cycles + kCoproInterleave);
+            if (m_pending_intena_valid) {
+                target = std::min(target, std::max(m_pending_intena_cycle, m_cycles + 1));
+            }
 
             const s32 slice = static_cast<s32>(std::min<u64>(target - m_cycles, 1u << 20));
             s32 used;
@@ -564,6 +573,11 @@ void Model2C::run_frame()
                 used = m_cpu.run(slice);
             }
             m_cycles += static_cast<u64>(used);
+            if (m_intena_written) {
+                // The slice ended on the write, so this is when it happened.
+                m_intena_written       = false;
+                m_pending_intena_cycle = m_cycles + 2;
+            }
             {
                 CoreScope scope(m_core_profile, m_core_profile.copro_ns);
                 step_copro(static_cast<u32>(used > 0 ? used : 0));
@@ -660,6 +674,7 @@ void Model2C::service_timers()
 
 void Model2C::on_vblank_start()
 {
+    m_video.latch_tile_ram();
     if ((m_videocontrol & 1) == 0 || (m_frames & 1) == 0) {
         m_geometry.set_read_start_address(m_geo_read_start_address);
         // The CRTC sync registers move the projected image relative to the
@@ -690,7 +705,8 @@ void Model2C::raise_interrupt(u32 line)
 
 void Model2C::irq_update()
 {
-    const u32 active = m_intreq & m_intena;
+    // The lines follow the latched requests; the mask only gates new ones.
+    const u32 active = m_intreq;
     m_cpu.set_irq_line(cpu::i960::I960_IRQ0,
                        (active & 0x0001) != 0 ? cpu::i960::kAssertLine
                                               : cpu::i960::kClearLine);
@@ -804,9 +820,20 @@ void Model2C::lightgun_mux_write(u8 value)
     m_lightgun_mux = value;
 }
 
+u8 Model2C::steering_value() const
+{
+    for (usize channel = 0; channel < m_game.analog.size(); ++channel) {
+        if (m_game.analog[channel].control == rom::AnalogControl::Steer) {
+            return m_inputs.analog[channel];
+        }
+    }
+    return 0x80;
+}
+
 void Model2C::drive_board_write(u8 value)
 {
     m_drive_board_latch = value;
+    if (m_game.drive_protocol == rom::DriveProtocol::Indy) m_indy_reply.write(value);
     record_drive_board_write(value);
 }
 
@@ -1157,25 +1184,13 @@ void Model2C::register_write(u32 address, u32 value, u32 width)
             m_intreq &= value;
             irq_update();
         } else {
-            // The mask update is deferred, as on MAME (80 ns via the scheduler).
-            // The sound driver's timer-ack routine writes the mask register three
-            // times around one interrupt -- mask the source, zero its timer,
-            // re-enable -- and MAME's scheduler runs the masked window (and the
-            // zeroed timer's harmless immediate re-fire) in between those writes.
-            // The i960 here runs the whole routine in one uninterrupted slice, so
-            // unless the pending mask is flushed AND its timers serviced when the
-            // next mask write arrives, the masked re-fire never happens and the
-            // byte-by-byte sound command send runs away on its first byte.
-            if (m_pending_intena_valid) {
-                m_intena = m_pending_intena;
-                m_pending_intena_valid = false;
-                sound_ready_w();
-                irq_update();
-                service_timers();
-            }
+            // The mask latches two cycles after the write; end the slice so the
+            // CPU does not run on past it.
             m_pending_intena       = value;
             m_pending_intena_cycle = m_cycles + 2;
             m_pending_intena_valid = true;
+            m_intena_written       = true;
+            m_cpu.end_slice();
         }
         return;
     }
@@ -1489,7 +1504,6 @@ void Model2C::note_video_write(const Window& w, u32 width)
             ++m_table_generation;
             return;
         case Notify::TileRam:
-            m_video.tiles().note_tile_write(w.offset, width);
             ++m_tile_generation;
             return;
         case Notify::CharRam:
@@ -1662,6 +1676,9 @@ void Model2C::serialize(Archive& ar)
     ar.bytes(m_scratch_ram.data(), m_scratch_ram.size());
     ar.bytes(m_buffer_ram.data(), m_buffer_ram.size());
     ar.bytes(m_tile_ram.data(), m_tile_ram.size());
+    if (ar.loading()) {
+        m_video.latch_tile_ram();
+    }
     ar.bytes(m_char_ram.data(), m_char_ram.size());
     ar.bytes(m_palette_ram.data(), m_palette_ram.size());
     ar.bytes(m_colorxlat.data(), m_colorxlat.size());
@@ -1712,6 +1729,12 @@ void Model2C::serialize(Archive& ar)
 
     // Inputs latch (small POD; harmless to carry so a state is self-contained).
     ar.raw(m_inputs);
+    if (ar.format_version() >= 12) {
+        ar.raw(m_indy_reply.centre);
+    } else if (ar.loading()) {
+        m_indy_reply.centre = 0x80;
+    }
+    if (ar.loading()) m_indy_reply.command = m_drive_board_latch;
 }
 
 bool Model2C::save_state(const std::string& path) const

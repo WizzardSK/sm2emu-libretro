@@ -24,6 +24,7 @@
 #include "hw/eeprom_93c46.h"
 #include "hw/i8251.h"
 #include "hw/io_315_5649.h"
+#include "hw/indy_drive_reply.h"
 #include "hw/m2comm.h"
 #include "hw/model2_machine_base.h"
 #include "hw/model2_sound.h"
@@ -247,6 +248,11 @@ public:
 
     [[nodiscard]] const RenderList& render_list() const override { return m_render_list; }
 
+    void set_widescreen(u32 columns) override
+    {
+        m_geometry.set_widescreen(columns, m_game.side_fill != rom::SideFill::Pillarbox);
+        m_gun_columns = columns;
+    }
     [[nodiscard]] u64 geometry_stage_nanoseconds() const override
     {
         return m_geometry.last_run_nanoseconds();
@@ -279,7 +285,7 @@ public:
     void log_burst_summary() const override;
     void log_unmapped_summary() const override;
 
-    [[nodiscard]] std::span<const u8>  tile_ram() const override { return m_tile_ram; }
+    [[nodiscard]] std::span<const u8>  tile_ram() const override { return m_video.tile_ram_shown(); }
     [[nodiscard]] std::span<const u8>  char_ram() const override { return m_char_ram; }
     [[nodiscard]] std::span<const u16> palette_ram() const override { return m_palette_ram; }
     [[nodiscard]] std::span<const u16> colour_translate() const override { return m_colorxlat; }
@@ -379,6 +385,7 @@ private:
     void io_port_a_write(u8 value);
     void lamp_output_w(u8 value);
     void drive_board_write(u8 value);
+    [[nodiscard]] u8 steering_value() const;
 
     // -- lightgun interface board (837-12079) -------------------------------
     // Hangs off the I/O controller's RS-422 channel 2, exactly as on Model 2A.
@@ -415,6 +422,9 @@ private:
 
     rom::RomSet   m_roms;
     rom::GameSpec m_game;
+
+    /// Widescreen columns each side; the guns' X travel grows to match.
+    u32 m_gun_columns = 0;
 
     std::span<const u8> m_rom_maincpu;
     std::span<const u8> m_rom_main_data;
@@ -471,6 +481,7 @@ private:
 
     u8  m_gear_selected      = 0;
     u8  m_drive_board_latch  = 0;
+    IndyDriveReply m_indy_reply{};
     u8  m_lightgun_mux       = 0;
     bool m_palette_dirty     = true;
 
@@ -492,6 +503,7 @@ private:
     u32  m_pending_intena       = 0;
     u64  m_pending_intena_cycle = 0;
     bool m_pending_intena_valid = false;
+    bool m_intena_written       = false;  ///< In the slice now running.
 
     Inputs m_inputs;
     RenderList m_render_list;

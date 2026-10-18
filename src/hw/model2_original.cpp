@@ -246,6 +246,15 @@ bool Model2Original::init(const rom::GameSpec& game, rom::RomSet roms)
     if (m_game.drive_board) {
         m_ioboard.set_drive([this] { return m_drive_board_latch; },
                             [this](u8 value) { drive_board_write(value); });
+        m_ioboard.set_input(2, [this] {
+            switch (m_drive_board_latch) {
+                case 0x80:
+                case 0x83: return m_inputs.analog[0];
+                case 0x81:
+                case 0x82: return u8{0xff};
+                default: return m_drive_board_latch;
+            }
+        });
     }
     }  // !m_uses_advanced_io
 
@@ -282,6 +291,7 @@ void Model2Original::reset()
     m_intreq = 0;
     m_intena = 0;
     m_pending_intena_valid = false;
+    m_intena_written       = false;
     m_timers.fill(Timer{});
 
     m_videocontrol = 0;
@@ -361,6 +371,9 @@ void Model2Original::run_frame()
                 target = m_cycles + 1;
             }
             target = std::min(target, m_cycles + kCoproInterleave);
+            if (m_pending_intena_valid) {
+                target = std::min(target, std::max(m_pending_intena_cycle, m_cycles + 1));
+            }
 
             const s32 slice = static_cast<s32>(std::min<u64>(target - m_cycles, 1u << 20));
             s32 used;
@@ -369,6 +382,11 @@ void Model2Original::run_frame()
                 used = m_cpu.run(slice);
             }
             m_cycles += static_cast<u64>(used);
+            if (m_intena_written) {
+                // The slice ended on the write, so this is when it happened.
+                m_intena_written       = false;
+                m_pending_intena_cycle = m_cycles + 2;
+            }
 
             const u32 spent = static_cast<u32>(used > 0 ? used : 0);
             {
@@ -425,6 +443,9 @@ void Model2Original::run_frame()
     m_frame_start += kCyclesPerFrame;
     ++m_frames;
     m_in_frame = false;
+    if (m_widescreen_columns != 0) {
+        update_sky();
+    }
 }
 
 void Model2Original::step_copro(u32 host_cycles)
@@ -495,6 +516,7 @@ void Model2Original::service_timers()
 
 void Model2Original::on_vblank_start()
 {
+    m_video.latch_tile_ram();
     // Bit 0 of the video control register selects 30 Hz geometry, which every
     // original Model 2 title uses -- MAME's render_mode_w notes desert among
     // them -- so this runs on even frames only and the renderer shows the
@@ -1053,6 +1075,8 @@ void Model2Original::register_write(u32 address, u32 value, u32 width)
             m_pending_intena       = value;
             m_pending_intena_cycle = m_cycles + 2;
             m_pending_intena_valid = true;
+            m_intena_written       = true;
+            m_cpu.end_slice();
         }
         return;
     }
@@ -1395,7 +1419,6 @@ void Model2Original::note_video_write(const Window& w, u32 width)
             ++m_table_generation;
             return;
         case Notify::TileRam:
-            m_video.tiles().note_tile_write(w.offset, width);
             ++m_tile_generation;
             return;
         case Notify::CharRam:
@@ -1524,6 +1547,7 @@ void Model2Original::wire_advanced_io_board()
     m_ioboard2.set_lightgun(3, [this] { return m_inputs.gun_p2x; });
     m_ioboard2.set_lightgun_offscreen(
         [this] { return static_cast<u8>(m_inputs.gun_offscreen & 0x03); });
+    set_widescreen(0);
 
     if (!gun.present) {
         SM2_WARN("model2o: %s fits the advanced I/O board but declares no lightgun "
@@ -1670,6 +1694,9 @@ void Model2Original::serialize(Archive& ar)
     ar.bytes(m_scratch_ram.data(), m_scratch_ram.size());
     ar.bytes(m_buffer_ram.data(), m_buffer_ram.size());
     ar.bytes(m_tile_ram.data(), m_tile_ram.size());
+    if (ar.loading()) {
+        m_video.latch_tile_ram();
+    }
     ar.bytes(m_char_ram.data(), m_char_ram.size());
     ar.bytes(m_palette_ram.data(), m_palette_ram.size());
     ar.bytes(m_colorxlat.data(), m_colorxlat.size());
@@ -1757,6 +1784,166 @@ bool Model2Original::load_state(const u8* data, usize size)
     m_palette_dirty = true;
     m_render_list.clear();
     return true;
+}
+
+namespace {
+
+// Daytona USA's sky. A routine streams the columns entering view from a
+// 360-degree panorama of eight 32-cell pages into layer 2, starting at map row
+// 6; it begins by loading the sky's scroll and the one before it:
+//     ldos S, g4 / ldos S - 2, g5 / lda 0xffffff00, g7
+// and calls a routine that starts `ld D, g4`, D pointing to the page table.
+u32 rom_word(std::span<const u8> rom, u32 address)
+{
+    u32 value = 0;
+    if (static_cast<usize>(address) + 4 <= rom.size())
+        std::memcpy(&value, rom.data() + address, 4);
+    return value;
+}
+
+constexpr u32 kSkyLayer    = 2;
+constexpr u32 kSkyFirstRow = 6;
+constexpr u32 kLdosG4      = 0x88a03000;
+constexpr u32 kLdosG5      = 0x88a83000;
+constexpr u32 kLdaG7       = 0x8cb83000;
+constexpr u32 kLdG4        = 0x90a03000;
+
+}  // namespace
+
+void Model2Original::find_sky_streamer()
+{
+    m_sky_scanned = true;
+    if (m_game.name.rfind("daytona", 0) != 0) {
+        return;
+    }
+    const u32 end = static_cast<u32>(std::min<usize>(m_rom_maincpu.size(), 0x40000));
+    for (u32 address = 0; address + 24 <= end; address += 4) {
+        const u32 scroll = rom_word(m_rom_maincpu, address + 4);
+        if (rom_word(m_rom_maincpu, address) != kLdosG4 || scroll < kWorkRam
+            || rom_word(m_rom_maincpu, address + 8) != kLdosG5
+            || rom_word(m_rom_maincpu, address + 12) != scroll - 2
+            || rom_word(m_rom_maincpu, address + 16) != kLdaG7
+            || rom_word(m_rom_maincpu, address + 20) != 0xffffff00) {
+            continue;
+        }
+        for (u32 at = address + 24; at < address + 0x100 && at + 4 <= end; at += 4) {
+            const u32 word = rom_word(m_rom_maincpu, at);
+            if ((word >> 24) != 0x09) {
+                continue;
+            }
+            const s32 displacement = static_cast<s32>(word << 8) >> 8;
+            const u32 target       = at + static_cast<u32>(displacement & ~3);
+            if (rom_word(m_rom_maincpu, target) == kLdG4) {
+                m_sky_scroll     = scroll;
+                m_sky_descriptor = rom_word(m_rom_maincpu, target + 4);
+                SM2_INFO("widescreen: sky panorama at %08x, scroll %08x",
+                         m_sky_descriptor, m_sky_scroll);
+            }
+            return;
+        }
+    }
+}
+
+void Model2Original::update_sky()
+{
+    if (!m_sky_scanned) {
+        find_sky_streamer();
+    }
+    m_sky.rows = 0;
+    if (m_sky_descriptor == 0) {
+        return;
+    }
+    const auto work32 = [&](u32 address) -> u32 {
+        u32 value = 0;
+        if (address >= kWorkRam && address - kWorkRam + 4 <= m_work_ram.size()) {
+            std::memcpy(&value, m_work_ram.data() + (address - kWorkRam), 4);
+        }
+        return value;
+    };
+    const auto data32 = [&](u32 address) -> u32 {
+        return address >= kRomMainData ? rom_word(m_rom_main_data, address - kRomMainData) : 0;
+    };
+    const auto data16 = [&](u32 address) -> u16 {
+        u16 value = 0;
+        if (address >= kRomMainData && address - kRomMainData + 2 <= m_rom_main_data.size()) {
+            std::memcpy(&value, m_rom_main_data.data() + (address - kRomMainData), 2);
+        }
+        return value;
+    };
+
+    const u32 pointer = work32(m_sky_descriptor);
+    const u32 table   = pointer >= kRomMainData ? data32(pointer) : 0;
+    if (table == 0) {
+        return;
+    }
+    if (table != m_sky_table) {
+        std::array<u32, 8> pages{};
+        const u32 rows = data32(data32(table + 8) + 4);
+        bool usable = rows != 0 && rows <= SkyPanorama::kRows - kSkyFirstRow;
+        for (u32 page = 0; page < 8 && usable; ++page) {
+            pages[page] = data32(table + 8 + page * 4);
+            usable = pages[page] >= kRomMainData && data32(pages[page] + 4) == rows
+                  && data32(pages[page] + 8) >= 32;
+        }
+        m_sky_table = table;
+        m_sky.first_row = usable ? kSkyFirstRow : 0;
+        m_sky.layer     = kSkyLayer;
+        m_sky.generation++;
+        m_sky.names.fill(0);
+        for (u32 cell = 0; usable && cell < SkyPanorama::kCells; ++cell) {
+            const u32 page   = pages[cell >> 5];
+            const u32 stride = data32(page + 8);
+            for (u32 row = 0; row < rows; ++row) {
+                m_sky.names[row * SkyPanorama::kCells + cell] =
+                    data16(page + 0xc + (row * stride + (cell & 31)) * 2);
+            }
+        }
+        m_sky_rows_cached = usable ? rows : 0;
+    }
+    if (m_sky_rows_cached == 0) {
+        return;
+    }
+
+    // The map holds the panorama modulo 512 pixels; the game's scroll says
+    // which quarter of the 2048 the screen is in.
+    u16 hscroll = 0;
+    std::memcpy(&hscroll, m_video.tile_ram_shown().data() + 0xa000 + kSkyLayer * 2, 2);
+    u16 scroll = 0;
+    std::memcpy(&scroll, m_work_ram.data() + (m_sky_scroll - kWorkRam), 2);
+    const u32 h      = (0u - hscroll) & 0x1ff;
+    const u32 target = (0u - (static_cast<u32>(scroll) >> 5)) & 2047;
+    const u32 origin = (((target - h + 256) & 2047) & ~511u) + h;
+
+    // Only while the map shows what the panorama says it should.
+    u32 matches = 0;
+    u32 samples = 0;
+    for (u32 row = 0; row < m_sky_rows_cached; row += 3) {
+        for (u32 x = 0; x < 496; x += 8) {
+            const u32 cell = ((origin + x) >> 3) & (SkyPanorama::kCells - 1);
+            const u32 map  = ((h + x) >> 3) & 63;
+            u16 name = 0;
+            std::memcpy(&name,
+                        m_video.tile_ram_shown().data() + 0x4000 + ((kSkyFirstRow + row) * 64 + map) * 2, 2);
+            matches += name == m_sky.names[row * SkyPanorama::kCells + cell] ? 1 : 0;
+            ++samples;
+        }
+    }
+    if (matches * 10 < samples * 9) {
+        return;
+    }
+    m_sky.origin = origin & 2047;
+    m_sky.rows   = m_sky_rows_cached;
+}
+
+void Model2Original::set_widescreen(u32 columns)
+{
+    m_geometry.set_widescreen(columns);
+    m_widescreen_columns = columns;
+    if (columns == 0) {
+        m_sky.rows = 0;
+    }
+
+
 }
 
 }  // namespace sm2::hw

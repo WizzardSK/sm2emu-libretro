@@ -156,6 +156,11 @@ public:
     /// when the program has selected 30 Hz geometry.
     [[nodiscard]] const RenderList& render_list() const override { return m_render_list; }
 
+    void set_widescreen(u32 columns) override
+    {
+        m_geometry.set_widescreen(columns);
+        m_gun_columns = columns;
+    }
     [[nodiscard]] u64 geometry_stage_nanoseconds() const override
     {
         return m_geometry.last_run_nanoseconds();
@@ -212,7 +217,7 @@ public:
 
     // -- views for the renderer --------------------------------------------
 
-    [[nodiscard]] std::span<const u8>  tile_ram() const override { return m_tile_ram; }
+    [[nodiscard]] std::span<const u8>  tile_ram() const override { return m_video.tile_ram_shown(); }
     [[nodiscard]] std::span<const u8>  char_ram() const override { return m_char_ram; }
     [[nodiscard]] std::span<const u16> palette_ram() const override { return m_palette_ram; }
     [[nodiscard]] std::span<const u16> colour_translate() const override { return m_colorxlat; }
@@ -432,6 +437,9 @@ private:
     rom::RomSet m_roms;
     rom::GameSpec m_game;
 
+    /// Widescreen columns each side; the guns' X travel grows to match.
+    u32 m_gun_columns = 0;
+
     std::span<const u8> m_rom_maincpu;
     std::span<const u8> m_rom_main_data;
     std::span<const u8> m_rom_copro_tables;
@@ -543,6 +551,7 @@ private:
     u32  m_pending_intena       = 0;
     u64  m_pending_intena_cycle = 0;
     bool m_pending_intena_valid = false;
+    bool m_intena_written       = false;  ///< In the slice now running.
 
     Inputs m_inputs;
 
