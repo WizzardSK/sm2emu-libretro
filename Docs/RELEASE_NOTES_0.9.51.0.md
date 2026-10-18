@@ -1,4 +1,7 @@
-# SM2-Emu Libretro 0.9.51.0
+# SM2-Emu Libretro 0.9.51.0 — Unpublished Attempt
+
+The tag was retained after Windows packaging failed on CRLF/LF source matching.
+No release assets were published. See [0.9.51.1](RELEASE_NOTES_0.9.51.1.md).
 
 Reconciled upstream **0.9.51** plus port revision **0**, following the mandatory
 version convention. The historical full-source import is 0.9.13; the

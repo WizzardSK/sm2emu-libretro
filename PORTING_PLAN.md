@@ -177,7 +177,7 @@ current shared direct-activation convention in section 8. The newer upstream can
 ## Upstream 0.9.45–0.9.51 Review — 2026-10-18
 
 Reference: `upstream/main` `ac373ee` (49 commits after the reconciled 0.9.44
-base `7db7108`; latest release tag `v0.9.51` is `90110c7`). This review is now reconciled through 0.9.51; the core release is 0.9.51.0.
+base `7db7108`; latest release tag `v0.9.51` is `90110c7`). This review is now reconciled through 0.9.51; the core release is 0.9.51.1.
 See `Docs/UPSTREAM_RECONCILIATION_0.9.51.md` for every commit disposition. Preserve the
 current port's published Save State, control and renderer contracts during
 integration; compare against pristine upstream of the same revision.

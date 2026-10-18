@@ -102,7 +102,9 @@ with tarfile.open(archive) as tar:
             ('sm2_libretro.info','sm2_libretro.info'), ('system/sm2-emu/games.xml','data/games.xml'),
             ('licenses/ImGui.txt','3rdparty/imgui/LICENSE.txt'),
             ('licenses/BSD-3-Clause.txt','licenses/BSD-3-Clause.txt')]:
-        assert hashlib.sha256((root/packaged).read_bytes()).hexdigest() == manifest['files'][original]
+        assert hashlib.sha256((root/packaged).read_bytes()).hexdigest() == manifest['files'][original], (
+            f'Source/package byte mismatch: {packaged} (checkout line endings must match source)'
+        )
 
 assert 'savestate = "true"' in info
 
