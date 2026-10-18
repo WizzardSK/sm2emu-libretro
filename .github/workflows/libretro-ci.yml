@@ -15,7 +15,24 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  source:
+    name: Package corresponding source
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          submodules: recursive
+      - run: python3 scripts/package-libretro-source.py --output source-dist
+      - uses: actions/upload-artifact@v7
+        with:
+          name: sm2-libretro-source
+          path: source-dist/
+          if-no-files-found: error
+          retention-days: 14
+
   build:
+    needs: source
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 35
@@ -99,11 +116,18 @@ jobs:
         run: |
           ruby scripts/audit-diagnostic-yaml-catalog.rb
           python3 scripts/audit-nvram-core-catalog.py
+      - uses: actions/download-artifact@v7
+        with:
+          name: sm2-libretro-source
+          path: source-dist
       - name: Package core and matching game database
         run: |
           mkdir -p dist/system/sm2-emu dist/licenses
           cp "build-ci/libretro/${{ matrix.binary }}" dist/
           cp sm2_libretro.info LICENSE NOTICE dist/
+          cp source-dist/SOURCE.json dist/
+          cp licenses/BSD-3-Clause.txt dist/licenses/BSD-3-Clause.txt
+          cp 3rdparty/imgui/LICENSE.txt dist/licenses/ImGui.txt
           cp data/games.xml dist/system/sm2-emu/
           cp CI.md dist/README.md
           cp 3rdparty/musashi/readme.txt dist/licenses/Musashi.txt
@@ -115,7 +139,7 @@ jobs:
           cp licenses/libretro-api.txt dist/licenses/libretro-api.txt
           git rev-parse HEAD > dist/SOURCE_COMMIT.txt
           python3 -c 'import hashlib,pathlib; p=pathlib.Path("dist"); (p/"SHA256SUMS").write_text("".join(hashlib.sha256(f.read_bytes()).hexdigest()+"  "+f.relative_to(p).as_posix()+"\n" for f in sorted(p.rglob("*")) if f.is_file() and f.name != "SHA256SUMS"))'
-          python3 scripts/check-libretro-package.py dist "${{ matrix.binary }}"
+          python3 scripts/check-libretro-package.py dist "${{ matrix.binary }}" --source-archive source-dist/*.tar.gz
       - uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.artifact }}
@@ -152,12 +176,14 @@ jobs:
               sm2-libretro-linux-*) binary=sm2_libretro.so ;;
               sm2-libretro-macos-*) binary=sm2_libretro.dylib ;;
               sm2-libretro-windows-*) binary=sm2_libretro.dll ;;
+              sm2-libretro-source) continue ;;
               *) echo "Unexpected artifact: $name" >&2; exit 1 ;;
             esac
-            python3 scripts/check-libretro-package.py "$directory" "$binary"
+            python3 scripts/check-libretro-package.py "$directory" "$binary" --source-archive release/artifacts/sm2-libretro-source/*.tar.gz
             (cd "$directory" && zip -9 -r "../../packages/${name}-${version}.zip" .)
           done
-          (cd release/packages && sha256sum ./*.zip > SHA256SUMS)
+          cp release/artifacts/sm2-libretro-source/*.tar.gz release/packages/
+          (cd release/packages && sha256sum ./*.zip ./*.tar.gz > SHA256SUMS)
       - name: Create or update GitHub release
         env:
           GH_TOKEN: ${{ github.token }}

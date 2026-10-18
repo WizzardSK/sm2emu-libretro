@@ -44,6 +44,9 @@ Save RAM is managed by the frontend as a normal `.srm` file.
 
 ## Features
 
+- Optional experimental widescreen expansion with native HUD proportions and
+  automatic background side fill on hardware renderers. Disabled by default.
+
 - Software rendering plus Vulkan and OpenGL hardware rendering at 1x–4x
   internal resolution.
 - 60 Hz (Default) and 57.524 Hz (Native Model 2) timing.
@@ -174,9 +177,14 @@ SM2-Emu build before reporting it to the upstream project.
 
 ## Licence
 
-SM2-Emu is distributed under the BSD 3-Clause licence. See [LICENSE](LICENSE),
-[NOTICE](NOTICE), source headers, and the third-party licence files for complete
-terms and attribution.
+SM2-Emu Libretro is a modified version based on
+[sm2-emu](https://github.com/dmanlfc/sm2-emu), copyright (c) 2025+ Daniel Martin
+(dmanlfc) and contributors. It is distributed under GPL-3.0-or-later with the
+additional terms in [NOTICE](NOTICE). See [LICENSE](LICENSE), the retained
+[MAME BSD licence](licenses/BSD-3-Clause.txt), source headers and third-party
+licences for full terms and attribution. Earlier releases retain their
+published terms. Matching binary releases include a complete source archive
+with pinned submodules; see [CI.md](CI.md).
 
 No ROMs, game data, or other copyrighted arcade assets are distributed by this
 repository.

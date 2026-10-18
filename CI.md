@@ -19,11 +19,36 @@ La CI controlla dopo il confezionamento che la struttura sia completa, che i
 checksum corrispondano, che non siano presenti ROM e che le licenze delle
 dipendenze incorporate siano incluse in `licenses/`.
 
-Il controllo di distribuzione locale ha inoltre rilevato una possibile
-contraddizione da chiarire prima di una pubblicazione esterna: il file radice
-`LICENSE` dichiara BSD-3-Clause, mentre 114 file conservano nell'intestazione
-upstream una limitazione all'uso commerciale o monetario. Il port mantiene
-intatte entrambe le dichiarazioni finché upstream non ne chiarisce la relazione.
+## Licence And Corresponding Source
+
+SM2-Emu Libretro is a modified version based on
+https://github.com/dmanlfc/sm2-emu, copyright (c) 2025+ Daniel Martin (dmanlfc)
+and contributors. It uses GPL-3.0-or-later with the additional terms in NOTICE;
+MAME BSD notices and permissive component licences are retained. The matching
+`.info` exposes this origin and licence in RetroArch Core Information. Technical
+core/save/system/option identifiers remain stable.
+
+CI creates a separate corresponding-source artifact with
+`scripts/package-libretro-source.py --output source-dist`. It includes the
+checked-out source, build scripts and every recursively pinned submodule,
+without Git metadata, ROMs or saves. A clean checkout and matching clean
+submodules are required for release packaging. `--allow-dirty` is exclusively
+for local review, marks the snapshot as dirty and is rejected by the release
+package validator. SOURCE_MANIFEST.json inside the archive records file hashes
+and submodule pins; SOURCE.json in each binary package identifies the archive,
+revision and SHA-256. Tagged releases publish that source archive beside the
+platform binaries. Do not substitute GitHub's automatic archive, which omits
+submodule contents.
+
+Each binary package includes LICENSE, NOTICE, the retained MAME BSD text and
+component notices, including Dear ImGui. Validate the pair with:
+
+```sh
+python3 scripts/check-libretro-package.py dist sm2_libretro.dylib \
+  --source-archive source-dist/sm2-libretro-source-COMMIT.tar.gz
+```
+
+This update does not change the terms of earlier published releases.
 
 Entrambe le architetture Linux usano runner nativi Ubuntu 24.04 (glibc 2.39) e
 incorporano i runtime GCC/C++: la compatibilità con distribuzioni precedenti

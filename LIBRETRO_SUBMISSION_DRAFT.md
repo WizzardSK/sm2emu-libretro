@@ -38,11 +38,11 @@ must not turn this project into a GitHub fork of the standalone emulator.
    recipes and per-core GitLab CI depending on the target architecture.
 3. Recheck the final `.info` metadata against the accepted recipe, including
    serialized Save State capability and the external `games.xml` system asset.
-4. Obtain an upstream clarification of the licensing text. The root `LICENSE`
-   declares BSD-3-Clause, but source headers retained from upstream add a
-   restriction on commercial or monetary use. Until that relationship is
-   clarified, presenting the complete source as unqualified BSD-3-Clause would
-   be ambiguous.
+4. Use the current GPL-3.0-or-later metadata, additional NOTICE terms and
+   complete corresponding-source package. The former BSD/non-commercial-header
+   conflict was superseded by the upstream relicensing adoption on 2026-10-18;
+   earlier releases retain their published terms. See CI.md and
+   Docs/SOURCE_LICENCE_REVIEW_2026-10-18.md.
 
 ## Proposed pull request
 
