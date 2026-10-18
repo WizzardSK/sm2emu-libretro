@@ -104,7 +104,7 @@ def race_qualification(args):
     mapping=out/'replays.json';mapping.write_text(json.dumps(replay_map,indent=2)+'\n')
     options={game:{'sm2_initial_nvram_setup':'enabled','sm2_nvram_settings':'enabled',
                    f'sm2_automatic_network_{game}':value}
-             for game,value in zip(GAMES,('2','relay','1'))}
+             for game,value in zip(GAMES,('2','r','1'))}
     option_path=out/'options.json';option_path.write_text(json.dumps(options,indent=2)+'\n')
     # Only observations use the operator recipe; every input comes from BSV.
     sequence=['SCREENSHOT(linked-boot)']

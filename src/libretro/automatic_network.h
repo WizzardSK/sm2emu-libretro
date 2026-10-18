@@ -17,6 +17,9 @@ struct ManagedValue {
     std::string key;
 };
 
+[[nodiscard]] std::string_view default_preset(std::string_view catalog);
+[[nodiscard]] bool managed_field(std::string_view catalog, std::string_view suffix);
+
 [[nodiscard]] std::vector<Choice> choices(std::string_view catalog,
                                           unsigned max_cabinets);
 [[nodiscard]] std::vector<ManagedValue> managed_values(std::string_view catalog,

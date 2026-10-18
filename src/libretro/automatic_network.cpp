@@ -6,118 +6,126 @@
 
 namespace sm2::libretro::network {
 namespace {
-
-bool is_car_role(std::string_view catalog)
+bool daytona(std::string_view game)
 {
-    return catalog == "stcc" || catalog == "stcca" || catalog == "stccb"
-        || catalog == "stcco" || catalog == "srallyc";
+    return game == "daytona" || game == "daytonas" || game == "daytonagtx";
 }
-
-bool has_relay(std::string_view catalog)
+bool car_role(std::string_view game)
 {
-    return is_car_role(catalog) || catalog == "manxtt" || catalog == "motoraid"
-        || catalog == "motoraiddx";
+    return game == "stcc" || game == "stcca" || game == "stccb"
+        || game == "stcco" || game == "srallyc";
 }
-
-unsigned playable_limit(std::string_view catalog, unsigned max_cabinets)
+bool role_id(std::string_view game)
 {
-    if (is_car_role(catalog) || catalog == "manxtt" || catalog == "von")
-        return max_cabinets - 1;
-    return max_cabinets;
+    return game == "indy500" || game == "indy500d" || game == "motoraid"
+        || game == "motoraiddx" || game == "waverunr" || game == "skisuprg";
 }
-
-std::string_view role_key(std::string_view preset)
+bool sled(std::string_view game) { return game == "powsled" || game == "powsledm"; }
+bool has_relay(std::string_view game)
 {
-    return preset == "1" ? "master" : "slave";
+    return car_role(game) || game == "manxtt" || game == "motoraid" || game == "motoraiddx";
 }
-
+unsigned playable_limit(std::string_view game, unsigned maximum)
+{
+    return has_relay(game) || game == "von" ? maximum - 1 : maximum;
+}
+std::string offline_key(std::string_view game)
+{
+    if (daytona(game)) return "single";
+    if (car_role(game)) return game == "srallyc" ? "notlink" : "stand_alone";
+    if (role_id(game)) return game == "skisuprg" ? "no_link" : "stand_alone";
+    if (game == "manxtt" || game == "sgt24h" || game == "overrev") return "not_link";
+    return "no_link";
+}
+std::string offline_label(std::string_view game)
+{
+    if (daytona(game)) return "Single";
+    if (car_role(game)) return game == "srallyc" ? "Notlink" : "Stand Alone";
+    if (role_id(game)) return game == "skisuprg" ? "No Link" : "Stand Alone";
+    if (game == "manxtt" || game == "sgt24h" || game == "overrev") return "Not Link";
+    return "No Link";
+}
 }  // namespace
 
-std::vector<Choice> choices(std::string_view catalog, unsigned max_cabinets)
+std::string_view default_preset(std::string_view game)
 {
-    if (catalog.empty() || max_cabinets < 2) return {};
-    if (catalog == "powsledr" || catalog == "vonr")
-        return {{"relay", "Relay"}};
-    if (catalog == "powsled" || catalog == "powsledm")
-        return {{"1", "Silver"}, {"2", "Red"}, {"3", "Black"}, {"4", "Yellow"},
-                {"0", "Disabled"}};
-    const unsigned limit = playable_limit(catalog, max_cabinets);
-    std::vector<Choice> result;
-    result.push_back({"1", is_car_role(catalog) ? "Car 1 (Master)" : "Master (Cabinet 1)"});
-    for (unsigned number = 2; number <= limit; ++number) {
-        const std::string id = std::to_string(number);
-        result.push_back({id, is_car_role(catalog)
-            ? "Car " + id : "Slave (Cabinet " + id + ")"});
+    if (game == "powsledr" || game == "vonr") return "r";
+    return sled(game) ? "1" : "0";
+}
+
+std::vector<Choice> choices(std::string_view game, unsigned maximum)
+{
+    if (game.empty() || maximum < 2) return {};
+    if (game == "powsledr" || game == "vonr") return {{"r", "Relay"}};
+    if (sled(game))
+        return {{"-1", "Disabled"}, {"1", "Silver"}, {"2", "Red"}, {"3", "Black"}, {"4", "Yellow"}};
+    std::vector<Choice> result{{"-1", "Disabled"}, {"0", offline_label(game)}};
+    for (unsigned n = 1; n <= playable_limit(game, maximum); ++n) {
+        const std::string id = std::to_string(n);
+        const std::string role = n == 1 ? "Master" : "Slave";
+        std::string label;
+        if (daytona(game) || car_role(game)) label = "Car " + id + " (" + role + ")";
+        else if (game == "overrev") label = "Carno." + id + " (" + role + ")";
+        else if (game == "sgt24h") label = "Car NO" + id + " (" + role + ")";
+        else if (role_id(game)) label = "Cabinet " + id + " (" + role + ")";
+        else label = role;
+        result.push_back({id, std::move(label)});
     }
-    if (has_relay(catalog))
-        result.push_back({"relay", catalog == "motoraid" || catalog == "motoraiddx"
-            ? "Live (Relay)" : "Relay"});
-    result.push_back({"0", "Disabled"});
+    if (has_relay(game)) result.push_back({"r", game == "motoraid" || game == "motoraiddx" ? "Live" : "Relay"});
     return result;
 }
 
-std::vector<ManagedValue> managed_values(std::string_view catalog,
+std::vector<ManagedValue> managed_values(std::string_view game,
                                         unsigned cabinets, std::string_view preset)
 {
-    if (preset.empty() || preset == "0") return {};
-    if (catalog == "powsledr") return {};
-    if (catalog == "powsled" || catalog == "powsledm") {
-        if (preset == "1") return {{"ride_id", "silver"}};
-        if (preset == "2") return {{"ride_id", "red"}};
-        if (preset == "3") return {{"ride_id", "black"}};
-        if (preset == "4") return {{"ride_id", "yellow"}};
+    if (preset.empty() || preset == "-1" || game == "powsledr") return {};
+    if (game == "vonr") return {{"network_link_attribute", "no_link"}};
+    if (sled(game)) {
+        constexpr std::string_view colors[]{"silver", "red", "black", "yellow"};
+        if (preset.size() == 1 && preset[0] >= '1' && preset[0] <= '4')
+            return {{"ride_id", std::string(colors[preset[0] - '1'])}};
         return {};
     }
-    unsigned number = 1;
-    if (preset != "relay") {
+    const bool relay = preset == "r";
+    unsigned number = 0;
+    if (!relay) {
         const auto parsed = std::from_chars(preset.data(), preset.data() + preset.size(), number);
         if (parsed.ec != std::errc{} || parsed.ptr != preset.data() + preset.size()
-            || number < 1 || number > 9 || std::to_string(number) != preset) return {};
+            || number > 8 || std::to_string(number) != preset) return {};
     }
-    const bool linked = cabinets > 1;
-    if (!linked) {
-        if (catalog == "daytona" || catalog == "daytonas")
-            return {{"link_id", "single"}, {"car_number", "1"}};
-        if (is_car_role(catalog))
-            return {{"link_type", catalog == "srallyc" ? "notlink" : "stand_alone"}};
-        if (catalog == "indy500" || catalog == "indy500d" || catalog == "motoraid"
-            || catalog == "motoraiddx" || catalog == "waverunr")
-            return {{"network_type", "stand_alone"}, {"cabinet_id", "1"}};
-        if (catalog == "skisuprg")
-            return {{"network_type", "no_link"}, {"cabinet_id", "1"}};
-        if (catalog == "manxtt") return {{"link_type", "not_link"}};
-        if (catalog == "sgt24h") return {{"link_type", "not_link"}};
-        if (catalog == "overrev") return {{"link_max", "not_link"}};
-        if (catalog == "von") return {{"network_link_attribute", "no_link"}};
+    if (!relay && number == 0) {
+        if (daytona(game)) return {{"link_id", "single"}, {"car_number", "1"}};
+        if (car_role(game) || game == "manxtt" || game == "sgt24h")
+            return {{"link_type", offline_key(game)}};
+        if (role_id(game)) return {{"network_type", offline_key(game)}, {"cabinet_id", "1"}};
+        if (game == "overrev") return {{"link_max", "not_link"}};
+        if (game == "von") return {{"network_link_attribute", "no_link"}};
         return {};
     }
-
-    if (catalog == "daytona" || catalog == "daytonas")
-        return {{"link_id", std::string(role_key(preset))},
-                {"car_number", std::to_string(number)}};
-    if (is_car_role(catalog))
-        return {{"link_type", preset == "relay" ? "relay"
-            : "car_" + std::to_string(number)}};
-    if (catalog == "indy500" || catalog == "indy500d" || catalog == "motoraid"
-        || catalog == "motoraiddx" || catalog == "waverunr" || catalog == "skisuprg")
-        return {{"network_type", preset == "relay" ? "live"
-            : std::string(role_key(preset))},
-                {"cabinet_id", std::to_string(preset == "relay" ? cabinets : number)}};
-    if (catalog == "manxtt")
-        return {{"link_type", preset == "relay" ? "relay"
-            : std::string(role_key(preset))}};
-    if (catalog == "sgt24h")
-        return {{"link_type", number == 1 ? "car_no1_master"
-            : "car_no" + std::to_string(number) + "_slave"},
-                {"link_max", std::to_string(cabinets)}};
-    if (catalog == "overrev")
-        return {{"link_type", number == 1 ? "master_carno_1"
-            : "slave_carno_" + std::to_string(number)},
-                {"link_max", std::to_string(cabinets) + "_links"}};
-    if (catalog == "von")
-        return {{"network_link_attribute", preset == "relay" ? "no_link"
-            : std::string(role_key(preset))}};
+    const std::string role = number == 1 ? "master" : "slave";
+    if (daytona(game)) return {{"link_id", role}, {"car_number", std::to_string(number)}};
+    if (car_role(game)) return {{"link_type", relay ? "relay" : "car_" + std::to_string(number)}};
+    if (role_id(game))
+        return {{"network_type", relay ? "live" : role},
+                {"cabinet_id", std::to_string(relay ? std::clamp(cabinets, 1u, 4u) : number)}};
+    if (game == "manxtt") return {{"link_type", relay ? "relay" : role}};
+    if (game == "sgt24h")
+        return {{"link_type", "car_no" + std::to_string(number) + (number == 1 ? "_master" : "_slave")},
+                {"link_max", std::to_string(std::max({2u, cabinets, number}))}};
+    if (game == "overrev")
+        return {{"link_type", role + "_carno_" + std::to_string(number)},
+                {"link_max", std::to_string(std::max({2u, cabinets, number})) + "_links"}};
+    if (game == "von") return {{"network_link_attribute", role}};
     return {};
 }
 
+bool managed_field(std::string_view game, std::string_view suffix)
+{
+    if (sled(game)) return suffix == "ride_id";
+    if (game == "powsledr") return false;
+    if (daytona(game)) return suffix == "link_id" || suffix == "car_number";
+    if (role_id(game)) return suffix == "network_type" || suffix == "cabinet_id";
+    if (game == "von" || game == "vonr") return suffix == "network_link_attribute";
+    return suffix == "link_type" || ((game == "sgt24h" || game == "overrev") && suffix == "link_max");
+}
 }  // namespace sm2::libretro::network

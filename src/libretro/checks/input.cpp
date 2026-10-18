@@ -149,6 +149,7 @@ int main()
         {"daytonas", libretro::InputProfile::Driving4SpeedVR4},
         {"daytonase", libretro::InputProfile::Driving4SpeedVR4},
         {"daytonam", libretro::InputProfile::Driving4SpeedVR4},
+        {"daytonagtx", libretro::InputProfile::Driving4SpeedVR4},
         {"srallyc", libretro::InputProfile::Driving4SpeedVR1Handbrake},
         {"srallycb", libretro::InputProfile::Driving4SpeedVR1Handbrake},
         {"srallycc", libretro::InputProfile::Driving4SpeedVR1Handbrake},
@@ -273,15 +274,35 @@ int main()
               == "Joystick (Standard): Fighting + Test/Service slots",
           "Full profile device name");
     check(controllers.descriptions[0][0].id == RETRO_DEVICE_JOYPAD
-              && controllers.descriptions[0][1].id == libretro::kNoServiceDevice,
-          "Full profile is default and reduced profile is subclass");
+              && controllers.ports[0].num_types == 1,
+          "Controls exposes only one profile; Core Option owns the variant");
     check(std::string_view(controllers.descriptions[1][0].desc)
               == "Joystick (Standard): Fighting + Test/Service slots"
-              && std::string_view(controllers.descriptions[1][1].desc)
-                  == "Joystick (Standard): Fighting"
-              && controllers.ports[1].num_types == 2,
-          "Player 2 exposes full and reduced profile variants");
+              && controllers.ports[1].num_types == 1
+              && controllers.ports[1].num_types == 1,
+          "Player 2 exposes one controller type");
 
+    for (const auto& entry : database.games()) {
+        if (libretro::recognize_profile(entry) == libretro::InputProfile::Unsupported) continue;
+        const libretro::InputDevices frontend{RETRO_DEVICE_JOYPAD, libretro::kNoServiceDevice,
+                                             RETRO_DEVICE_NONE, RETRO_DEVICE_JOYPAD};
+        for (bool enabled : {false, true}) {
+            const auto effective = libretro::profile_devices(frontend, enabled);
+            check(effective[0] == effective[1] && effective[1] == effective[3]
+                      && effective[2] == RETRO_DEVICE_NONE,
+                  "Global profile overrides legacy per-port variants and preserves None");
+            libretro::configure_controllers(entry, controllers, libretro::GunInputMode::Hybrid, enabled);
+            for (const auto& port : controllers.ports)
+                check(port.num_types <= 1, "Controls cannot select another profile variant");
+            const auto global_desc = libretro::descriptors(entry, effective);
+            check(has_descriptor(global_desc, 0, RETRO_DEVICE_JOYPAD, 0,
+                                 RETRO_DEVICE_ID_JOYPAD_R3, "Test A") == enabled,
+                  "Global variant controls Test descriptor for every supported game");
+        }
+    }
+    libretro::configure_controllers(vf2, controllers, libretro::GunInputMode::Hybrid, false);
+    check(std::string_view(controllers.descriptions[0][0].desc) == "Joystick (Standard): Fighting",
+          "Normal controller type uses the game-specific name without Test/Service");
     libretro::InputDevices devices{
         RETRO_DEVICE_JOYPAD, RETRO_DEVICE_JOYPAD,
         RETRO_DEVICE_JOYPAD, RETRO_DEVICE_JOYPAD,
@@ -802,9 +823,8 @@ int main()
     libretro::configure_controllers(*indy500, controllers);
     check(std::string_view(controllers.descriptions[0][0].desc)
               == "Driving: Sequential + VR2 + Test/Service slots"
-          && std::string_view(controllers.descriptions[0][1].desc)
-              == "Driving: Sequential + VR2",
-          "Sequential VR2 exposes the approved service variants");
+          && controllers.ports[0].num_types == 1,
+          "Sequential VR2 exposes the one game-specific controller type");
     devices = {RETRO_DEVICE_JOYPAD, RETRO_DEVICE_JOYPAD};
     driving_desc = libretro::descriptors(*indy500, devices);
     check(has_descriptor(driving_desc, 0, RETRO_DEVICE_JOYPAD, 0,
@@ -870,9 +890,8 @@ int main()
     libretro::configure_controllers(*sgt24h, controllers);
     check(std::string_view(controllers.descriptions[0][0].desc)
               == "Driving: Sequential + VR1 + Test/Service slots"
-          && std::string_view(controllers.descriptions[0][1].desc)
-              == "Driving: Sequential + VR1",
-          "Sequential VR1 exposes the approved service variants");
+          && controllers.ports[0].num_types == 1,
+          "Sequential VR1 exposes the one game-specific controller type");
     driving_desc = libretro::descriptors(*sgt24h, devices);
     check(has_descriptor(driving_desc, 0, RETRO_DEVICE_JOYPAD, 0,
                          RETRO_DEVICE_ID_JOYPAD_DOWN, "VR1")
@@ -915,9 +934,8 @@ int main()
     libretro::configure_controllers(*manxtt, controllers);
     check(std::string_view(controllers.descriptions[0][0].desc)
               == "Driving: Sequential + VR1 (Manx TT Superbike) + Test/Service slots"
-          && std::string_view(controllers.descriptions[0][1].desc)
-              == "Driving: Sequential + VR1 (Manx TT Superbike)",
-          "Manx TT exposes the approved service variants");
+          && controllers.ports[0].num_types == 1,
+          "Manx TT exposes the one game-specific controller type");
     driving_desc = libretro::descriptors(*manxtt, devices);
     check(has_descriptor(driving_desc, 0, RETRO_DEVICE_JOYPAD, 0,
                          RETRO_DEVICE_ID_JOYPAD_START, "Start / VR")
@@ -982,9 +1000,8 @@ int main()
     libretro::configure_controllers(*motoraid, controllers);
     check(std::string_view(controllers.descriptions[0][0].desc)
               == "Driving: Sequential + VR1 (Motor Raid) + Test/Service slots"
-          && std::string_view(controllers.descriptions[0][1].desc)
-              == "Driving: Sequential + VR1 (Motor Raid)",
-          "Motor Raid exposes the approved service variants");
+          && controllers.ports[0].num_types == 1,
+          "Motor Raid exposes the one game-specific controller type");
     driving_desc = libretro::descriptors(*motoraid, devices);
     check(has_descriptor(driving_desc, 0, RETRO_DEVICE_JOYPAD, 0,
                          RETRO_DEVICE_ID_JOYPAD_START, "Start / VR")
@@ -1051,9 +1068,8 @@ int main()
     libretro::configure_controllers(*skytargt, controllers);
     check(std::string_view(controllers.descriptions[0][0].desc)
               == "Joystick (Analog): Sky Target + VR1 + Test/Service slots"
-          && std::string_view(controllers.descriptions[0][1].desc)
-              == "Joystick (Analog): Sky Target + VR1",
-          "Sky Target exposes the approved service variants");
+          && controllers.ports[0].num_types == 1,
+          "Sky Target exposes the one game-specific controller type");
     auto sky_desc = libretro::descriptors(*skytargt, devices);
     check(has_descriptor(sky_desc, 0, RETRO_DEVICE_JOYPAD, 0,
                          RETRO_DEVICE_ID_JOYPAD_B, "Machine Gun")
@@ -1109,12 +1125,11 @@ int main()
     libretro::configure_controllers(*dynabb, controllers);
     check(std::string_view(controllers.descriptions[0][0].desc)
               == "Joystick (Standard): Baseball (Dynamite Baseball) + Test/Service slots"
-          && std::string_view(controllers.descriptions[0][1].desc)
-              == "Joystick (Standard): Baseball (Dynamite Baseball)"
+          && controllers.ports[0].num_types == 1
           && std::string_view(controllers.descriptions[1][0].desc)
               == "Joystick (Standard): Baseball (Dynamite Baseball) + Test/Service slots"
-          && controllers.ports[1].num_types == 2,
-          "Dynamite Baseball exposes both service variants on both players");
+          && controllers.ports[1].num_types == 1,
+          "Dynamite Baseball exposes one game-specific controller type on both players");
     devices = {RETRO_DEVICE_JOYPAD, RETRO_DEVICE_JOYPAD};
     auto baseball_desc = libretro::descriptors(*dynabb, devices);
     for (unsigned p = 0; p < 2; ++p) {
@@ -1160,9 +1175,8 @@ int main()
     libretro::configure_controllers(*segawski, controllers);
     check(std::string_view(controllers.descriptions[0][0].desc)
               == "Special: Water Ski + Test/Service slots"
-          && std::string_view(controllers.descriptions[0][1].desc)
-              == "Special: Water Ski",
-          "Sega Water Ski exposes both service variants");
+          && controllers.ports[0].num_types == 1,
+          "Sega Water Ski exposes one game-specific controller type");
     devices = {RETRO_DEVICE_JOYPAD, RETRO_DEVICE_JOYPAD};
     auto water_ski_desc = libretro::descriptors(*segawski, devices);
     check(has_descriptor(water_ski_desc, 0, RETRO_DEVICE_JOYPAD, 0,
@@ -1231,9 +1245,8 @@ int main()
     libretro::configure_controllers(*skisuprg, controllers);
     check(std::string_view(controllers.descriptions[0][0].desc)
               == "Special: Ski Super G + Test/Service slots"
-          && std::string_view(controllers.descriptions[0][1].desc)
-              == "Special: Ski Super G",
-          "Sega Ski Super G exposes both service variants");
+          && controllers.ports[0].num_types == 1,
+          "Sega Ski Super G exposes one game-specific controller type");
     auto ski_desc = libretro::descriptors(*skisuprg, devices);
     check(has_descriptor(ski_desc, 0, RETRO_DEVICE_JOYPAD, 0,
                          RETRO_DEVICE_ID_JOYPAD_UP, "Zoom In")
@@ -1331,9 +1344,8 @@ int main()
     libretro::configure_controllers(*topskatr, controllers);
     check(std::string_view(controllers.descriptions[0][0].desc)
               == "Special: Top Skater + Test/Service slots"
-          && std::string_view(controllers.descriptions[0][1].desc)
-              == "Special: Top Skater",
-          "Top Skater exposes both service variants");
+          && controllers.ports[0].num_types == 1,
+          "Top Skater exposes one game-specific controller type");
     devices = {RETRO_DEVICE_JOYPAD, RETRO_DEVICE_JOYPAD};
     auto top_skater_desc = libretro::descriptors(*topskatr, devices);
     check(has_descriptor(top_skater_desc, 0, RETRO_DEVICE_JOYPAD, 0,
@@ -1451,9 +1463,8 @@ int main()
     libretro::configure_controllers(*waverunr, controllers);
     check(std::string_view(controllers.descriptions[0][0].desc)
               == "Special: Wave Runner + VR1 + Test/Service slots"
-          && std::string_view(controllers.descriptions[0][1].desc)
-              == "Special: Wave Runner + VR1",
-          "Wave Runner exposes both service variants");
+          && controllers.ports[0].num_types == 1,
+          "Wave Runner exposes one game-specific controller type");
     devices = {RETRO_DEVICE_JOYPAD, RETRO_DEVICE_JOYPAD};
     auto wave_runner_desc = libretro::descriptors(*waverunr, devices);
     check(has_descriptor(wave_runner_desc, 0, RETRO_DEVICE_JOYPAD, 0,
@@ -1528,11 +1539,11 @@ int main()
         libretro::configure_controllers(*selected, controllers);
         check(std::string_view(controllers.descriptions[0][0].desc)
                   == std::string(single.name) + " + Test/Service slots"
-              && std::string_view(controllers.descriptions[0][1].desc) == single.name
+              && controllers.ports[0].num_types == 1
               && std::string_view(controllers.descriptions[1][0].desc)
                   == std::string(single.name) + " + Test/Service slots"
-              && std::string_view(controllers.descriptions[1][1].desc) == single.name,
-              "Single-player digital game retains both service variants on the second port");
+              && controllers.ports[1].num_types == 1,
+              "Single-player digital game retains one game-specific controller type on the second port");
         devices = {RETRO_DEVICE_JOYPAD, RETRO_DEVICE_JOYPAD};
         auto single_desc = libretro::descriptors(*selected, devices);
         check(has_descriptor(single_desc, 0, RETRO_DEVICE_JOYPAD, 0,
@@ -1644,12 +1655,11 @@ int main()
     libretro::configure_controllers(*hpyagu98, controllers);
     check(std::string_view(controllers.descriptions[0][0].desc)
               == "Joystick (Standard): Baseball (Hanguk Pro Yagu 98) + Test/Service slots"
-          && std::string_view(controllers.descriptions[0][1].desc)
-              == "Joystick (Standard): Baseball (Hanguk Pro Yagu 98)"
+          && controllers.ports[0].num_types == 1
           && std::string_view(controllers.descriptions[1][0].desc)
               == "Joystick (Standard): Baseball (Hanguk Pro Yagu 98) + Test/Service slots"
-          && controllers.ports[1].num_types == 2,
-          "Hanguk Pro Yagu 98 exposes both service variants on both players");
+          && controllers.ports[1].num_types == 1,
+          "Hanguk Pro Yagu 98 exposes one game-specific controller type on both players");
     devices = {RETRO_DEVICE_JOYPAD, RETRO_DEVICE_JOYPAD};
     auto hpyagu_desc = libretro::descriptors(*hpyagu98, devices);
     for (unsigned p = 0; p < 2; ++p) {
@@ -1702,9 +1712,8 @@ int main()
     libretro::configure_controllers(*desert, controllers);
     check(std::string_view(controllers.descriptions[0][0].desc)
               == "Joystick (Analog): Desert Tank + VR3 + Test/Service slots"
-          && std::string_view(controllers.descriptions[0][1].desc)
-              == "Joystick (Analog): Desert Tank + VR3",
-          "Desert Tank exposes both service variants");
+          && controllers.ports[0].num_types == 1,
+          "Desert Tank exposes one game-specific controller type");
     devices = {RETRO_DEVICE_JOYPAD, RETRO_DEVICE_JOYPAD};
     auto desert_desc = libretro::descriptors(*desert, devices);
     check(has_descriptor(desert_desc, 0, RETRO_DEVICE_JOYPAD, 0,
@@ -1846,12 +1855,11 @@ int main()
     libretro::configure_controllers(*bel, controllers);
     check(std::string_view(controllers.descriptions[0][0].desc)
               == "Gun: Behind Enemy Lines + Test/Service slots"
-          && std::string_view(controllers.descriptions[0][1].desc)
-              == "Gun: Behind Enemy Lines"
+          && controllers.ports[0].num_types == 1
           && std::string_view(controllers.descriptions[1][0].desc)
               == "Gun: Behind Enemy Lines + Test/Service slots"
-          && controllers.ports[1].num_types == 2,
-          "Behind Enemy Lines exposes both service variants on both players");
+          && controllers.ports[1].num_types == 1,
+          "Behind Enemy Lines exposes one game-specific controller type on both players");
     devices = {RETRO_DEVICE_JOYPAD, RETRO_DEVICE_JOYPAD};
     auto bel_desc = libretro::descriptors(*bel, devices);
     for (unsigned p = 0; p < 2; ++p) {
@@ -1919,9 +1927,8 @@ int main()
     libretro::configure_controllers(*vcop, controllers, libretro::GunInputMode::MouseAnalog);
     check(std::string_view(controllers.descriptions[0][0].desc)
               == "Gun (Mouse + Analog Stick) + Test/Service slots"
-          && std::string_view(controllers.descriptions[0][1].desc)
-              == "Gun (Mouse + Analog Stick)",
-          "Gun profiles expose the selected Supermodel-style source name and both service variants");
+          && controllers.ports[0].num_types == 1,
+          "Gun profiles expose the selected Supermodel-style source name and one game-specific controller type");
     const auto vcop_hybrid = libretro::descriptors(*vcop, devices);
     check(has_descriptor(vcop_hybrid, 0, RETRO_DEVICE_LIGHTGUN, 0,
                          RETRO_DEVICE_ID_LIGHTGUN_TRIGGER, "Shot")

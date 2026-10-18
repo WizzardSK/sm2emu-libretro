@@ -127,7 +127,8 @@ def main() -> None:
     core_options.write_text(
         'sm2_renderer = "software"\n'
         f'sm2_software_renderer_threading = "{args.software_threading}"\n'
-        'sm2_linked_cabinets = "disabled"\n',
+        f'sm2_linked_cabinets_{rom.stem} = "-1"\n'
+        f'sm2_automatic_network_{rom.stem} = "-1"\n',
         encoding="utf-8",
     )
     config_values = {

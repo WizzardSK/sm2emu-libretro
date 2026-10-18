@@ -17,9 +17,9 @@ YAML diagnostici né l'implementazione Libretro.
 
 | Elemento | Copertura |
 | --- | ---: |
-| Set totali in `games.xml` | 87 |
+| Set totali in `games.xml` | 88 |
 | Parent catalogati | 36 / 37 |
-| Cloni catalogati | 48 / 50 |
+| Cloni catalogati | 49 / 51 |
 | Righe parent trascritte | 279 |
 | Righe parent con ciclo o campagna dedicata | 274 |
 | Righe parent solo visibili nella schermata base | 5 |
@@ -36,6 +36,7 @@ Questa matrice è calcolata dalle trascrizioni del catalogo. Non richiede un nuo
 | --- | --- | --- | --- | --- | --- |
 | `daytona93` | `daytona` | — | link-id, car-number, game-mode, rival-arrow | CABINET: TWIN → DELUXE | acquisito |
 | `daytonam` | `daytona` | — | — | — | acquisito |
+| `daytonagtx` | `daytona` | credit-to-start, coin-credit-setting | — | — | acquisito |
 | `daytonas` | `daytona` | promote-saturn | — | CABINET: TWIN → UPRIGHT; COUNTRY: JPN → USA | acquisito |
 | `daytonase` | `daytona` | — | — | CABINET: TWIN → SPECIAL | acquisito |
 | `doaa` | `doa` | — | — | — | acquisito |
@@ -724,6 +725,27 @@ non esiste una campagna ciclica dedicata al clone.
 | 6 | ADVERTISE SOUND | ON | OFF, ON | campagna parent `daytona` |
 | 7 | GAME MODE | NORMAL | ENDURANCE, GRAND PRIX, NORMAL | campagna parent `daytona` |
 | 8 | RIVAL ARROW | ON | OFF, ON | campagna parent `daytona` |
+
+### Daytona USA (`daytonagtx`)
+
+- **Parent:** `daytona`
+- **Schermate acquisite:** [schermata 1](</Users/andrea/dev/sm2-emu-libretro/build-libretro-gpu/validation/daytonagtx-service-20261017/menu-run/screenshots/root-test.png>), [schermata 2](</Users/andrea/dev/sm2-emu-libretro/build-libretro-gpu/validation/daytonagtx-service-20261017/menu-run/screenshots/game-system-default.png>), [schermata 3](</Users/andrea/dev/sm2-emu-libretro/build-libretro-gpu/validation/daytonagtx-service-20261017/menu-run/screenshots/coin-assignment-default.png>)
+
+- **Differenze strutturali:** aggiunte: credit-to-start, coin-credit-setting.
+- **Nota:** Independent GTX Service Menu inventory in SM2-Emu Libretro/RetroArch, 2026-10-17. Ten closed native cycles; CABINET literally displays UPLIGHT. The eight approved Game System fields are implemented after 58 native commit/reload stages; credit fields remain excluded. Initial setup uses a dedicated GTX template with Single / Deluxe / Export overrides and preserves valid existing saves.
+
+| # | Game Setting | Default/valore visibile nel clone | Valori documentati | Origine valori |
+| ---: | --- | --- | --- | --- |
+| 1 | LINK ID | MASTER | MASTER, SLAVE, SINGLE | independent clone Service Menu cycle |
+| 2 | CAR NUMBER | 1 | 1, 2, 3, 4, 5, 6, 7, 8 | independent clone Service Menu cycle |
+| 3 | CABINET | TWIN | TWIN, UPLIGHT, DELUXE | independent clone Service Menu cycle |
+| 4 | COUNTRY | JPN | JPN, EXPORT, USA | independent clone Service Menu cycle |
+| 5 | DIFFICULTY | NORMAL | NORMAL, HARD, HARDEST, EASY | independent clone Service Menu cycle |
+| 6 | ADVERTISE SOUND | ON | ON, OFF | independent clone Service Menu cycle |
+| 7 | GAME MODE | NORMAL | NORMAL, GRAND PRIX, ENDURANCE | independent clone Service Menu cycle |
+| 8 | RIVAL ARROW | ON | ON, OFF | independent clone Service Menu cycle |
+| 9 | CREDIT TO START | 1 | 1, 2, 3, 4, 5 | independent clone Service Menu cycle |
+| 10 | COIN/CREDIT SETTING | #1 | #1, #2, #3, #4, #5, #6, #7, #8, #9, #10, #11, #12, #13, #14, #15, #16, #17, #18, #19, #20, #21, #22, #23, #24, #25, #26, #27 | independent clone Service Menu cycle |
 
 ### Daytona USA (`daytonas`)
 

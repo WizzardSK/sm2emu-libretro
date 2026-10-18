@@ -263,6 +263,22 @@ PARENTS = {
 CLONES = {
   "daytona93" => {rows: %w[advertise-sound country cabinet difficulty], defaults: {"cabinet" => "DELUXE"}, note: "Reduced four-row menu."},
   "daytonam" => {same: true},
+  "daytonagtx" => {
+    rows: ["link-id", "car-number", "cabinet", "country", "difficulty", "advertise-sound", "game-mode", "rival-arrow", "credit-to-start", "coin-credit-setting"],
+    defaults: {"link-id" => "MASTER", "car-number" => "1", "cabinet" => "TWIN", "country" => "JPN", "difficulty" => "NORMAL", "advertise-sound" => "ON", "game-mode" => "NORMAL", "rival-arrow" => "ON", "credit-to-start" => "1", "coin-credit-setting" => "#1"},
+    labels: {"link-id" => "LINK ID", "car-number" => "CAR NUMBER", "cabinet" => "CABINET", "country" => "COUNTRY", "difficulty" => "DIFFICULTY", "advertise-sound" => "ADVERTISE SOUND", "game-mode" => "GAME MODE", "rival-arrow" => "RIVAL ARROW", "credit-to-start" => "CREDIT TO START", "coin-credit-setting" => "COIN/CREDIT SETTING"},
+    values: {"link-id" => ["MASTER", "SLAVE", "SINGLE"],
+      "car-number" => ["1", "2", "3", "4", "5", "6", "7", "8"],
+      "cabinet" => ["TWIN", "UPLIGHT", "DELUXE"],
+      "country" => ["JPN", "EXPORT", "USA"],
+      "difficulty" => ["NORMAL", "HARD", "HARDEST", "EASY"],
+      "advertise-sound" => ["ON", "OFF"],
+      "game-mode" => ["NORMAL", "GRAND PRIX", "ENDURANCE"],
+      "rival-arrow" => ["ON", "OFF"],
+      "credit-to-start" => ["1", "2", "3", "4", "5"],
+      "coin-credit-setting" => ["#1", "#2", "#3", "#4", "#5", "#6", "#7", "#8", "#9", "#10", "#11", "#12", "#13", "#14", "#15", "#16", "#17", "#18", "#19", "#20", "#21", "#22", "#23", "#24", "#25", "#26", "#27"]},
+    note: "Independent GTX Service Menu inventory in SM2-Emu Libretro/RetroArch, 2026-10-17. Ten closed native cycles; CABINET literally displays UPLIGHT. The eight approved Game System fields are implemented after 58 native commit/reload stages; credit fields remain excluded. Initial setup uses a dedicated GTX template with Single / Deluxe / Export overrides and preserves valid existing saves."
+  },
   "daytonas" => {same: true, add: [row("promote-saturn", "PROMOTE SATURN", "COMING SOON")], defaults: {"cabinet" => "UPRIGHT", "country" => "USA"}, note: "Adds PROMOTE SATURN; dedicated cycles show OFF, COMING SOON and AVAILABLE NOW."},
   "daytonase" => {same: true, defaults: {"cabinet" => "SPECIAL"}, note: "Same row set; CABINET defaults to SPECIAL."},
   "doaa" => {same: true}, "doaab" => {same: true}, "doaae" => {same: true, defaults: {"nation" => "EXPORT"}}, "doab" => {same: true},
@@ -372,6 +388,10 @@ def base_screenshot(game)
 end
 
 def clone_screenshots(game)
+  if game == "daytonagtx"
+    directory = ROOT / "build-libretro-gpu/validation/daytonagtx-service-20261017/menu-run/screenshots"
+    return %w[root-test game-system-default coin-assignment-default].map { |label| directory / "#{label}.png" }.select(&:file?)
+  end
   gap_directory = GAP_SCREEN_ROOT / game / "screenshots"
   if gap_directory.directory?
     patterns = case game
@@ -430,7 +450,7 @@ abort "Missing clone definitions: #{missing_clone_definitions.join(', ')}" unles
 
 missing_parent_screens = PARENTS.keys.reject { |name| name == "rascot2" || base_screenshot(name) }
 abort "Missing parent base screenshots: #{missing_parent_screens.join(', ')}" unless missing_parent_screens.empty?
-missing_clone_screens = CLONES.keys.reject { |name| !clone_screenshots(name).empty? }
+missing_clone_screens = CLONES.keys.reject { |name| CLONES[name][:incomplete] || !clone_screenshots(name).empty? }
 abort "Missing clone screenshots: #{missing_clone_screens.join(', ')}" unless missing_clone_screens.empty?
 
 unmatched_parent_screens = []
@@ -597,7 +617,10 @@ CLONES.each do |name, rule|
   rows.each_with_index do |item, index|
     dedicated_root = %w[hotdp srallycdxa].include?(name) ? ROOT / "build-libretro-gpu/validation/nvram-campaigns" : nil
     dedicated_values = dedicated_root ? observed_clone_values(name, item.slug, dedicated_root) : []
-    if name == "daytonas" && item.slug == "promote-saturn"
+    if rule.fetch(:values, {}).key?(item.slug)
+      value_text = rule[:values].fetch(item.slug).join(", ")
+      source = "independent clone Service Menu cycle"
+    elsif name == "daytonas" && item.slug == "promote-saturn"
       value_text, source = "OFF, COMING SOON, AVAILABLE NOW", "ciclo clone"
     elsif name == "daytonas" && item.slug == "cabinet"
       value_text, source = "DELUXE, TWIN, SPECIAL, UPRIGHT", "ciclo clone"

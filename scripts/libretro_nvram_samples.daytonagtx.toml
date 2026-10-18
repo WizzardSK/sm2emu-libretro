@@ -1,0 +1,404 @@
+# Complete approved GTX campaign, generated from the independent Phase 1 inventory.
+# Every acquired value is followed by a fresh-process reload stage.
+[retroarch]
+executable = "~/Retro/Apps/RetroArch/Nightly/RetroArch (ARM).app/Contents/MacOS/RetroArch"
+core = "../build-libretro-gpu/libretro/sm2_libretro.dylib"
+rom_dir = "/Volumes/MacBook External Drive/Retro/_Media/Sega - _Arcade (Model 2)/roms"
+system_assets = "../data"
+base_config = "~/Library/Application Support/RetroArch/config/retroarch.cfg"
+
+[campaign]
+game = "daytonagtx"
+baseline_sample = "base"
+output_dir = "../build-libretro-gpu/validation/nvram-campaigns/daytonagtx"
+startup_wait = 20.0
+button_hold = 0.12
+button_hold_long = 0.8
+default_wait = 0.22
+settle_before_close = 0.3
+close_gap = 0.5
+shutdown_timeout = 15.0
+window_width = 496
+window_height = 384
+
+[core_options]
+sm2_renderer = "software"
+sm2_controller_profile_type = "test_service"
+sm2_initial_nvram_setup = "disabled"
+sm2_nvram_settings = "disabled"
+
+[macros]
+Enter = ["R3", "WAIT(0.8)", "L3*2", "START", "WAIT(0.6)"]
+
+[[samples]]
+suffix = "base"
+sequence = ["@Enter", "SCREENSHOT(first-boot)", "L3*4", "START*3", "L3*5", "START", "WAIT(0.5)", "L3*9", "START", "WAIT(2.0)", "CLOSE"]
+
+[[samples]]
+suffix = "base-reload"
+sequence = ["@Enter", "SCREENSHOT(later-boot)", "START", "WAIT(0.5)", "L3*9", "START", "WAIT(2.0)", "CLOSE"]
+reload_of = "base"
+
+[[samples]]
+suffix = "link-id-step-0"
+sequence = ["@Enter", "L3*1", "SCREENSHOT(value)", "L3*8", "START", "WAIT(0.5)", "L3*9", "START", "WAIT(2.0)", "CLOSE"]
+field = "link_id"
+step = 0
+
+[[samples]]
+suffix = "link-id-step-0-reload"
+sequence = ["@Enter", "L3*1", "SCREENSHOT(reloaded)", "L3*8", "START", "WAIT(0.5)", "L3*9", "START", "WAIT(2.0)", "CLOSE"]
+field = "link_id"
+step = 0
+reload_of = "link-id-step-0"
+
+[[samples]]
+suffix = "link-id-step-1"
+sequence = ["@Enter", "L3*1", "START*1", "SCREENSHOT(value)", "L3*8", "START", "WAIT(0.5)", "L3*9", "START", "WAIT(2.0)", "CLOSE"]
+field = "link_id"
+step = 1
+
+[[samples]]
+suffix = "link-id-step-1-reload"
+sequence = ["@Enter", "L3*1", "SCREENSHOT(reloaded)", "L3*8", "START", "WAIT(0.5)", "L3*9", "START", "WAIT(2.0)", "CLOSE"]
+field = "link_id"
+step = 1
+reload_of = "link-id-step-1"
+
+[[samples]]
+suffix = "link-id-step-2"
+sequence = ["@Enter", "L3*1", "START*2", "SCREENSHOT(value)", "L3*8", "START", "WAIT(0.5)", "L3*9", "START", "WAIT(2.0)", "CLOSE"]
+field = "link_id"
+step = 2
+
+[[samples]]
+suffix = "link-id-step-2-reload"
+sequence = ["@Enter", "L3*1", "SCREENSHOT(reloaded)", "L3*8", "START", "WAIT(0.5)", "L3*9", "START", "WAIT(2.0)", "CLOSE"]
+field = "link_id"
+step = 2
+reload_of = "link-id-step-2"
+
+[[samples]]
+suffix = "car-number-step-0"
+sequence = ["@Enter", "L3*2", "SCREENSHOT(value)", "L3*7", "START", "WAIT(0.5)", "L3*9", "START", "WAIT(2.0)", "CLOSE"]
+field = "car_number"
+step = 0
+
+[[samples]]
+suffix = "car-number-step-0-reload"
+sequence = ["@Enter", "L3*2", "SCREENSHOT(reloaded)", "L3*7", "START", "WAIT(0.5)", "L3*9", "START", "WAIT(2.0)", "CLOSE"]
+field = "car_number"
+step = 0
+reload_of = "car-number-step-0"
+
+[[samples]]
+suffix = "car-number-step-1"
+sequence = ["@Enter", "L3*2", "START*1", "SCREENSHOT(value)", "L3*7", "START", "WAIT(0.5)", "L3*9", "START", "WAIT(2.0)", "CLOSE"]
+field = "car_number"
+step = 1
+
+[[samples]]
+suffix = "car-number-step-1-reload"
+sequence = ["@Enter", "L3*2", "SCREENSHOT(reloaded)", "L3*7", "START", "WAIT(0.5)", "L3*9", "START", "WAIT(2.0)", "CLOSE"]
+field = "car_number"
+step = 1
+reload_of = "car-number-step-1"
+
+[[samples]]
+suffix = "car-number-step-2"
+sequence = ["@Enter", "L3*2", "START*2", "SCREENSHOT(value)", "L3*7", "START", "WAIT(0.5)", "L3*9", "START", "WAIT(2.0)", "CLOSE"]
+field = "car_number"
+step = 2
+
+[[samples]]
+suffix = "car-number-step-2-reload"
+sequence = ["@Enter", "L3*2", "SCREENSHOT(reloaded)", "L3*7", "START", "WAIT(0.5)", "L3*9", "START", "WAIT(2.0)", "CLOSE"]
+field = "car_number"
+step = 2
+reload_of = "car-number-step-2"
+
+[[samples]]
+suffix = "car-number-step-3"
+sequence = ["@Enter", "L3*2", "START*3", "SCREENSHOT(value)", "L3*7", "START", "WAIT(0.5)", "L3*9", "START", "WAIT(2.0)", "CLOSE"]
+field = "car_number"
+step = 3
+
+[[samples]]
+suffix = "car-number-step-3-reload"
+sequence = ["@Enter", "L3*2", "SCREENSHOT(reloaded)", "L3*7", "START", "WAIT(0.5)", "L3*9", "START", "WAIT(2.0)", "CLOSE"]
+field = "car_number"
+step = 3
+reload_of = "car-number-step-3"
+
+[[samples]]
+suffix = "car-number-step-4"
+sequence = ["@Enter", "L3*2", "START*4", "SCREENSHOT(value)", "L3*7", "START", "WAIT(0.5)", "L3*9", "START", "WAIT(2.0)", "CLOSE"]
+field = "car_number"
+step = 4
+
+[[samples]]
+suffix = "car-number-step-4-reload"
+sequence = ["@Enter", "L3*2", "SCREENSHOT(reloaded)", "L3*7", "START", "WAIT(0.5)", "L3*9", "START", "WAIT(2.0)", "CLOSE"]
+field = "car_number"
+step = 4
+reload_of = "car-number-step-4"
+
+[[samples]]
+suffix = "car-number-step-5"
+sequence = ["@Enter", "L3*2", "START*5", "SCREENSHOT(value)", "L3*7", "START", "WAIT(0.5)", "L3*9", "START", "WAIT(2.0)", "CLOSE"]
+field = "car_number"
+step = 5
+
+[[samples]]
+suffix = "car-number-step-5-reload"
+sequence = ["@Enter", "L3*2", "SCREENSHOT(reloaded)", "L3*7", "START", "WAIT(0.5)", "L3*9", "START", "WAIT(2.0)", "CLOSE"]
+field = "car_number"
+step = 5
+reload_of = "car-number-step-5"
+
+[[samples]]
+suffix = "car-number-step-6"
+sequence = ["@Enter", "L3*2", "START*6", "SCREENSHOT(value)", "L3*7", "START", "WAIT(0.5)", "L3*9", "START", "WAIT(2.0)", "CLOSE"]
+field = "car_number"
+step = 6
+
+[[samples]]
+suffix = "car-number-step-6-reload"
+sequence = ["@Enter", "L3*2", "SCREENSHOT(reloaded)", "L3*7", "START", "WAIT(0.5)", "L3*9", "START", "WAIT(2.0)", "CLOSE"]
+field = "car_number"
+step = 6
+reload_of = "car-number-step-6"
+
+[[samples]]
+suffix = "car-number-step-7"
+sequence = ["@Enter", "L3*2", "START*7", "SCREENSHOT(value)", "L3*7", "START", "WAIT(0.5)", "L3*9", "START", "WAIT(2.0)", "CLOSE"]
+field = "car_number"
+step = 7
+
+[[samples]]
+suffix = "car-number-step-7-reload"
+sequence = ["@Enter", "L3*2", "SCREENSHOT(reloaded)", "L3*7", "START", "WAIT(0.5)", "L3*9", "START", "WAIT(2.0)", "CLOSE"]
+field = "car_number"
+step = 7
+reload_of = "car-number-step-7"
+
+[[samples]]
+suffix = "cabinet-step-0"
+sequence = ["@Enter", "L3*3", "SCREENSHOT(value)", "L3*6", "START", "WAIT(0.5)", "L3*9", "START", "WAIT(2.0)", "CLOSE"]
+field = "cabinet"
+step = 0
+
+[[samples]]
+suffix = "cabinet-step-0-reload"
+sequence = ["@Enter", "L3*3", "SCREENSHOT(reloaded)", "L3*6", "START", "WAIT(0.5)", "L3*9", "START", "WAIT(2.0)", "CLOSE"]
+field = "cabinet"
+step = 0
+reload_of = "cabinet-step-0"
+
+[[samples]]
+suffix = "cabinet-step-1"
+sequence = ["@Enter", "L3*3", "START*1", "SCREENSHOT(value)", "L3*6", "START", "WAIT(0.5)", "L3*9", "START", "WAIT(2.0)", "CLOSE"]
+field = "cabinet"
+step = 1
+
+[[samples]]
+suffix = "cabinet-step-1-reload"
+sequence = ["@Enter", "L3*3", "SCREENSHOT(reloaded)", "L3*6", "START", "WAIT(0.5)", "L3*9", "START", "WAIT(2.0)", "CLOSE"]
+field = "cabinet"
+step = 1
+reload_of = "cabinet-step-1"
+
+[[samples]]
+suffix = "cabinet-step-2"
+sequence = ["@Enter", "L3*3", "START*2", "SCREENSHOT(value)", "L3*6", "START", "WAIT(0.5)", "L3*9", "START", "WAIT(2.0)", "CLOSE"]
+field = "cabinet"
+step = 2
+
+[[samples]]
+suffix = "cabinet-step-2-reload"
+sequence = ["@Enter", "L3*3", "SCREENSHOT(reloaded)", "L3*6", "START", "WAIT(0.5)", "L3*9", "START", "WAIT(2.0)", "CLOSE"]
+field = "cabinet"
+step = 2
+reload_of = "cabinet-step-2"
+
+[[samples]]
+suffix = "country-step-0"
+sequence = ["@Enter", "L3*4", "SCREENSHOT(value)", "L3*5", "START", "WAIT(0.5)", "L3*9", "START", "WAIT(2.0)", "CLOSE"]
+field = "country"
+step = 0
+
+[[samples]]
+suffix = "country-step-0-reload"
+sequence = ["@Enter", "L3*4", "SCREENSHOT(reloaded)", "L3*5", "START", "WAIT(0.5)", "L3*9", "START", "WAIT(2.0)", "CLOSE"]
+field = "country"
+step = 0
+reload_of = "country-step-0"
+
+[[samples]]
+suffix = "country-step-1"
+sequence = ["@Enter", "L3*4", "START*1", "SCREENSHOT(value)", "L3*5", "START", "WAIT(0.5)", "L3*9", "START", "WAIT(2.0)", "CLOSE"]
+field = "country"
+step = 1
+
+[[samples]]
+suffix = "country-step-1-reload"
+sequence = ["@Enter", "L3*4", "SCREENSHOT(reloaded)", "L3*5", "START", "WAIT(0.5)", "L3*9", "START", "WAIT(2.0)", "CLOSE"]
+field = "country"
+step = 1
+reload_of = "country-step-1"
+
+[[samples]]
+suffix = "country-step-2"
+sequence = ["@Enter", "L3*4", "START*2", "SCREENSHOT(value)", "L3*5", "START", "WAIT(0.5)", "L3*9", "START", "WAIT(2.0)", "CLOSE"]
+field = "country"
+step = 2
+
+[[samples]]
+suffix = "country-step-2-reload"
+sequence = ["@Enter", "L3*4", "SCREENSHOT(reloaded)", "L3*5", "START", "WAIT(0.5)", "L3*9", "START", "WAIT(2.0)", "CLOSE"]
+field = "country"
+step = 2
+reload_of = "country-step-2"
+
+[[samples]]
+suffix = "difficulty-step-0"
+sequence = ["@Enter", "L3*5", "SCREENSHOT(value)", "L3*4", "START", "WAIT(0.5)", "L3*9", "START", "WAIT(2.0)", "CLOSE"]
+field = "difficulty"
+step = 0
+
+[[samples]]
+suffix = "difficulty-step-0-reload"
+sequence = ["@Enter", "L3*5", "SCREENSHOT(reloaded)", "L3*4", "START", "WAIT(0.5)", "L3*9", "START", "WAIT(2.0)", "CLOSE"]
+field = "difficulty"
+step = 0
+reload_of = "difficulty-step-0"
+
+[[samples]]
+suffix = "difficulty-step-1"
+sequence = ["@Enter", "L3*5", "START*1", "SCREENSHOT(value)", "L3*4", "START", "WAIT(0.5)", "L3*9", "START", "WAIT(2.0)", "CLOSE"]
+field = "difficulty"
+step = 1
+
+[[samples]]
+suffix = "difficulty-step-1-reload"
+sequence = ["@Enter", "L3*5", "SCREENSHOT(reloaded)", "L3*4", "START", "WAIT(0.5)", "L3*9", "START", "WAIT(2.0)", "CLOSE"]
+field = "difficulty"
+step = 1
+reload_of = "difficulty-step-1"
+
+[[samples]]
+suffix = "difficulty-step-2"
+sequence = ["@Enter", "L3*5", "START*2", "SCREENSHOT(value)", "L3*4", "START", "WAIT(0.5)", "L3*9", "START", "WAIT(2.0)", "CLOSE"]
+field = "difficulty"
+step = 2
+
+[[samples]]
+suffix = "difficulty-step-2-reload"
+sequence = ["@Enter", "L3*5", "SCREENSHOT(reloaded)", "L3*4", "START", "WAIT(0.5)", "L3*9", "START", "WAIT(2.0)", "CLOSE"]
+field = "difficulty"
+step = 2
+reload_of = "difficulty-step-2"
+
+[[samples]]
+suffix = "difficulty-step-3"
+sequence = ["@Enter", "L3*5", "START*3", "SCREENSHOT(value)", "L3*4", "START", "WAIT(0.5)", "L3*9", "START", "WAIT(2.0)", "CLOSE"]
+field = "difficulty"
+step = 3
+
+[[samples]]
+suffix = "difficulty-step-3-reload"
+sequence = ["@Enter", "L3*5", "SCREENSHOT(reloaded)", "L3*4", "START", "WAIT(0.5)", "L3*9", "START", "WAIT(2.0)", "CLOSE"]
+field = "difficulty"
+step = 3
+reload_of = "difficulty-step-3"
+
+[[samples]]
+suffix = "advertise-sound-step-0"
+sequence = ["@Enter", "L3*6", "SCREENSHOT(value)", "L3*3", "START", "WAIT(0.5)", "L3*9", "START", "WAIT(2.0)", "CLOSE"]
+field = "advertise_sound"
+step = 0
+
+[[samples]]
+suffix = "advertise-sound-step-0-reload"
+sequence = ["@Enter", "L3*6", "SCREENSHOT(reloaded)", "L3*3", "START", "WAIT(0.5)", "L3*9", "START", "WAIT(2.0)", "CLOSE"]
+field = "advertise_sound"
+step = 0
+reload_of = "advertise-sound-step-0"
+
+[[samples]]
+suffix = "advertise-sound-step-1"
+sequence = ["@Enter", "L3*6", "START*1", "SCREENSHOT(value)", "L3*3", "START", "WAIT(0.5)", "L3*9", "START", "WAIT(2.0)", "CLOSE"]
+field = "advertise_sound"
+step = 1
+
+[[samples]]
+suffix = "advertise-sound-step-1-reload"
+sequence = ["@Enter", "L3*6", "SCREENSHOT(reloaded)", "L3*3", "START", "WAIT(0.5)", "L3*9", "START", "WAIT(2.0)", "CLOSE"]
+field = "advertise_sound"
+step = 1
+reload_of = "advertise-sound-step-1"
+
+[[samples]]
+suffix = "game-mode-step-0"
+sequence = ["@Enter", "L3*7", "SCREENSHOT(value)", "L3*2", "START", "WAIT(0.5)", "L3*9", "START", "WAIT(2.0)", "CLOSE"]
+field = "game_mode"
+step = 0
+
+[[samples]]
+suffix = "game-mode-step-0-reload"
+sequence = ["@Enter", "L3*7", "SCREENSHOT(reloaded)", "L3*2", "START", "WAIT(0.5)", "L3*9", "START", "WAIT(2.0)", "CLOSE"]
+field = "game_mode"
+step = 0
+reload_of = "game-mode-step-0"
+
+[[samples]]
+suffix = "game-mode-step-1"
+sequence = ["@Enter", "L3*7", "START*1", "SCREENSHOT(value)", "L3*2", "START", "WAIT(0.5)", "L3*9", "START", "WAIT(2.0)", "CLOSE"]
+field = "game_mode"
+step = 1
+
+[[samples]]
+suffix = "game-mode-step-1-reload"
+sequence = ["@Enter", "L3*7", "SCREENSHOT(reloaded)", "L3*2", "START", "WAIT(0.5)", "L3*9", "START", "WAIT(2.0)", "CLOSE"]
+field = "game_mode"
+step = 1
+reload_of = "game-mode-step-1"
+
+[[samples]]
+suffix = "game-mode-step-2"
+sequence = ["@Enter", "L3*7", "START*2", "SCREENSHOT(value)", "L3*2", "START", "WAIT(0.5)", "L3*9", "START", "WAIT(2.0)", "CLOSE"]
+field = "game_mode"
+step = 2
+
+[[samples]]
+suffix = "game-mode-step-2-reload"
+sequence = ["@Enter", "L3*7", "SCREENSHOT(reloaded)", "L3*2", "START", "WAIT(0.5)", "L3*9", "START", "WAIT(2.0)", "CLOSE"]
+field = "game_mode"
+step = 2
+reload_of = "game-mode-step-2"
+
+[[samples]]
+suffix = "rival-arrow-step-0"
+sequence = ["@Enter", "L3*8", "SCREENSHOT(value)", "L3*1", "START", "WAIT(0.5)", "L3*9", "START", "WAIT(2.0)", "CLOSE"]
+field = "rival_arrow"
+step = 0
+
+[[samples]]
+suffix = "rival-arrow-step-0-reload"
+sequence = ["@Enter", "L3*8", "SCREENSHOT(reloaded)", "L3*1", "START", "WAIT(0.5)", "L3*9", "START", "WAIT(2.0)", "CLOSE"]
+field = "rival_arrow"
+step = 0
+reload_of = "rival-arrow-step-0"
+
+[[samples]]
+suffix = "rival-arrow-step-1"
+sequence = ["@Enter", "L3*8", "START*1", "SCREENSHOT(value)", "L3*1", "START", "WAIT(0.5)", "L3*9", "START", "WAIT(2.0)", "CLOSE"]
+field = "rival_arrow"
+step = 1
+
+[[samples]]
+suffix = "rival-arrow-step-1-reload"
+sequence = ["@Enter", "L3*8", "SCREENSHOT(reloaded)", "L3*1", "START", "WAIT(0.5)", "L3*9", "START", "WAIT(2.0)", "CLOSE"]
+field = "rival_arrow"
+step = 1
+reload_of = "rival-arrow-step-1"

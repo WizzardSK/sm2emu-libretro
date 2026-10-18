@@ -114,6 +114,7 @@ void M2Comm::serialize(Archive& ar)
 
 void M2Comm::cn_write(u8 value)
 {
+    if (!m_present) return;
     m_cn = static_cast<u8>(value & 0x01);
 
     if (m_cn == 0) {
@@ -148,6 +149,7 @@ void M2Comm::cn_write(u8 value)
 
 u8 M2Comm::fg_read()
 {
+    if (!m_present) return 0xff;
     read_fg();
     // Bit 7 is the Z80's flip gate inverted, so it reads as one while that gate
     // is clear. MAME writes this as (~m_zfg << 7), which is the same thing.
@@ -189,6 +191,7 @@ void M2Comm::send_data(u8 frame_type, int frame_start, int frame_size, int data_
 
 void M2Comm::tick()
 {
+    if (!m_present) return;
     if (m_linkenable != 0x01) return;
 
     const int frame_size = (shared(0x13) << 8) | shared(0x12);

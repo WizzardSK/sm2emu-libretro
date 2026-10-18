@@ -579,7 +579,9 @@ def write_isolated_config(
     # Optional explicit options isolate diagnostic campaigns from core defaults.
     core_options.write_text(
         "".join(f"{key} = {json.dumps(value)}\n"
-                for key, value in settings.core_options.items()), encoding="utf-8")
+                for key, value in {f"sm2_linked_cabinets_{settings.game}": "-1",
+                f"sm2_automatic_network_{settings.game}": "r" if settings.game in {"vonr", "powsledr"} else "-1",
+                **settings.core_options}.items()), encoding="utf-8")
 
     overrides = {
         "config_save_on_exit": "false",

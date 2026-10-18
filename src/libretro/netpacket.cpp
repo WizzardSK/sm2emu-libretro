@@ -379,7 +379,7 @@ bool RETRO_CALLCONV connected(u16 client_id)
         expected_cabinets = session.expected_cabinets;
         accepted = session.active && session.local_id == 0 && client_id != 0
             && (session.clients.count(client_id) != 0
-                || session.clients.size() + 1 < expected_cabinets);
+                || session.clients.size() < 8);
         if (accepted) session.clients.insert(client_id);
         connected_cabinets = static_cast<unsigned>(session.clients.size() + 1);
     }

@@ -64,11 +64,32 @@ def parse_catalog() -> dict[str, list[dict[str, str]]]:
     return result
 
 
+def read_workbook_sheet(archive: zipfile.ZipFile, part: str) -> ET.Element:
+    """Read inline or Excel-shared strings, retaining rich-text default runs."""
+    ns = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+    sheet = ET.fromstring(archive.read(part))
+    if "xl/sharedStrings.xml" not in archive.namelist():
+        return sheet
+    strings = list(ET.fromstring(archive.read("xl/sharedStrings.xml")))
+    for cell in sheet.iter(f"{{{ns}}}c"):
+        if cell.get("t") != "s":
+            continue
+        raw = cell.find(f"{{{ns}}}v")
+        if raw is None or raw.text is None:
+            continue
+        inline = ET.fromstring(ET.tostring(strings[int(raw.text)]))
+        inline.tag = f"{{{ns}}}is"
+        cell.remove(raw)
+        cell.set("t", "inlineStr")
+        cell.append(inline)
+    return sheet
+
+
 def parse_parent_selections() -> dict[str, list[str]]:
     namespace = {"m": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
     selected: dict[str, list[str]] = defaultdict(list)
     with zipfile.ZipFile(WORKBOOK) as archive:
-        sheet = ET.fromstring(archive.read("xl/worksheets/sheet1.xml"))
+        sheet = read_workbook_sheet(archive, "xl/worksheets/sheet1.xml")
     rows = sheet.findall(".//m:sheetData/m:row", namespace)[1:]
     for row in rows:
         values: dict[str, str] = {}
@@ -132,6 +153,7 @@ def expected_default(game: str, option: dict[str, object], native: str) -> str:
     labels = [label for _, label in option["values"]]
     overrides = {
         ("daytona", "cabinet"): "DELUXE",
+        ("daytonagtx", "cabinet"): "DELUXE",
         ("daytona93", "cabinet"): "DELUXE",
         ("daytonas", "cabinet"): "DELUXE",
         ("manxtt", "cabinet_type"): "TWIN",
@@ -172,8 +194,8 @@ def audit_power_sled_campaign(options, errors):
         rels = ET.fromstring(archive.read("xl/_rels/workbook.xml.rels"))
         target = next(r.get("Target") for r in rels if r.get("Id") == relation)
         part = target.lstrip("/") if target.startswith("/") else "xl/" + target
-        xml = ET.fromstring(archive.read(part))
-        # The campaign sheet uses inline strings, independent of the option table.
+        xml = read_workbook_sheet(archive, part)
+        # Shared strings are resolved in memory; the workbook remains untouched.
         cells = {c.get("r"): "".join(c.itertext()) for c in xml.findall(".//m:c", namespace)}
         recorded = {cells.get(f"B{row}") for row in range(2, 5)}
         if recorded != games:
@@ -661,6 +683,9 @@ def main() -> int:
             documented = documented_values(row["values"])
             if documented and game not in {"powsled", "powsledm", "powsledr"}:
                 expected_values = {normalized(value) for value in documented}
+                if game == "daytonagtx" and option["suffix"] == "cabinet":
+                    # GTX ROM spells the same upright cabinet value UPLIGHT.
+                    expected_values = {"UPRIGHT" if v == "UPLIGHT" else v for v in expected_values}
                 actual_values = {normalized(label) for _, label in value_pairs}
                 if expected_values != actual_values:
                     errors.append(

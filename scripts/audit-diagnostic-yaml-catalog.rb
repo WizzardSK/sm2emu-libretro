@@ -15,7 +15,7 @@ require "digest"
 ROOT = Pathname.new(__dir__).parent.realpath
 CATALOG_PATH = ROOT / "GAME_SETTINGS_CATALOG.md"
 YAML_ROOT = ROOT / "data/diagnostic-menus"
-EXPECTED_YAML_COUNT = 56
+EXPECTED_YAML_COUNT = 57
 
 def catalog_rows
   catalog = {}

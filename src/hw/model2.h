@@ -104,6 +104,7 @@ public:
     [[nodiscard]] bool init(const rom::GameSpec& game, rom::RomSet roms) override;
 
     void reset() override;
+    [[nodiscard]] std::span<u8> program_rom() override { return m_roms.region_mutable("maincpu"); }
 
     /// Advance one video frame, including the vertical blank interrupt.
     void run_frame() override;

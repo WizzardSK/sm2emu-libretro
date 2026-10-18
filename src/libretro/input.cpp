@@ -574,8 +574,19 @@ bool gun_profile(InputProfile profile)
     return profile == InputProfile::Gun || profile == InputProfile::GunBehindEnemyLines;
 }
 }
+InputDevices profile_devices(const InputDevices& devices, bool test_service)
+{
+    InputDevices result = devices;
+    for (auto& device : result) {
+        // Published reduced-device IDs remain readable, but the Core Option
+        // owns the global variant. None retains its frontend disable behavior.
+        if (joypad_enabled(device))
+            device = test_service ? RETRO_DEVICE_JOYPAD : kNoServiceDevice;
+    }
+    return result;
+}
 void configure_controllers(const rom::GameSpec& game, ControllerConfiguration& configuration,
-                           GunInputMode gun_mode)
+                           GunInputMode gun_mode, bool test_service)
 {
     const auto profile = recognize_profile(game);
     const unsigned port_count = std::max(2u, profile_players(profile));
@@ -586,9 +597,10 @@ void configure_controllers(const rom::GameSpec& game, ControllerConfiguration& c
         const char* base = configuration.base_names[port].c_str();
         configuration.full_names[port] = configuration.base_names[port] + " + Test/Service slots";
         configuration.descriptions[port][0] = {
-            configuration.full_names[port].c_str(), RETRO_DEVICE_JOYPAD};
-        configuration.descriptions[port][1] = {base, kNoServiceDevice};
-        configuration.ports[port] = {configuration.descriptions[port].data(), 2};
+            test_service ? configuration.full_names[port].c_str() : base,
+            RETRO_DEVICE_JOYPAD};
+        configuration.descriptions[port][1] = {};
+        configuration.ports[port] = {configuration.descriptions[port].data(), 1};
     }
     for (unsigned port = port_count; port < configuration.ports.size(); ++port)
         configuration.ports[port] = {nullptr, 0};

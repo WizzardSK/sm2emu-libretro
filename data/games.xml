@@ -1305,6 +1305,24 @@
     </roms>
   </game>
 
+  <!-- GTX ROM map and banked protection from MAME model2o_gtx_state. -->
+  <game name="daytonagtx" parent="daytona" board="model2" gearbox="true" start_gear="4" drive_board="true" protection="daytona-gtx" preliminary="true" vr_buttons="in0:0x20,in0:0x40,in0:0x80,in1:0x01">
+    <title>Daytona USA</title>
+    <version>GTX 2004 Edition</version>
+    <manufacturer>hack (Kyle Hodgetts)</manufacturer>
+    <year>2003</year>
+    <roms>
+      <region name="maincpu" size="0x200000" stride="4" chunk="2">
+        <file name="gtx.12" offset="0x000000" crc="0x08283a6f"/>
+        <file name="gtx.13" offset="0x000002" crc="0xf9b356ae"/>
+      </region>
+      <region name="prot_data" size="0x300000" stride="4" chunk="2" fill="0xff">
+        <file name="bank0.bin" offset="0x000002" crc="0x21b603b4"/>
+        <file name="bank1.bin" offset="0x100002" crc="0xc1971f23"/>
+      </region>
+    </roms>
+  </game>
+
   <game name="desert" board="model2" vr_buttons="in0:0x20,in0:0x40,in0:0x80">
     <title>Desert Tank</title>
     <manufacturer>Sega / Martin Marietta</manufacturer>

@@ -3,7 +3,7 @@
 
 A single --game name starts one instance; --cabinets N repeats that ROM.
 A comma-separated list selects each
-instance's ROM. Optional :ANS:GAMEPAD fields select ANS (0, 1, 2... or relay/r) and a
+instance's ROM. Optional :ANRS:GAMEPAD fields select ANRS (-1, 0, 1, 2... or r/l/s) and a
 one-based pad ID. Missing fields allocate IDs; an explicitly empty pad field
 assigns no gamepad. Power Sled ignores
 --relay; its Main/Slave/Relay triplet gets the dedicated layout. Saves and configuration belong
@@ -31,12 +31,14 @@ def game_plan(selection: str, cabinets: int | None, relay: bool):
     for token in selection.split(","):
         parts = token.strip().split(":")
         if len(parts) not in (1, 2, 3) or not re.fullmatch(r"[A-Za-z0-9_-]+", parts[0]):
-            raise ValueError("--game requires name[:ANS[:GAMEPAD]] entries")
+            raise ValueError("--game requires name[:ANRS[:GAMEPAD]] entries")
         preset = (parts[1] or None) if len(parts) >= 2 else None
-        if preset == "r":
-            preset = "relay"
-        if preset is not None and preset not in {"0", "relay", *map(str, range(1, 10))}:
-            raise ValueError("ANS uses 0, 1..9, relay or r")
+        if preset in {"l", "s"}:
+            preset = "r"
+        if preset is None and parts[0] in {"powsledr", "vonr"}:
+            preset = "r"
+        if preset is not None and preset not in {"-1", "0", "r", *map(str, range(1, 10))}:
+            raise ValueError("ANRS uses -1, 0, 1..9, r, l or s")
         pad = "auto" if len(parts) < 3 else parts[2] or None
         if pad not in (None, "auto"):
             if pad not in set(map(str, range(1, 17))):
@@ -51,7 +53,7 @@ def game_plan(selection: str, cabinets: int | None, relay: bool):
         raise ValueError("provide 1..9 instances")
     if relay and not all(game in {"powsledm", "powsled", "powsledr"} for game, _, _ in entries) and entries[-1][1] is None:
         game, _, pad = entries[-1]
-        entries[-1] = (game, "relay", pad)
+        entries[-1] = (game, "r", pad)
     used_ans = {preset for _, preset, _ in entries if preset is not None}
     used_pads = [pad for _, _, pad in entries if isinstance(pad, int)]
     if len(set(used_pads)) != len(used_pads):
@@ -76,14 +78,14 @@ def game_plan(selection: str, cabinets: int | None, relay: bool):
               *(index for index, game in enumerate(displayed) if game == "powsled"),
               displayed.index("powsledr")] if power else list(range(len(entries))))
     # Only arrange the known Power Sled ring; never validate game compatibility.
-    include_relay = not power_family and (relay or entries[-1][1] == "relay")
+    include_relay = not power_family and (relay or entries[-1][1] == "r")
     return entries, order, power, include_relay
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--game", required=True,
-                        help="name[:ANS[:GAMEPAD]],...; pad IDs start at 1; empty pad field disables assignment")
+                        help="name[:ANRS[:GAMEPAD]],...; pad IDs start at 1; empty pad field disables assignment")
     parser.add_argument("--cabinets", type=int, choices=range(1, 10), help="Repeat a single ROM N times (default 1); with a list, N must match its length")
     parser.add_argument("--relay", action="store_true", help="Use a generic Relay where supported; ignored for Power Sled")
     parser.add_argument("--rom-dir", type=Path, default=Path("/Volumes/MacBook External Drive/Retro/_Media/Sega - _Arcade (Model 2)/roms"))
@@ -162,14 +164,9 @@ def main():
         if previous:
             path = runner.baseline_directory(previous[-1] / "cabinets", role, game, index) / "config/core-options.cfg"
             saved = dict(re.findall(r'^([^\s=]+) = "([^"\n]*)"$', path.read_text(), re.M))
-            key = f"sm2_automatic_network_{game}"
-            retained_color = saved.get(key) if power else None
             saved = {key: value for key, value in saved.items()
                      if not key.startswith(("sm2_automatic_network_", "sm2_linked_cabinets_"))}
-            if retained_color in {"0", "1", "2", "3", "4", "relay"}:
-                saved[key] = retained_color
-        saved[f"sm2_linked_cabinets_{game}"] = "disabled" if count == 1 else str(count)
-        saved["sm2_nvram_settings"] = "enabled"
+        saved[f"sm2_linked_cabinets_{game}"] = "-1" if count == 1 else str(count)
         if preset is not None:
             saved[f"sm2_automatic_network_{game}"] = preset
         options[role] = saved
@@ -185,7 +182,7 @@ def main():
     (run / "command.json").write_text(json.dumps(cmd, indent=2) + "\n")
     print("Session:", session, flush=True)
     for game, preset, pad in entries:
-        print(f"  {game}: ANS {preset}, gamepad {pad if pad is not None else 'none'}", flush=True)
+        print(f"  {game}: ANRS {preset}, gamepad {pad if pad is not None else 'none'}", flush=True)
     process = subprocess.Popen(cmd)
     try:
         return process.wait()

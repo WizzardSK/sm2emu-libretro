@@ -1,63 +1,15 @@
 # Linked Cabinet Launcher
 
-## Default Layout
+The generic launcher uses the established isolated RetroArch runner. It does
+not check game compatibility or infer another ROM from a role number.
+`--game` is required; there is no default game or topology.
 
-`--game` is required. There is no default game or cabinet combination; this is
-a generic launcher. Four playable instances plus a trailing Relay use four
-windows in one horizontal row, with Relay below the first window. All windows
-have the same size. Lists without Relay use one row of playable instances.
-The existing Power Sled triplet retains its two-above/one-below layout.
+## Game And Controller Syntax
 
-```sh
-# Example: four participants and Relay, without an assigned Relay gamepad.
-python3 scripts/launch-linked-cabinets.py \
-  --game stcc:1,stcc:2,stcc:3,stcc:4,stcc:relay:
+Use `name[:ANRS[:GAMEPAD]]`, separated by commas. A single name starts one
+instance; `--cabinets N` repeats it N times. With a list, N must match its length.
 
-# The same arrangement for Power Sled.
-python3 scripts/launch-linked-cabinets.py \
-  --game powsledm:1,powsled:2,powsled:3,powsled:4,powsledr:relay:
-```
-
-On macOS, the launcher reads the usable monitor area in logical points,
-excluding the menu bar and Dock, and reduces all windows uniformly to fit.
-Native 496 × 384 content size is the upper limit; spacing and frame overhead
-are included. For the current 1470 × 861 usable area, the five-window layout
-uses 327 × 253 content per window. Requested positions and dimensions are recorded in the run manifest.
-On macOS, after initialization the launcher also applies the actual outer
-window size through the existing process-owned accessibility path and reads
-it back. Bounded diagnostic runs additionally read the final frame. Interactive runs
-retain the startup measurement and do not recheck windows after the user can
-open menus, minimize or close them. `actual_window_frames` contains observed frames;
-a dry run only contains requested geometry.
-
-Override the usable area with `--desktop-size 1920x1080`; this also provides
-an explicit sizing path on Windows/Linux. The override uses origin (0, 0).
-No desktop or global RetroArch configuration is modified.
-
-## Game Selection
-
-```sh
-# Repeat the same ROM in two instances.
-python3 scripts/launch-linked-cabinets.py --game daytona --cabinets 2
-
-# Select the ROM of each instance in list order.
-python3 scripts/launch-linked-cabinets.py --game vonj,vonu
-
-# Select each ROM and its Automatic Network Settings value.
-python3 scripts/launch-linked-cabinets.py --game daytona:1,daytona:2
-
-# Start one instance with Automatic Network Settings disabled.
-python3 scripts/launch-linked-cabinets.py --game powsledm:0
-```
-
-A single name starts one instance; no different program is substituted implicitly.
-A comma-separated list defines the instance count and each instance's ROM.
-`--cabinets N` repeats a single name N times; with a list it must match its
-length. The syntax is `name[:ANS[:GAMEPAD]]`; suffixes never change the ROM filename.
-Gamepad IDs are **one-based (1..16)**. The internal RetroArch index remains
-zero-based. `--controllers` has been removed.
-
-| Entry | ANS | Gamepad |
+| Entry | ANRS | Gamepad |
 | --- | --- | --- |
 | `game` | First Unused Positive ID | Automatic In List Order |
 | `game:1` | 1 | Automatic In List Order |
@@ -66,205 +18,115 @@ zero-based. `--controllers` has been removed.
 | `game:1:` | 1 | None |
 | `game::` | First Unused Positive ID | None |
 
-Only an **explicitly empty third field** disables gamepad assignment. Automatic
-IDs reserve all explicit IDs in the whole list before assigning the first free
-ID in list order. ANS `0` and `relay` remain supported; `r` is a CLI alias normalized to `relay`; explicit ANS values may
-repeat. Assigned gamepad IDs must be distinct; multiple no-gamepad entries are
-allowed. A repeated single entry is expanded before automatic IDs are assigned.
-The generic `--relay` flag supplies `relay` to the last instance when its ANS
-field was omitted; it remains ignored for Power Sled.
-One instance (implicit or explicit `--cabinets 1`) launches without RetroArch Netplay and sets Linked
-Cabinets to Disabled (local loopback). Omitted ANS receives the first unused
-positive ID, including for a single instance; use `:0` to disable ANS explicitly.
-Use `:relay` for dedicated Relay programs (specify this explicitly in the game list). The new automatic allocation overrides a resumed session's ANS;
-other saved options and SRAM remain retained as before.
+Gamepad IDs are one-based (1–16). Only an explicitly empty third field assigns
+no gamepad. All explicit positive IDs are reserved before missing IDs are
+allocated. Assigned pads must be distinct. Dedicated `powsledr` / `vonr`
+programs default to `r` when their ANRS field is omitted. The removed
+`--controllers` argument is not supported.
 
-The script starts the requested ROMs without checking compatibility between
-games, game-specific cabinet limits or required program combinations. The core
-and frontend own connection behavior. Launcher success describes clean process
-lifecycle; network observations remain separate in its report.
+## Current Network Convention
 
-## One ANS Convention
+- Linked Cabinets: `-1` Disabled; `0` / `1` are equivalent aliases. Two or more
+  instances use their total count, including Relay.
+- Auto Network Role Settings (ANRS): `-1` Disabled/manual, `0` native
+  Standalone/No Link, positive IDs for native cabinet roles, `r` for a special
+  Relay/Live/Satellite role. `l` and `s` normalize to `r`.
+- Power Sled Main/Slave: `1` Silver, `2` Red, `3` Black, `4` Yellow; the program
+  fixes Master/Slave identity. Dedicated Relay programs offer only `r`.
+- ANRS works with NVRAM Settings disabled. Topology does not convert a selected
+  native Master or Slave role into No Link. A disabled link disconnects optional
+  boards; Power Sled and Virtual On Relay retain their required board in loopback.
+- Old raw words `relay` and `disabled` are not current network values. Invalid
+  core values fall back with a notification; the CLI rejects invalid tokens.
 
-| Saved Value | Generic Games | Power Sled Main / Slave |
-| --- | --- | --- |
-| `0` | Disabled; Manual NVRAM Selectors Apply | Disabled; Manual Ride ID Applies |
-| `1` | Master / Cabinet 1 | Silver |
-| `2` | First Slave / Cabinet 2 | Red |
-| `3`… | Subsequent Slaves | `3` = Black; `4` = Yellow |
-| `relay` | Relay, Where Supported | Fixed Relay ROM Only |
+The launcher allocates positive IDs when omitted, including for a single
+instance. This is a launcher policy, distinct from the core's native No Link
+(default `0`) for ordinary games. Use `:-1` for manual native settings or `:0`
+for a supported native Standalone/No Link mode. A one-instance launch disables
+frontend Netplay and writes Linked Cabinets `-1`.
 
-The dedicated Power Sled and Virtual On Relay programs offer only `relay`.
-Power Sled Relay has no automatic color override, but its Service Menu and
-manual NVRAM Settings expose Silver / Red / Black / Yellow. Its color does not
-change its Relay role. Virtual On Relay retains native No Link. Menu labels
-remain descriptive. Old development ANS names are not accepted or migrated.
-
-## Start Power Sled
-
-### macOS Controller Assignment
-
-The third `--game` field identifies one alphabetically sorted list of physical HID pad
-names, captured before launching any instance. The runner prints each chosen
-name and reserves it exclusively for that instance's Port 1, using RetroArch's
-HID driver. Other Libretro ports remain disabled. Virtual compatibility devices
-without a hardware transport are excluded. If physical pads have identical
-names, give them distinct names in macOS Bluetooth settings before launching.
-The names are retained in the run manifest. Configuration changes belong only
-to the isolated instances.
-
-With the three pads connected on 2026-10-11, this order is:
-
-| Gamepad ID | Physical Pad |
-| --- | --- |
-| 1 | DualSense Wireless Controller (Purple) |
-| 2 | Xbox Wireless Controller (Black) |
-| 3 | Xbox Wireless Controller (White) |
-
-Raw per-process SDL/HID indices can enumerate the same physical pad at different
-positions. Numeric indices alone previously failed to isolate cabinets; the
-new named reservations prevent that dependence. Windows/Linux retain their
-frontend device-index convention. Actual stick travel and manual menu operation
-are separate from checking successful named reservations in RetroArch logs.
-
-### Launch
+## Examples
 
 ```sh
+# Master Silver, Slave Red, Relay; pads allocated in order.
+python3 scripts/launch-linked-cabinets.py --game powsledm:1,powsled:2,powsledr:r
+
+# Four riders across, equally sized Relay underneath; only Master has a pad.
 python3 scripts/launch-linked-cabinets.py \
-  --game powsledm:1,powsled:2,powsledr:relay
+  --game powsledm:1:1,powsled:2:,powsled:3:,powsled:4:,powsledr:r:
+
+# One instance with manual native settings, no gamepad.
+python3 scripts/launch-linked-cabinets.py --game daytona:-1: --cabinets 1
+
+# Generic native roles, including a dedicated Relay program.
+python3 scripts/launch-linked-cabinets.py --game von:1,von:2,vonr:r
 ```
 
-| Position | ROM Program | Controller Index | ANS |
-| --- | --- | --- | --- |
-| Top Left | `powsledm.zip` — Main | 0 | `1` — Silver |
-| Top Right | `powsled.zip` — Slave | 1 | `2` — Red |
-| Bottom Left | `powsledr.zip` — Relay | 2 | `relay` |
+The optional `--relay` flag supplies `r` to the last instance if omitted; it
+never adds an instance and is ignored for Power Sled. List Power Sled programs
+explicitly. Its Main/Slave/Relay triplet uses Main and Slave above Relay; larger
+groups use the generic layout. Four participants plus Relay use four windows
+across with Relay below. Window sizes fit the usable desktop dynamically;
+`--desktop-size WIDTHxHEIGHT` overrides its detection. Actual owned window frames
+are resized and read back after frontend startup.
 
-The three listed Power Sled programs get the Main / Slave above Relay layout.
-The fresh-session default is Main Silver / Slave Red. The reconstructed Main
-publishes its color separately from its Master role, so it can supply the Silver
-ride. Both Silver / Red and Red / Silver qualify in bounded linked races. ANS
-values retain their color meanings and explicit values are never replaced.
-`--relay` is ignored for Power Sled. Roles are selected by the ROM, while ANS on Main and Slave
-selects the color. The launcher defaults to this three-ROM list without suffixes.
-To retain colors selected through the GUI on subsequent launches, omit suffixes:
+Power Sled Relay Audio On Master is independent of running a Relay instance.
+Disable it on Master when the separate Relay should supply the soundtrack.
+Standalone Mode takes effect only with Linked Cabinets disabled.
 
-```sh
-python3 scripts/launch-linked-cabinets.py --game powsledm,powsled,powsledr
-```
+## Controllers And Isolation
 
-A bare `--game powsled` starts one instance of that ROM; no other program is
-substituted and no compatibility check is performed. Controller indices follow
-the declared list with transport order Main / Slave / Relay. Window
-positions remain fixed by the Power Sled program role.
+On macOS, pad IDs refer to the alphabetically sorted physical HID device names
+captured before launching. Names and assignments are printed and retained in
+the run manifest. Identical names need distinct macOS device names for reliable
+reservations. Windows/Linux use frontend device indices. Each assigned pad owns
+local Port 1; other ports are disabled. An unassigned instance disables all
+player ports and autoconfiguration while retaining valid internal indices.
+Keyboard menu/hotkey input follows focus. Physical input behavior requires
+controller observation; process startup alone does not qualify it.
 
-Two riders can use Main and Slave without Relay:
+Power Sled P1/P2 are two riders in one cabinet; P2 is not a network Slave.
+The one-pad-per-window launcher disables Port 2. No Service Menu or gameplay
+input sequence is injected.
 
-```sh
-python3 scripts/launch-linked-cabinets.py \
-  --game powsledm:1,powsled:2
-```
+## Files And Persistence
 
-Linked Cabinets supports 2–5 total instances. Four riders can use one Main and three Slaves; an optional final Relay makes
-five total instances. Use distinct rider colors; Relay's manual color is not
-a rider identity. The script passes the list through without topology checks:
+Default sessions live under `build-libretro-gpu/linked-cabinets/<name>-<count>/`.
+Use `--session PATH` for another owned session. Each launch creates
+`runs/NNNN/cabinets/`, containing independent `host`, `clientN` and final
+`_relay` directories. Each has its own configuration, Core Options, SRAM and
+Save States. Logs, commands, PIDs, hashes and results remain in that run.
 
-Relay is optional for racing, but its separate soundtrack is only produced
-while that instance is running. A pair retains rider effects without the Relay
-audio; the core does not move that sound program into Main automatically. See
-`Docs/POWER_SLED_MUSIC_ROUTING_2026-10-10.md` for the recorded comparison.
+The next launch copies available SRAM and Core Options from the last successful
+run, matching the program identity. Resolved ANRS IDs and topology are reapplied;
+other saved Core Options, including Relay Audio On Master, persist. Omitting
+ANRS does not preserve a previous GUI role/color: it requests automatic ID
+allocation. Normal native-window exits can recover observed unsaved core values
+from the log, with backups and later frontend saves taking precedence.
 
-```sh
-python3 scripts/launch-linked-cabinets.py \
-  --game powsledm:1,powsled:2,powsled:3,powsled:4
-```
-
-Append `,powsledr:relay` to include Relay with the next automatic gamepad,
-or `,powsledr:relay:` to include it without a gamepad. More than
-three windows use the generic two-column layout; panoramic physical alignment
-remains a separate review item.
+Close a cabinet or press Ctrl+C to stop the owned group. Global configuration,
+normal saves and unrelated processes are untouched. `--dry-run` prepares files;
+`--seconds N` runs a bounded session. `--capture-screenshots` captures each image.
+A successful process-lifecycle result is separate from link or gameplay proof.
 
 ## Optional Master Archive
 
-`powsledm.zip` may be absent or incomplete. The loader prefers valid chips in
-an existing Master archive, then reads program/graphics from sibling
-`powsledr.zip` and sound from sibling `powsled.zip`. Required chip CRCs still
-apply. Master patches, set identity and its own save files remain `powsledm`.
+`powsledm.zip` may be absent or incomplete: the loader tries valid Master chips,
+then sibling `powsledr.zip` for program/graphics and `powsled.zip` for rider sound.
+Required CRCs still apply. The launcher creates an empty content ZIP and sibling
+symlinks inside its owned run when needed, without modifying the ROM collection.
+The Master keeps its own identity, patches and saves. Loading `powsledr.zip`
+itself selects Relay. Relay ROM data is required even without a Relay instance.
 
-For an absent Master archive, the runner writes a valid empty ZIP content entry
-inside the owned run's `content/` directory and symlinks sibling archives there.
-It writes nothing into the ROM collection. The GUI can also load a deliberately
-created empty `powsledm.zip` placed alongside the donors; loading
-`powsledr.zip` itself continues to select Relay. Missing ordinary game archives
-still fail. Relay ROM data is needed even when no Relay instance is launched.
+Current implementation evidence: [Two-Option Network Integration](NETWORK_TWO_OPTION_2026-10-17.md).
 
-## Generic Relay Examples
+## Historical Qualification
 
-```sh
-python3 scripts/launch-linked-cabinets.py --game stcc:1,stcc:2,stcc:relay
-python3 scripts/launch-linked-cabinets.py --game stcc --cabinets 3 --relay
-python3 scripts/launch-linked-cabinets.py --game von:1,von:2,vonr:relay
-```
+The records below describe the versions tested on their stated dates. Their
+old ANS tokens and defaults are superseded by the current convention above;
+do not use historical commands as current instructions.
 
-`--relay` assigns Relay to the final instance by default without changing the
-instance count. Counts include Relay. The explicit Virtual On example includes its dedicated `vonr` program;
-this is a recommended working combination, not a script validation rule.
-NVRAM Settings is enabled for launcher sessions so ANS applies.
-
-## Controllers And Riders
-
-Each instance maps its assigned physical pad to local Port 1. Other local
-ports are disabled to prevent another cabinet's pad controlling that instance.
-Duplicate assigned gamepad IDs are rejected. An explicitly empty gamepad
-field keeps all joypad indices within 0..15, clears device reservations,
-disables gamepad autoconfiguration and sets all Libretro player ports to None.
-Those instances receive no player controls; RetroArch keyboard menu/hotkeys
-remain available. It does not use index `-1` or a `null` joypad driver. SDL background joystick events are
-enabled for these child processes, and inactive windows keep running. Keyboard
-input follows the focused window. Physical/background delivery still requires
-connected-controller qualification; assigning an index alone does not prove it.
-
-Power Sled P1/P2 are riders within one cabinet; P2 is not the Slave instance.
-The core supports separate P2 Entry/Call and handlebars on Port 2. Existing
-P2 Entry/Call aliases on Port 1 remain. The one-pad-per-window launcher disables
-Port 2. There is no automated Test/Service or gameplay input sequence.
-
-## Paths, Session Persistence And Exit
-
-Defaults use the installed `sm2_libretro.dylib`, existing local RetroArch Nightly,
-project system assets and the documented external Model 2 ROM directory. Path
-arguments support other installations without installing dependencies or
-including ROMs. The launcher reuses the established RetroArch network runner.
-
-Launcher instances use `host`, `client1` and `_relay` for the Power Sled
-Main / Slave / Relay order. A final Relay in a larger group also uses `_relay`.
-Each contains independent configurations, Core
-Options, SRAM and Save States. Old sessions are resumed by matching the ROM
-program in their manifest, preserving old files and avoiding a Slave/Relay mix-up.
-
-Sessions live under `build-libretro-gpu/linked-cabinets/`; use `--session PATH`
-for a separate one. Each launch creates a numbered run, retaining older files
-and copying the last successful run's available SRAM and Core Options.
-If that launcher run did not produce an SRM for a program, its next instance
-starts without an imported save and follows the normal automatic initial setup.
-Existing saved files are preserved; acquisition runners retain their strict
-baseline requirement. Topology and NVRAM
-Settings are reapplied. Explicit `:ANS` values override saved selections;
-omitted Power Sled suffixes retain valid saved colors in multi-instance sessions.
-Other multi-instance games regenerate native role presets when suffixes are
-omitted. Single-instance sessions default to ANS `0`, except dedicated Relay
-programs. No old ANS aliases are translated.
-
-Close one cabinet or press Ctrl+C to stop the group. The runner sends QUIT,
-waits for owned processes and records forced cleanup. Global configuration,
-normal saves and unrelated processes remain outside the session. Its temporary
-macOS application-state preference is restored.
-
-`--dry-run` prepares files only. `--seconds N` runs a bounded session;
-`--capture-screenshots` captures each frontend image. Configuration, commands,
-PIDs, core hash, logs and final link/lifecycle results are retained per run.
-
-## Qualification
+### Original Qualification
 
 The 2026-10-10 single-instance extension passes ten focused launcher checks,
 including implicit/explicit count 1, ANS 0, explicit ANS overrides and unchanged

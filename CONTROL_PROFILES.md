@@ -193,8 +193,10 @@ digitale approvato, distinto dai due Dynamite Baseball con assi bat1/bat2.
   `start1_bit`, `wheel_button_bits`, destinazione del trigger P2 e presenza di
   comandi speciali restano dati espliciti.
 - Per ogni profilo registrare nome del dispositivo e descrittori coerenti con
-  le azioni implementate. Test/Service sono varianti comuni del dispositivo,
-  non nuove famiglie di gioco.
+  le azioni implementate. Test/Service is a global variant selected by the first Input option,
+  Controller Profile Type: Normal / Normal + Test/Service (default). Controls
+  advertises one game-specific type per port; it no longer selects the variant.
+  Keep gameplay and special cabinet commands independent of these slots.
 - La scelta Mouse/Lightgun/Analog Stick è una modalità di sorgente: non cambia
   automaticamente un cabinet posizionale in una lightgun con ricarica fuori
   schermo, né un joystick centrato in un cursore relativo.
@@ -246,7 +248,7 @@ uses Left Stick Y for Left Handlebar and Right Stick Y for Right Handlebar,
 with inverted signed Y travel and neutral ADC 0x80 (2026-10-11). P2 uses MAME mux channels 5/7;
 P1 retains channels 1/3. All variants retain their
 preliminary status. P1 L3 exposes **Service A / Select** (IN0 bit 0x40)
-and P1 R3 exposes **Test A**, subject to the Test/Service controller variant.
+and P1 R3 exposes **Test A**, subject to the global Controller Profile Type option.
 There are no P2 Service/Test aliases. P2 North is **Shutdown Button** (IN0 bit
 0x08), P2 L3 is **Cancel Error** (IN0 bit 0x80), and P2 R3 is **Cancel Network
 Check** (IN3 bit 0x02). On each port, D-Pad Up and Down are secondary Entry
@@ -316,3 +318,10 @@ analogue axes, gear/actions and multi-View layouts are unchanged. Verification
 uses the existing ROM-free input checks; physical-pad/gameplay behavior is a
 separate verification scope. The normal RetroArch core was rebuilt and installed with
 backup and SHA-256 verification; the removed dev core was not recreated.
+
+## Daytona GTX — 2026-10-12
+
+`daytonagtx` inherits Daytona's reviewed Model 2 I/O and Driving: 4-Speed + VR4
+profile. The two program ROMs and banked protection data differ; controls are
+not inferred from those ROM names. The GTX-specific Service Menu inventory and
+NVRAM settings remain pending, so no parent operator overrides are exposed.

@@ -205,7 +205,7 @@ bool layout_ready(std::string_view game, std::span<const u8> backup,
         const u16 angle = load_u16(backup, 26);
         return angle >= 100 && angle <= 450 && angle % 5 == 0;
     }
-    if (game == "daytona" || game == "daytona93" || game == "daytonas")
+    if (game == "daytona" || game == "daytona93" || game == "daytonas" || game == "daytonagtx")
         return std::equal(backup.begin(), backup.begin() + 0x80, backup.begin() + 0x80) &&
                crc_bank_valid(backup, 0) && crc_bank_valid(backup, 0x80);
     if (game == "desert") return crc_bank_valid(backup, 0);
@@ -318,7 +318,7 @@ bool layout_ready(std::string_view game, std::span<const u8> backup,
 void sync_integrity(std::string_view game, std::span<u8> backup,
                     std::span<u8> eeprom)
 {
-    if (game == "daytona" || game == "daytona93" || game == "daytonas") {
+    if (game == "daytona" || game == "daytona93" || game == "daytonas" || game == "daytonagtx") {
         update_crc_bank(backup, 0);
         std::copy_n(backup.begin(), 0x80, backup.begin() + 0x80);
         for (size_t i = 0; i < 0x80; i += 2) {
@@ -429,6 +429,7 @@ std::vector<std::string> initial_values(std::string_view game)
     std::vector<std::string> selected(options.size());
     static constexpr std::pair<std::string_view, std::string_view> offline[] = {
         {"daytona", "link_id"},
+        {"daytonagtx", "link_id"},
         {"daytonas", "link_id"},
         {"motoraiddx", "network_type"},
         {"indy500d", "network_type"},
@@ -444,6 +445,7 @@ std::vector<std::string> initial_values(std::string_view game)
     };
     static constexpr std::pair<std::string_view, std::string_view> initial_defaults[] = {
         {"daytona", "cabinet"},
+        {"daytonagtx", "cabinet"},
         {"daytona93", "cabinet"},
         {"daytonas", "cabinet"},
         {"manxtt", "cabinet_type"},

@@ -1,3 +1,5 @@
+> Historical record: network tokens, defaults and NVRAM gating below are superseded by [F14 integration](NETWORK_TWO_OPTION_2026-10-17.md).
+
 # ANS Convention And Game-List CLI Review
 
 ## Contract

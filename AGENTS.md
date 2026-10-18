@@ -58,6 +58,11 @@ matching core-info file on 2026-10-10. Do not recreate or update the dev copy
 unless the user explicitly asks to restore it. Older reports mentioning two
 installed copies describe the previous setup.
 
+For routine local core updates, verify the installed artifact hash without
+retaining a copy of the replaced binary. Revert the source change and rebuild
+if rollback is needed. Keep a binary backup only for a concrete recovery need
+or when the user explicitly requests one.
+
 ## Upstream integration
 
 Before choosing or publishing a release version, follow the mandatory release
@@ -84,6 +89,15 @@ baselines separately so upstream behavior changes are not mistaken for port
 regressions. Add actual RetroArch checks once the core exists.
 
 ## Libretro interface reference
+
+Use `../libretro-core-framework/FRAMEWORK.md` as the shared reference for
+current and future Libretro work, including solution exchange to/from this
+core. Read its current contracts and `REFERENCE_SOURCES.md` before adapting
+equivalent behavior. The Framework's project chat is
+`01a13152-dbfa-7e30-bc9d-0477abc2cccc` on host `local`.
+See `Docs/LIBRETRO_FRAMEWORK_REFERENCE.md` for adoption and bidirectional
+handoff rules. Preserve explicit user decisions and existing compatibility;
+record unresolved differences rather than silently migrating published behavior.
 
 Use the user's `../libretro-supermodel-modern` project as a read-only guide
 for menu organization, control profiles and established preferences.

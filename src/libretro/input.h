@@ -103,12 +103,14 @@ struct ControllerConfiguration {
     std::array<retro_controller_info, kMaxInputPorts + 1> ports{};
 };
 
+InputDevices profile_devices(const InputDevices& devices, bool test_service);
 InputProfile recognize_profile(const rom::GameSpec& game);
 const char* profile_name(InputProfile profile);
 unsigned profile_players(InputProfile profile);
 bool digital_profile(const rom::GameSpec& game);
 void configure_controllers(const rom::GameSpec& game, ControllerConfiguration& configuration,
-                           GunInputMode gun_mode = GunInputMode::Hybrid);
+                           GunInputMode gun_mode = GunInputMode::Hybrid,
+                           bool test_service = true);
 std::vector<retro_input_descriptor> descriptors(
     const rom::GameSpec& game, const InputDevices& devices,
     GunInputMode gun_mode = GunInputMode::Hybrid,

@@ -70,6 +70,7 @@ GAME_SPECS = {
     "powsled": GameSpec(5, "powsled", "power_sled"),
     "daytona": GameSpec(8, "daytona", "daytona"),
     "daytonas": GameSpec(8, "daytonas", "daytona"),
+    "daytonagtx": GameSpec(8, "daytonagtx", "daytona"),
     "daytonase": GameSpec(8, "daytona", "daytona"),
     "daytonam": GameSpec(8, "daytona", "daytona"),
     "stcc": GameSpec(9, "stcc", "car"),
@@ -82,8 +83,8 @@ GAME_SPECS = {
     "indy500": GameSpec(8, "indy500", "role_id"),
     "indy500d": GameSpec(8, "indy500d", "role_id"),
     "indy500to": GameSpec(8, "indy500", "role_id"),
-    "motoraid": GameSpec(4, "motoraid", "role_id"),
-    "motoraiddx": GameSpec(4, "motoraiddx", "role_id"),
+    "motoraid": GameSpec(5, "motoraid", "role_id"),
+    "motoraiddx": GameSpec(5, "motoraiddx", "role_id"),
     "waverunr": GameSpec(4, "waverunr", "role_id"),
     "skisuprg": GameSpec(4, "skisuprg", "role_id"),
     "sgt24h": GameSpec(4, "sgt24h", "sgt24h"),
@@ -160,7 +161,7 @@ def parse_args() -> argparse.Namespace:
                         help="Run isolated peers alongside an existing RetroArch process; cleanup owns only launched PIDs")
     parser.add_argument(
         "--automatic-network", action="store_true",
-        help="Use the native Automatic Network Settings presets instead of manual NVRAM selectors",
+        help="Use the native Auto Network Role Settings presets instead of manual NVRAM selectors",
     )
     parser.add_argument(
         "--instance-indices",
@@ -546,12 +547,12 @@ def write_options(
         f"sm2_linked_cabinets_{set_name}": str(cabinets),
         "sm2_renderer": "software",
         "sm2_initial_nvram_setup": "enabled",
-        "sm2_nvram_settings": "enabled",
+        "sm2_nvram_settings": "disabled" if automatic_network else "enabled",
     }
     if cabinets == 1:
-        options[f"sm2_linked_cabinets_{set_name}"] = "disabled"
+        options[f"sm2_linked_cabinets_{set_name}"] = "-1"
         options[f"sm2_automatic_network_{set_name}"] = (
-            "relay" if set_name in {"powsledr", "vonr"} else "0")
+            "r" if set_name in {"powsledr", "vonr"} else "1" if spec.nvram_scheme == "power_sled" else "0")
         path = root / "config" / "core-options.cfg"
         path.write_text(
             "".join(f"{key} = {json.dumps(value)}\n" for key, value in options.items()),
@@ -560,11 +561,11 @@ def write_options(
         return
     if spec.nvram_scheme == "power_sled":
         options["sm2_initial_nvram_setup"] = "enabled" if automatic_network else "disabled"
-        options["sm2_nvram_settings"] = "enabled" if automatic_network else "disabled"
+        options["sm2_nvram_settings"] = "disabled"
     if set_name in {"powsledr", "vonr"}:
-        options[f"sm2_automatic_network_{set_name}"] = "relay"
+        options[f"sm2_automatic_network_{set_name}"] = "r"
     elif not automatic_network:
-        options[f"sm2_automatic_network_{set_name}"] = "0"
+        options[f"sm2_automatic_network_{set_name}"] = "-1"
     if spec.nvram_scheme == "power_sled":
         # Programs fix roles. Only reviewed Main/Slave Ride color is managed.
         if automatic_network and set_name != "powsledr":
@@ -577,7 +578,7 @@ def write_options(
         )
         is_relay = mandatory_relay or (include_relay and index == cabinets - 1)
         options[f"sm2_automatic_network_{set_name}"] = (
-            "relay" if is_relay else str(index + 1)
+            "r" if is_relay else str(index + 1)
         )
     elif automatic_network:
         options["sm2_nvram_von_network_link_attribute"] = "no_link"
@@ -1087,7 +1088,7 @@ def main() -> int:
                 activate_process(process)
                 # ROM loading can leave the process visible before its window
                 # exists. Keep the wait bounded without changing other windows.
-                position_process_window(process, *window_positions[local_index], timeout=15.0)
+                position_process_window(process, *window_positions[local_index], timeout=30.0)
             wait_while_alive(process, args.startup_wait)
 
         # Core initialization can overwrite the configured size. Apply outer

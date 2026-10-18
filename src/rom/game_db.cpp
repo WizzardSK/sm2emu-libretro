@@ -134,6 +134,7 @@ namespace {
 {
     if (text == "315-5838-doa") { *out = Protection::Sega315_5838_Doa; return true; }
     if (text == "315-5881")     { *out = Protection::Sega315_5881;     return true; }
+    if (text == "daytona-gtx") { *out = Protection::DaytonaGtx; return true; }
     if (text == "daytona-maxx") { *out = Protection::DaytonaMaxx;      return true; }
     return false;
 }

@@ -61,6 +61,9 @@ public:
     M2Comm();
 
     void reset();
+    /// Physical board fitting is host configuration, not serialized machine state.
+    void set_present(bool present) { m_present = present; }
+    [[nodiscard]] bool present() const { return m_present; }
 
     void attach_shared(std::span<u8> shared) { m_shared = shared; }
     void set_frame_offset(u16 offset) { m_frame_offset = offset; }
@@ -79,14 +82,14 @@ public:
     // -- the two handshake registers, on the i960's bus --------------------
 
     /// 0x01a04000. Bit 0 enables the board; the rest reads as ones.
-    [[nodiscard]] u8 cn_read() const { return static_cast<u8>(m_cn | 0xfe); }
+    [[nodiscard]] u8 cn_read() const { return m_present ? static_cast<u8>(m_cn | 0xfe) : u8{0xff}; }
     void             cn_write(u8 value);
 
     /// 0x01a04002. Bit 0 is the i960's own flip gate, bit 7 is the inverse of
     /// the Z80's. The Z80's toggles once per received frame, which is how the
     /// host notices new data without an interrupt.
     [[nodiscard]] u8 fg_read();
-    void             fg_write(u8 value) { m_fg = static_cast<u8>(value & 0x01); }
+    void             fg_write(u8 value) { if (m_present) m_fg = static_cast<u8>(value & 0x01); }
 
     /// MAME's check_vint_irq, called from the board's vertical blank. Despite
     /// the name it raises nothing: the IRQ lines are unconnected on Model 2 and
@@ -98,7 +101,7 @@ public:
     [[nodiscard]] bool link_alive() const { return m_linkalive == 0x01; }
     [[nodiscard]] u8   link_id() const { return m_linkid; }
     [[nodiscard]] u8   link_count() const { return m_linkcount; }
-    [[nodiscard]] bool enabled() const { return m_linkenable != 0; }
+    [[nodiscard]] bool enabled() const { return m_present && m_linkenable != 0; }
     /// Side-effect-free inputs used by the simulated board's role predicates.
     [[nodiscard]] std::array<u8, 2> role_inputs() const { return {m_fg, shared(1)}; }
 
@@ -153,6 +156,7 @@ private:
     u16 m_frame_offset = kDefaultFrameOffset;
     // Game configuration, re-established at load; not mutable machine state.
     bool m_counted_relay = false;
+    bool m_present = true;
 
     /// MAME's m_buffer0, the frame being assembled or examined.
     std::array<u8, 0x1000> m_buffer{};

@@ -1,4 +1,13 @@
-# Menu e controlli: riferimento Supermodel
+# Libretro Design And Framework References
+
+Shared reference: the user's
+[Libretro Core Framework](/Users/andrea/dev/libretro-core-framework/FRAMEWORK.md),
+adopted on 2026-10-12 for guidelines, GUI contracts, reusable tools and
+bidirectional solution exchange. See
+[Framework Adoption And Solution Exchange](Docs/LIBRETRO_FRAMEWORK_REFERENCE.md).
+Supermodel and TGPulse remain concrete implementation references; inspect their
+current code when adapting equivalent behavior. Preserve approved SM2 exceptions
+and compatibility. This reference adoption introduces no runtime changes.
 
 Linee guida per le milestone 2 e successive di [PORTING_PLAN.md](PORTING_PLAN.md).
 Il primo core software della milestone 2 è implementato: vedere [LIBRETRO.md](LIBRETRO.md).
@@ -631,54 +640,50 @@ See `Docs/POWER_SLED_SERVICE_MENU_CAMPAIGN.md` for evidence and acquisition gate
 
 ### Power Sled Color Presets And Second Rider — 2026-10-09
 
-Automatic Network Settings manages reviewed Ride ID colors on `powsledm`
-and `powsled`: Silver, Red, Black, Disabled. The new selector defaults to
-Disabled to preserve existing manual Ride selections. The ROM program fixes
-the native role; frontend host/client status does not change it. `powsledr`
-retains its native Relay identity and has no color selector. This reuses
-`automatic_network.cpp` and the existing NVRAM apply/write-back path; no
-communication protocol, hardware role or unreviewed field is modified.
+ANRS manages reviewed Ride ID colors on `powsledm` and `powsled`: 1 Silver,
+2 Red, 3 Black, 4 Yellow, with -1 manual. Playable Power Sled defaults to 1;
+`powsledr` offers only r. ROM identity fixes the native role. ANRS is independent
+of the manual NVRAM Settings gate.
 
-Power Sled Port 2 now supplies independent P2 Entry/Call and analog
-handlebars. MAME defines P1 on mux 1/3 and P2 on 5/7. P1 bindings and Test/Service conventions are retained. P1 West (RetroPad Y)
-and North (RetroPad X) supply secondary P2 Entry/Call as requested on
-2026-10-11, including when Port 2 is disabled. Appended neutral
-`AnalogControl` identifiers and metadata parsing activate the existing machine
+Power Sled Port 2 supplies independent P2 Entry/Call and analog handlebars.
+P1 West and North retain the approved secondary P2 Entry/Call bindings.
+Appended neutral `AnalogControl` identifiers and metadata parsing activate the existing machine
 I/O callbacks for 5/7; no Libretro callback is added to machine code.
 P2 is a rider in the same cabinet, not the Slave network instance. Save State
 version 8 and frontend buffer size remain unchanged.
 
-The generic manual launcher reuses `test-retroarch-netpacket.py`; see
-`Docs/LINKED_CABINET_LAUNCHER.md`. Native roles are embedded. Power Sled always
-starts Main, Relay and Slave programs, displaying Main/Slave above Relay;
-its optional Relay CLI switch is ignored.
+The generic launcher reuses `test-retroarch-netpacket.py`; see
+`Docs/LINKED_CABINET_LAUNCHER.md`. The declared ROM list determines programs;
+there is no default topology. Main/Slave/Relay uses that transport order.
+Power Sled ignores the optional Relay CLI flag.
 
-## Unified ANS Values And Explicit ROM Lists — 2026-10-09
+## Two-Option Network Adapter — 2026-10-17
 
-Automatic Network Settings uses one raw-value convention: `0` Disabled,
-`1` Master / Cabinet 1, `2` first Slave, subsequent sequential numbers for
-other cabinets, and `relay` where supported. Visible labels retain their
-reviewed game-specific meanings. Power Sled Main/Slave use `1` Silver,
-`2` Red and `3` Black. Core defaults remain Disabled (`0`) for those programs
-and Master (`1`) for generic playable sets. Dedicated `powsledr` and `vonr`
-offer only `relay`; Power Sled Relay manages no color, while Virtual On Relay
-retains its reviewed No Link operator attribute. ROM identity still determines
-fixed program roles. No aliases or migration for old development ANS values
-are implemented, as explicitly directed by the user. Native NVRAM keys and
-values, emulation, communication and save formats are unchanged.
+The current F05/F14 contract and evidence are documented in
+`Docs/NETWORK_TWO_OPTION_2026-10-17.md`. Linked Cabinets (-1 Disabled, 2..n)
+controls external topology. The communication board stays fitted in local
+loopback with Linked Cabinets Disabled, matching upstream.
+ANRS (-1 manual, 0 native No Link, positive
+IDs, r special role) controls reviewed native settings independently. Preserve
+program-implied roles and never derive them from frontend host/client identity.
+The adapter retains consuming option-update signals before GET_VARIABLE reads;
+Resume coalesces changed native settings/topology into one reset. Frontend
+setters are published outside locks and may re-enter display callbacks.
 
-The launcher accepts a repeated ROM name, comma-separated per-instance names,
-and optional per-instance `:ANS` suffixes. Its transport receives the explicit
-ROM list; it does not infer a different ROM from a numeric suffix. An explicit Power Sled
-Main/Slave/Relay triplet retains the native Main/Relay/Slave transport order
-while preserving declared controller mapping and role-based window positions.
-Other lists and repeated names are passed through literally. Per the user's
-KISS instruction, the launcher does not check game compatibility, native
-program combinations or game-specific cabinet limits; the core/frontend own
-connection behavior. Process-lifecycle success is separate from network proof.
-Explicit suffixes override saved values. Without suffixes, valid Power Sled
-session colors persist; fresh sessions select Silver for Main and Red for
-Slave. The optional Relay flag remains ignored for Power Sled.
+Frontend-neutral machine additions: M2Comm presence gates registers and ticking
+(default present for standalone callers), and a mutable program-ROM span allows
+guarded Power Sled program variants to be selected between frames before reset.
+No machine code depends on Libretro. Program variants remain adapter-owned;
+changing topology neither reloads content nor tears down the frontend lobby.
+Presence is configuration, not a new serialized hardware field. Save State
+restrictions and existing state format are preserved. The frontend retains its
+session, send/poll callbacks and clients while machine protocol queues reset.
+
+
+## Historical Implementation Records
+
+Network option semantics in the dated records below are superseded by the
+2026-10-17 contract above. Other implementation evidence remains applicable.
 
 ### Power Sled Main Audio Regions — 2026-10-09
 
@@ -1055,6 +1060,11 @@ includes descriptions/help text in mandatory reference comparisons. This
 review covers ANS and NVRAM Settings; it does not certify every Core Option's
 help text across all projects.
 
+The later F14 Linked Cabinets revision uses one identical help text for every
+supported Model 2 game. Program-specific topology remains in the network
+documentation and available values, without per-game help suffixes. See
+`Docs/NETWORK_TWO_OPTION_2026-10-17.md`.
+
 Verification: normal core rebuilt, save-RAM checks passed and only
 `sm2_libretro.dylib` deployed with backup/hash verification. Installed SHA-256
 `57de11b44496abe3436e30ace2277d9e959b4ad690046b6521c54462f0598850`.
@@ -1101,3 +1111,54 @@ revision, reset when the reconciled upstream version advances. Follow the
 mandatory release gate in `Docs/UPSTREAM_PORTING_MANIFESTO.md`. Dated package
 reports retain their original baseline and validation statements as history.
 This numbering correction changes no emulation, input, audio or state format.
+
+## Global Controller Profile Type — 2026-10-12
+
+The first Input option is Controller Profile Type (`sm2_controller_profile_type`):
+Normal (`normal`) or Normal + Test/Service (`test_service`, default). It controls
+all ports and retains each game's native profile, gameplay bindings and specific
+cabinet commands. Normal omits supported Test/Service descriptors and polling.
+The frontend variable-update path republishes controls on return to gameplay,
+without a reset. Both option registration paths use the same choices/default.
+
+Controls advertises one current game-specific JOYPAD type per port; None remains
+frontend-owned. Historical reduced JOYPAD subclass IDs remain readable but are
+normalized to the global choice; they cannot override it. Inapplicable/unsupported
+profiles retain their established conservative behavior. Power Sled P2 emergency,
+shutdown and check-cancel commands retain their approved gameplay/cabinet meaning.
+
+Catalog-wide registration/descriptor checks, option order/default/parser checks
+and existing input polling checks pass. Isolated RetroArch 1.22.2 macOS with VF2
+visibly confirms first placement, both choices, switching in both directions,
+unchanged gameplay bindings and Controls listing only None/current profile. The
+owned process exits 0 with no residuals; no physical-controller test is claimed.
+See `Docs/CONTROLLER_PROFILE_TYPE_FRAMEWORK_INTERCHANGE_2026-10-12.md`.
+
+## Daytona GTX Banked Protection — 2026-10-12
+
+`daytona-gtx` is a frontend-neutral Model2Original protection mode derived from
+MAME's model2o_gtx_state::gtx_r. The 1 MiB read overlay at 0x02c00000 switches
+before returning the triggering byte: FF000 selects bank 1, FF00C/F0003 select
+bank 0, FFFFC selects erased bank 2. `prot_data` is 3 MiB with FF-filled holes,
+32-bit word-interleaved bank0.bin/bank1.bin. The byte handler composes wider
+accesses with per-lane side effects and preserves burst flags and area waits.
+The mode gates all overrides; Daytona and MAXX keep their existing paths.
+
+Only GTX serializes its extra bank byte; existing game archive layouts and the
+fixed Libretro state capacity remain unchanged. State restore rejects bank >2.
+The catalog clone inherits ordinary Daytona content and verified I/O, with CRC
+checks and parent/split-device lookup. Service Menu/NVRAM mapping is not assumed
+from the parent: the new set has no operator overrides or initial template until
+its own documentation is reviewed. See `Docs/DAYTONA_GTX_SUPPORT_2026-10-12.md`.
+
+### Controller Profile Menu Refresh Correction — 2026-10-12
+
+The first test covered republishing after Resume. A user report clarified that
+the Controls name stayed stale while remaining in the Quick Menu. The modern
+Core Options display callback now republishes the controller type/descriptors
+when the global selector changes, even while the machine is paused. A separate
+isolated RetroArch 1.22.2 VF2 run verifies Normal in Port 1 Controls without
+Resume or restart; the process exits 0. Legacy frontends without this callback
+retain the return-to-game refresh. Gameplay polling still follows the selected
+option when emulation runs; no machine reset or state change is introduced.
+Private evidence: `build-libretro-gpu/validation/controller-profile-type-20261012/menu-refresh/`.

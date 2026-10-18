@@ -94,6 +94,7 @@ public:
 
     [[nodiscard]] bool init(const rom::GameSpec& game, rom::RomSet roms) override;
     void reset() override;
+    [[nodiscard]] std::span<u8> program_rom() override { return m_roms.region_mutable("maincpu"); }
     void run_frame() override;
 
     [[nodiscard]] Inputs& inputs() override { return m_inputs; }
@@ -286,6 +287,8 @@ private:
     [[nodiscard]] static u16 register_flags(u32 address);
     [[nodiscard]] u32 register_read(u32 address, u32 width);
     void register_write(u32 address, u32 value, u32 width);
+    [[nodiscard]] bool has_gtx_overlay(u32 address) const;
+    [[nodiscard]] u32 gtx_read(u32 address, u32 width);
     [[nodiscard]] bool has_maxx_pic() const;
     [[nodiscard]] u32 maxx_read(u32 address, u32 width);
 
@@ -367,6 +370,7 @@ private:
 
     std::span<const u8> m_rom_maincpu;
     std::span<const u8> m_rom_main_data;
+    std::span<const u8> m_rom_gtx;
     std::span<const u8> m_rom_copro_tables;
     std::span<const u8> m_rom_copro_data;
     std::span<const u8> m_rom_polygons;
@@ -396,6 +400,7 @@ private:
     /// State of the PIC fitted by the Daytona USA To The MAXX upgrade. The
     /// device overlays a small program-ROM mirror only for that set.
     u8 m_maxx_state = 0;
+    u8 m_gtx_state = 0;
 
     // -- interrupt latch ---------------------------------------------------
     u32 m_intreq = 0;

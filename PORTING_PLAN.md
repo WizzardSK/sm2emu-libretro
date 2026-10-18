@@ -1,5 +1,127 @@
 # Roadmap del core SM2-Emu Libretro
 
+## Two-Option Network Convention — 2026-10-17
+
+Status: Implemented, verified and installed locally. The user authorized implementation in this chat without a consumption cap. See [implementation and evidence](Docs/NETWORK_TWO_OPTION_2026-10-17.md).
+
+Virtual On local-board correction (2026-10-18): No Link does not mean the
+communication board is absent. With a disconnected board, a fresh SRAM reaches
+the attract sequence but starting a match gives a black picture; the existing
+user SRAM is not the cause. The local board remains fitted while external
+linking is disabled. Isolated RetroArch Software/Vulkan runs reached the match
+with the user SRAM unchanged. See the same report for the evidence and scope.
+
+Authoritative contract: [Framework 0.1.23, F05/F14](/Users/andrea/dev/libretro-core-framework/FRAMEWORK.md).
+Adoption interchange: [TGPulse Network Integration — Cross-Core Adoption Review, 2026-10-17](/Users/andrea/dev/libretro-core-framework/TGPULSE_NETWORK_ADOPTION_REVIEW_2026-10-17.md). Apply its findings during this integration; source review and another core's results are not SM2 runtime acceptance.
+Per-game review: [Network Review](/Users/andrea/dev/libretro-core-framework/outputs/01a13152-dbfa-7e30-bc9d-0477abc2cccc/Framework_Network_Review.xlsx), single sheet. This revision supersedes prior Network Board / Automatic Network Settings semantics and older network comments in Menu Review; previous delivered work is a baseline, not completion of this task.
+
+- Exactly two always-visible controls: Linked Cabinets and Auto Network Role Settings (ANRS); both display Not Supported for unsupported games. Remove the separate Network Board option.
+- Linked Cabinets: -1 Disabled/default, with 0/1 aliases; the communication board remains fitted and uses local loopback as in upstream. 2..n per-game totals; theoretical role count permitted where unknown, identified as theoretical.
+- ANRS: -1 Disabled/manual; 0 native Standalone/No Link default; 1 Master; 2..n Slave/ID; r special native role with l/s aliases. Use native labels and contextual ID descriptions. When Standalone is not separately defined, Master means Standalone in loopback and Master in a network, not a converted role.
+- Keep topology and role independent. ANRS overrides NVRAM Settings and works when it is disabled. Hide only the corresponding native role/ID controls while automation is active; preserve unrelated fields and integrity.
+- Retain program-implied roles/identities; dedicated Relay programs have one choice, and non-Relay Virtual On must not offer Relay. Respect the reviewed per-game defaults.
+- No compatibility with the previous networking model. Invalid values fall back to default with notification. Coalesce effective changes into one automatic reset on Resume; unchanged Resume does not reset.
+- Acceptance: all applicable catalogue rows mapped; modern/legacy registration, labels/values/defaults/aliases, unsupported-game visibility, NVRAM priority/manual restoration, native persistence/integrity, local and representative linked behavior checked separately; verify installed artifact identity when delivery is authorized. Do not present theoretical totals as multiplayer qualification.
+- Prototypes are excluded from analysis/acquisition/testing/implementation unless the user explicitly requests them. Royal Ascot II is not working and excluded from operational qualification.
+
+### Adoption Requirements And Acceptance
+
+Delivery: all source, native mapping, registration, ABI/transport and local deployment checks below are implemented. Actual RetroArch menu/paused-role application and a two-instance Daytona linked baseline pass. Broader interactive active-lobby permutations, theoretical maximum counts, synchronized racing and other platforms remain qualification limits, not claims of this delivery. See the report for evidence boundaries.
+
+
+- **Consuming Option Reads (F05):** audit all option readers. `src/libretro/core_options.h::update_option_display` currently calls visibility reads without first retaining the update signal; frame ordering in `core.cpp` alone does not cover this paused callback. Retain pending changes before consuming `GET_VARIABLE` reads and merge them on Resume, or demonstrate an independent application path. Reuse checks that model RetroArch's consuming reads; retain failing-before/passing-after evidence for the defect. Cover repeated paused callbacks, unrelated reads, inactive/unchanged selections and operation without a display callback; verify effective application and reset notification in the frontend.
+- **Independent ANRS Authority:** remove the residual NVRAM Settings dependency in `src/libretro/core.cpp::refresh_nvram_options` and its pending-application path. Verify ANRS application with NVRAM Settings Disabled, while unrelated operator settings retain their normal gate.
+- **Hidden Selector Synchronization And Handover:** publish effective native role/ID values to the corresponding selectors even while hidden. Disabling ANRS hands authority to the last applied values, not stale earlier manual choices. Verify both NVRAM Settings states and preservation of unrelated fields.
+- **Active Lobby Lifecycle:** review the full Resume/Restart path, preserving the frontend lobby, registered send/poll callbacks and connected clients. Do not unload content or stop/start Netpacket for machine reconfiguration. Exercise an already-open lobby, staggered peer arrival/recovery and explicit Restart with changing cabinet totals. Apply topology and native role/ID before the first native frame; clear stale machine/frame data without tearing down transport ownership.
+- **Effective-Change Reset:** combined topology/role/NVRAM changes cause exactly one reset. Unchanged Resume, aliases with unchanged effect and fresh-machine initialization must not add duplicate resets. Keep actual reset/notification evidence distinct from successful registration.
+- **Native Mapping And Persistence:** derive each game's roles and identities from its reviewed native settings, never from frontend host/client identity or numeric table order. Verify saved data as well as clean starts, native checksums/mirrors, unrelated-byte preservation and fresh reload. Record the effective board/topology and native role when diagnosing a failed configuration; do not silently convert roles.
+- **Re-entrant Callbacks:** publish frontend option changes outside locks that callbacks can re-enter; verify re-entry safety using SM2's own architecture. Preserve its actual Save State restrictions rather than copying TGPulse's COMM policy.
+- **Evidence Boundaries:** reuse the existing SM2 runners. Record modern/legacy registration, source checks, ABI/transport checks, real frontend lobby behavior, native persistence and synchronized gameplay separately. Theoretical totals and TGPulse's qualification do not establish SM2 multiplayer support. Keep the existing Framework progress-reporting requirement below.
+
+### Progress Reporting To The Framework Chat
+
+The user explicitly authorized this project's chat to send meaningful integration updates to Framework thread `01a13152-dbfa-7e30-bc9d-0477abc2cccc`, host `local`, using send_message_to_thread. Report implementation progress, blockers, any proposed contract changes, validation evidence/limits and local delivery with paths and hashes. Update this roadmap as work progresses. Report facts without treating findings as authorization to alter the shared contract. This reporting authorization does not itself authorize implementation or commit/push.
+
+Model 2 Focus: include Power Sled implicit roles/colors and dedicated Relay programs. GTX's independent inventory and 58-stage native commit/reload campaign are complete, with dedicated NVRAM options and initial template delivered: LINK ID MASTER/SLAVE/SINGLE and CAR NUMBER 1–8. Reuse that verified mapping as input to the new automation; validate ANRS authority, identity selection, persistence and lifecycle separately before declaring this networking convention delivered. Do not reopen excluded prototypes or the closed Power Sled package beyond the scope of this network integration.
+
+## User-Revised Framework Menu Wording — 2026-10-13
+
+Approved follow-up (Order 071, Menu Review!F98) completed: Gamepad Rumble uses
+exactly `Enable gamepad vibration using the game's force-feedback or rumble effects.`
+Rebuilt, registration verified and normal installed core updated. Values, defaults
+and behavior unchanged; the former Rumble wording exception is superseded.
+
+
+| Status | Activity | Scope / Acceptance |
+| --- | --- | --- |
+| 🟢 | Apply The User-Revised Menu Workbook | The final workbook reconciliation and F04 ordering are implemented and registration-audited for Model 2. The final 202-row [Framework Menu Review](/Users/andrea/dev/libretro-core-framework/outputs/01a13152-dbfa-7e30-bc9d-0477abc2cccc/Framework_Menu_Review.xlsx) has SHA-256 `4ceb9be04d7ad32201c78ae53ac2b103987f8867df69675230996dab7c9c125a`; all 48 applicable non-NVRAM rows match the final V2 registration. V2 and legacy each register 452 options in identical order; complete metadata by key and System order match the pre-order baseline. Video, Audio and Input follow the user's reviewed functional groups, with Controller Profile Type first and general Gamepad Rumble second in Input; 31 positions changed against the pre-order baseline. The latest normal installed core is SHA-256 `ce1a48cd89a6ca88368cd6ccdc0348427cfee21771ce2a66ef9e1e24e9a177e7`. All four category pages were visually inspected in isolated RetroArch on 2026-10-18; the full catalogue remains covered by registration audits rather than an exhaustive visual walk of every dynamic NVRAM field. See the [wording record](Docs/FRAMEWORK_MENU_WORDING_2026-10-13.md), [ordering/interchange record](Docs/FRAMEWORK_FUNCTIONAL_GROUPS_INTERCHANGE_2026-10-17.md) and [frontend observation](Docs/FRONTEND_MENU_AUDIO_RESET_2026-10-18.md). This follow-up does not reopen completed networking integration. |
+
+Reference mapping: existing menu review in phase 3.7 and the shared Framework wording review. This is a new wording revision, not evidence
+that previous canonical-text work already implements the user's latest edits.
+The user has combined formerly separate entries and changed core membership;
+preserve those decisions. The workbook's `Source Options` sheet is historical
+registration evidence: do not use its original split rows or Order links to
+undo the reviewed table. Exclude individual per-game NVRAM operator fields
+from harmonization.
+
+`Details` distinguishes global applicability (blank), a group of games or a
+specific game. For non-game-specific, non-NVRAM rows, a retained qualifier
+after `—` has been moved into the comment as an applicability sentence; the
+category remains in Details. Game-specific names already identify their game.
+Use the reviewed text, including those applicability sentences, across the
+relevant registration paths. Preserve raw option keys, saved values, defaults,
+visibility and behavior; a shared label does not authorize changing emulation
+or replacing native feedback with synthetic feedback.
+
+Approved consolidation follow-up (2026-10-13): the workbook then had 203
+review entries; the final 2026-10-17 workbook has 202 after Order 222 was
+removed. Use Timing / FPS Overlay (Order 012) for all three cores,
+including the former Frame Timing Overlay; use Gamepad Rumble (Order 071)
+for all three cores, including the former Force Feedback; use one Off-Screen
+Reload Shortcut (Order 088) for Model 2 and Model 3. Former Orders 200, 212
+and 218 are superseded by these rows. Core flag union is authoritative; do
+not recreate the removed rows or alter raw keys/behavior because labels merge.
+
+Single-game core option labels must start with `<Game Name>: `, using exactly
+one colon and one following space, then the option description in Title Case.
+Apply this to the effective target label: Name (New) when populated, otherwise
+Name. Group/global options do not receive a single-game prefix. Per-game NVRAM
+operator parameters remain outside cross-core harmonization. Validate this
+prefix and the merged labels as part of the pending wording acceptance below.
+
+Applied in this same menu-wording activity: review final Core Option
+presentation order under [Framework F04](/Users/andrea/dev/libretro-core-framework/FRAMEWORK.md)
+and its [Frontend Option Ordering handoff](/Users/andrea/dev/libretro-core-framework/ROADMAP.md).
+Within menus/submenus other than System, keep global options preferably first
+and group `<Game Name>: ...` options last. Sort by displayed label while keeping
+reviewed functional parameter groups together: Horizontal Range must be
+immediately followed by Vertical Range at the Horizontal group's alphabetical
+position. Examine actual related parameters before adding further groups.
+Review the entire set of registered options against implementation and
+references for parent/dependent controls, axes, numbered sources and native
+fields. Preserve each justified group's functional order before sorting the
+groups; place a controlling mode before its dependent settings when applicable.
+Similar names or adjacency alone do not establish a group, and independent
+controls must remain independent. TGPulse's delivered MVD Input/H/V/Gravity/
+Drift/Diagnostics and LCD Display/Position/Opacity sequences are examples
+verified in that core, not SM2 sequences to copy without an equivalent feature.
+System retains its functional order; NVRAM Settings and native operator-field
+order remain explicit exceptions. Verify the effective V2 and legacy
+registration order without moving categories or changing keys, values,
+defaults or workbook Order identifiers. Reuse the existing final-registration
+audit with independently defined expected sequences and a baseline metadata
+comparison; distinguish registration evidence from actual menu inspection.
+The user approved the SM2 functional blocks on 2026-10-17. The final V2 and
+legacy registration audit passes; visual option-page acceptance remains open.
+
+Acceptance: reconcile every applicable reviewed row against current option
+keys, validate modern/legacy labels and help, and inspect the resulting menu.
+All applicable rows are reconciled; modern and legacy registration checks and
+Save RAM checks pass. The normal installed core is updated. A later isolated
+RetroArch run inspected the System, Video, Audio and Input pages directly;
+the former ScreenCaptureKit failure is historical. The owned process exited
+normally with no residual processes. No commit or push.
+
 Il progetto indipendente `Zer0one/sm2-emu-libretro` sviluppa su `main` e usa
 `dmanlfc/sm2-emu` come remote `upstream`. La base iniziale è SM2-Emu 0.9.4,
 commit `8b3a468c5b51387093811cb16b076e6fd9289d66`. Il clone mainstream rimane
@@ -22,6 +144,20 @@ riuscita da sola non dimostra compatibilità o gameplay corretto.
 Menu, profili e opzioni seguono [LIBRETRO_DESIGN.md](LIBRETRO_DESIGN.md),
 che adatta le convenzioni del progetto personale Supermodel a Model 2.
 
+## Daytona GTX Addition — 2026-10-12
+
+| Status | Activity | Remaining Work |
+| --- | --- | --- |
+| 🟢 | GTX Catalog And Banked Protection | MAME-derived frontend-neutral protection, CRC-checked clone definition, bank Save State and scoped checks pass; RetroArch Vulkan 1x reaches a race in 2,300 frames with audio/SRAM and clean exit. Normal installed core and configured database updated. Set remains preliminary; see `Docs/DAYTONA_GTX_SUPPORT_2026-10-12.md`. |
+| 🟢 | GTX Service Menu Inventory | Phase 1 complete in isolated RetroArch: 10 settings, 83 screenshots, all cycles closed. Native roles Master / Slave / Single; Car Number 1–8. YAML, catalogue and local workbook updated; see [inventory](Docs/DAYTONA_GTX_SERVICE_MENU_2026-10-17.md). |
+| 🟢 | GTX NVRAM Settings And Initial Setup | Eight approved fields implemented after the complete 58-stage native commit/reload campaign. Dedicated GTX template; Single / Deluxe / Export initial overrides, preserving valid existing saves. Credit settings excluded. Build, Save RAM/catalog audits and three isolated RetroArch persistence trials passed; normal installed core updated. Linked gameplay remains separate. |
+
+## Latest Shared Input Update — 2026-10-12
+
+| Status | Activity | Evidence / Remaining Work |
+| --- | --- | --- |
+| 🟢 | Controller Profile Type | Implemented first in Input: Normal / Normal + Test/Service (default), global across ports; Controls no longer selects variants. Catalog/input/options checks and isolated RetroArch VF2 UI switching pass. Follow-up corrects paused-menu metadata: modern display callback updates Controls names/descriptors without Resume or reset; legacy API retains Resume refresh. Normal local core updated. Framework edition 0.1.1 records this SM2 contract and the other-core adoption candidate; destination F09 and reconciliation entries verified. Retain the interchange file; other-core implementation is not claimed. |
+
 ## Implementazioni ancora aperte
 
 The approved TGPulse adaptation candidates are listed in section 8, and
@@ -33,6 +169,9 @@ the consolidated source/backend review and OpenGL context-loss correction.
 Physical-device and subjective user checks retain their own status.
 Existing runtime and gameplay checks that need no new implementation remain in
 the final section.
+The user closed the current networking test campaign on 2026-10-18; future
+newly observed faults will be recorded as new activities. The remaining
+implementation candidate is True 3D Widescreen, deferred in section 8.
 
 ## 0. Baseline upstream — completata nei limiti indicati
 
@@ -756,7 +895,7 @@ port regressions solely because old hashes differ.
 | 🟢 | **Rendering and Video Options** | Approved upstream renderer changes are accounted for and integrated. Consolidated four-board Software/Vulkan/OpenGL/GLES review passes with actual frontend SRAM/CRC evidence; Mesa GL/GLES match pixels, PCM and NVRAM. Fixed geometry-buffer abandonment after OpenGL context loss; both VF2 API loss/recreation cases match uninterrupted baselines. Old/new Vulkan control and VF2 RetroArch Vulkan 2× gameplay pass. Both installed local cores updated. Cross-rasterizer/driver pixel differences and small cross-platform PCM differences are quantified separately; no Windows/Batocera requalification claim. See `Docs/RENDERING_REVIEW_2026-10-09.md`. |
 | 🟢 | **Save State Compatibility** | Compatibility audit complete: current writer 8, reads 4–8, unchanged 9 MiB buffer and 96-byte frontend tail. Retained four-board/DSB2 round-trip, replay, run-ahead/rewind and historical fresh-process loads pass; three Power Sled video/PCM continuations rechecked exactly. Current installed-core Virtua Cop RetroArch slot round-trip restores the game region exactly, resumes and exits cleanly. Legacy omissions, platform dependence and external Linked Cabinets restrictions remain explicit. Manual/design corrected; both installed cores already match the build. See `Docs/SAVE_STATE_COMPATIBILITY_REVIEW_2026-10-09.md`. |
 | 🟢 | **Power Sled Launcher Ride Defaults And Relay Order** | Launcher correction originally qualified Main Red / Slave Silver after the prior Silver/Red startup failure; the subsequent Master Silver Identity integration now qualifies both color orders. Relay now follows Slave and uses `_relay`; controller indices and visible layout remain role-based. Old-session config/SRM lookup matches the ROM, and launcher-only resume tolerates absent SRMs while preserving available saves. Six ROM-free mapping/resume checks and fresh installed-core startup pass. Bounded resumed RetroArch replay reaches advancing races on Main and Slave and LIVE camera on Relay; all three final SRMs exist, clean exits and no residual processes. Original user saves/options preserved. Physical-controller proof remains separate. See `Docs/POWER_SLED_LAUNCHER_CORRECTION_2026-10-10.md`. |
-| 🟢 | **Power Sled Automatic Network Settings and Linked Launcher** | Unified ANS values implemented: 0 Disabled, 1 Master / Silver, 2 first Slave / Red, 3 Black for Power Sled, relay for Relay; dedicated Relay programs offer only relay. No old development ANS aliases or migration. Launcher supports repeated ROM names, per-instance lists and :ANS overrides; the 2026-10-11 extension adds name[:ANS[:GAMEPAD]], one-based pads, first-free automatic IDs and explicitly empty pad fields for no assignment, removing --controllers; r aliases relay; no-gamepad ports use valid indices and None devices to avoid the reported RetroArch autoconfiguration crash; five-instance runtime launch/clean exit passes (21 ROM-free checks and configuration dry runs pass; automatic macOS usable-desktop fitting with --desktop-size override and applied/read-back outer frames after startup; five actual 343x281 frames and bounded post-settle stability verified; interactive reads tolerate user UI interaction without marking clean sessions failed; normal native-window quits recover unsaved observed Core Options with backups and frontend-save precedence, verified against the user log and next-launch config; no default game selection (--game required); generic four-participant-plus-Relay layout uses four windows across with an equally sized Relay underneath); it performs no game compatibility checks (KISS). Power Sled triplet keeps Main / Slave above Relay and ignores --relay. Core/CLI checks, dry-run mappings and an actual installed-core session pass native links, three-copy colors/CRC, layout and clean Ctrl+C shutdown. Both local cores updated. Physical controls and racing remain in preliminary validation. See `Docs/LINKED_CABINET_LAUNCHER.md` and `Docs/ANS_CONVENTION_REVIEW_2026-10-09.md`. |
+| 🟢 | **Power Sled Network Roles And Linked Launcher** | Current F14 convention: playable programs use -1 manual or colors 1 Silver / 2 Red / 3 Black / 4 Yellow (default 1); dedicated Relay uses r. Generic launcher uses name[:ANRS[:GAMEPAD]], canonical r with l/s aliases, one-based pads and explicit empty pad fields for no assignment. Roles follow ROM identity; resolved automation/topology replace saved network selections while other Core Options and SRAM persist. Generic fitting, Relay-last folders, no default game and no compatibility checks retained. See `Docs/LINKED_CABINET_LAUNCHER.md` and the current network report; dated 2026-10-09 reports retain historical tokens only. |
 | 🟢 | **Upstream v0.9.44 Cornering Rumble Deadzone** | User-approved Libretro adaptation implemented on 2026-10-11. Cornering rumble uses frontend-processed steering. Following user review, the former 7000-unit threshold is replaced by a deliberate 5% rumble-only minimum; remaining travel is rescaled to the existing peak strength. Existing peak strength, impact/kick behavior, 12-frame tail and stop/disable behavior are preserved. Small travel, zero, symmetry, negative full travel and existing decoder checks pass; normal core rebuilt and installed. Stick/wheel/aim deadzone configuration stays in the frontend; no duplicate Core Options. Standalone v0.9.44 GUI/config changes were reviewed, not imported. Cross-core candidate retained in `Docs/RUMBLE_FRONTEND_DEADZONE_INTERCHANGE_2026-10-11.md`. |
 | 🟢 | **SCSP, MultiPCM and Music** | Audio implementation and native Batocera qualification pass: VF2 SCSP filter on/off preserves pixels/SRAM and attenuates 10–20 kHz output by 10.93 dB; Daytona MultiPCM and Top Skater mixed audio pass. Top Skater Sound Test BGM 1 runs 312.912 seconds with SCSP Mute, sustained output and nine waveform passages repeating after 262.908 seconds; repeated PCM is not bit-identical and no decoder-branch trace is claimed. All eight frontend runs exit 0; tested files remain unchanged. EAB Enabled and Gains Auto retained. Following positive listening checks, SCSP Output Low-Pass Filter now defaults to Enabled by user decision on 2026-10-11; explicit saved Disabled remains respected. The user confirms the requested listening checks successful on 2026-10-11; audio operator qualification is closed. Subsequent Windows/Batocera qualification in the open-verifications section supersedes the former platform test gate; no further platform-specific technical check remains. See `Docs/NATIVE_BATOCERA_AUDIO_VALIDATION_2026-10-09.md` and `Docs/UPSTREAM_AUDIO_PACKAGE_2026-10-08.md`. |
 | 🟢 | **Ski Super G Drive Board Startup** | Missing PE-command/PD-response wiring identified from the program. Stationary acknowledgements now pass the native startup check without Test; obsolete timed bypass removed. Command/reply, reset, saved-latch restoration and fresh native boot pass. Real RetroArch Vulkan startup qualified separately; normal core deployed. Full drive firmware and mechanical emulation remain outside scope. See `Docs/SKI_SUPER_G_DRIVE_BOARD_STUB_2026-10-11.md`. |
@@ -822,7 +961,8 @@ port regressions solely because old hashes differ.
 | 🟢 | **Standard Gun Input Fallback** | Fixed idle Lightgun off-screen status monopolizing Standard and suppressing Mouse/Analog Stick movement. Existing input regression checks cover positional BEL and serial Virtua Cop, retaining real Lightgun trigger/off-screen reload checks. Physical Mouse behavior in the reported RetroArch session remains to confirm. See Docs/GUN_STANDARD_FALLBACK_2026-10-11.md. |
 | 🟢 | **Country Default Priority** | Approved priority Export → Europe → U.S.A. applied to Country/Nation selector defaults and Automatic Initial NVRAM Setup. Over Rev (`overrev`, `overrevb`, `overrevba`) and Super GT 24h now prefer Europe; Export remains the default where supported. Existing saved Core Option choices and valid frontend/native NVRAM retain their existing precedence. Value order, native labels and encodings remain intact. Catalog audit passes for 87 sets / 332 options; initial-selection and persistence checks pass. |
 | 🟢 | **NVRAM Reset Notification Reference Alignment** | Fixed the silent automatic reset after changed operator options: Info logging alone did not reach the frontend. SM2 now sends the exact TGPulse-Next notification "Applied NVRAM Settings; machine reset" through queued SET_MESSAGE_EXT (5 seconds), with SET_MESSAGE fallback (300 frames). Actual-core VF2 callback checks verify exactly one notification for a changed persisted option and no repeats during unchanged frames, for both interfaces. Existing startup logs stay silent; reset/persistence behavior is unchanged. |
-| 🟢 | **Automatic Network Settings Reference Alignment** | Registered for supported network titles and visible only with NVRAM Settings Enabled, following the latest user instruction and current TGPulse-Next reference. Existing per-set choices/keys retained. Default 1 for playable sets, fixed relay for Relay programs. Existing offline behavior retained. ANS/NVRAM help aligned with applicable reference wording, including automatic reset after persisted changes. |
+| 🟢 | **Network Role Settings Reference Alignment** | Superseded by current F14: exactly Linked Cabinets and Auto Network Role Settings, with Not Supported placeholders. ANRS works with NVRAM Settings OFF; managed native selectors are hidden and synchronized. Native role and topology are independent. Shared wording follows the revised reference; obsolete Menu Review networking comments are not restored. |
+| 🟢 | **Standalone Communication Board Review** | The communication board stays fitted in local loopback with Linked Cabinets Disabled, matching upstream. Two-instance RetroArch trials for Dynamite Baseball, Baseball ’97, Pilot Kids, Rail Chase 2 and Zero Gunner formed frontend rosters but all native boards stayed disabled; no cabinet-link options were added for them. Matched board-present/absent ABI boot paths, including reviewed clone variants, preserved video, PCM and saves. Those observations are retained as limited evidence, not a reason to remove the board. See `Docs/COMM_BOARD_STANDALONE_REVIEW_2026-10-18.md`. |
 | 🟢 | **Power Sled Initial Calibration Defaults** | Approved current saved endpoint data seeds all three independent initial images via Automatic Initial NVRAM Setup. Existing frontend/native saves retain priority; operator settings preserve calibration. See Docs/POWER_SLED_CALIBRATION_DEFAULTS_2026-10-11.md. |
 | 🟢 | **Power Sled System Defaults And Order** | All four switches default Enabled. Standalone precedes Relay Audio On Master, Relay Commands and AI Finish Speed Fix, before NVRAM Settings. Standalone remains inactive with Linked Cabinets enabled. Existing saved choices preserved. |
 | 🟢 | **Power Sled Relay B_CRX** | Relay counts the reconstructed Main's rider board while preserving its separate role. Master + Relay observer reports ONE on both boards with ready links and Standalone inactive. No forced success flag. |
@@ -849,6 +989,12 @@ aggiornamenti si valutano e integrano su `main` con patch, cherry-pick o merge,
 secondo il caso e le istruzioni correnti. Il mainstream si aggiorna separatamente.
 
 ## Verifiche ancora aperte
+
+Networking update, 2026-10-18: the user considers the requested networking
+checks closed. The board-fitted loopback review is complete for its documented
+scope. Its bounded roster/native-link evidence does not claim synchronized
+gameplay for every game or configuration; those limits are evidence, not an
+outstanding test request. Reopen only for a newly reported issue.
 
 Closure update, 2026-10-11: the user closes the full Power Sled package,
 including Country semantics, and BEL / RC2 / HOTDP. Prior pending statements
@@ -927,3 +1073,23 @@ contenuti inattesi. Rimane una decisione del titolare upstream, non una verifica
 tecnica locale: `LICENSE` dichiara BSD-3-Clause, mentre 114 intestazioni vietano
 l'uso commerciale senza permesso. Prima di un PR o di una pubblicazione esterna
 va chiarito quale dei due testi governi quei file.
+
+
+## Audio Recovery After Reset — Framework Follow-Up 2026-10-18
+
+Status: Complete. The user confirmed audio playback is satisfactory on 2026-10-18.
+Reference: [Framework F12/F14, edition 0.1.37](/Users/andrea/dev/libretro-core-framework/FRAMEWORK.md).
+
+The source audit and installed-core VF2 trials on 2026-10-18 found no reset
+recovery defect. Native and 60 Hz runs produced sample-identical PCM at
+startup, after an option-triggered reset and after two explicit resets. A
+separate RetroArch/CoreAudio recording confirms PCM returns after two real
+frontend resets; the user subsequently confirmed the audio sounds correct. The full
+evidence and limits are in [Frontend Menu And Audio Reset Review](Docs/FRONTEND_MENU_AUDIO_RESET_2026-10-18.md).
+
+- [x] Inspect this core’s audio startup, reset and flush paths. This adapter has pending sample vectors rather than a packet queue with read/write indices or a blocked producer. Repeated resets clear both native and frontend pending samples and restore timing/DC-filter state.
+- [x] Compare PCM before and after repeated explicit and option-triggered resets in native and 60 Hz execution. No defect was reproduced and no production code change was made.
+- [x] Verify physical speaker listening and subjective fidelity. The isolated Software/Asynchronous RetroArch run used CoreAudio and recorded resumed PCM after two explicit resets; the user confirmed the audio sounds correct on 2026-10-18. Networked two-peer audio/gameplay remains a separate qualification.
+- [x] Record destination findings and evidence limits here and in the linked report. No new shared behavior or interface convention emerged, so this destination-specific result is not added to the Framework.
+
+Supermodel reference: [Audio Recovery During Machine Reset](/Users/andrea/dev/libretro-supermodel-modern/Docs/NETWORK_TWO_OPTION_2026-10-17.md). Its fix reuses startup initialization with two silent packets to avoid a queue-specific producer/consumer position ambiguity. **Do not copy two-packet priming or any Supermodel queue implementation:** SM2's own reset path was reviewed and no corresponding defect was reproduced.

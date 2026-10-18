@@ -96,3 +96,10 @@ Sega, Model 2, Virtua Fighter, Virtua Cop and Daytona USA are trademarks of
 their respective owners. sm2-emu is an independent work and is not affiliated
 with or endorsed by Sega. No copyrighted game data is distributed with this
 software.
+
+Libretro Port Addition — Daytona GTX
+----------------------------------
+The GTX banked ROM overlay in src/hw/model2_original.cpp and the daytonagtx
+ROM definition are adapted from MAME src/mame/sega/model2.cpp, BSD-3-Clause,
+copyright R. Belmont, Olivier Galibert, ElSemi, Angelo Salese and Matthew Daniels.
+The original MAME protection protocol and erased-bank behavior are preserved.

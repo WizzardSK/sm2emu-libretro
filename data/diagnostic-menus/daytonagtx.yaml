@@ -1,0 +1,421 @@
+---
+game:
+  set: daytonagtx
+  parent: daytona
+schema_version: 1
+verification:
+  status: menu_inventory_verified
+  date: '2026-10-17'
+  base_revision: b52108e3be8776448cad7cf8bac8a9bd2d0dfc0d
+  core_source_state: Working copy; GTX implementation and later adapter/menu changes
+    retained
+  method: isolated_sm2_libretro_retroarch_native_service_menu
+  evidence: build-libretro-gpu/validation/daytonagtx-service-20261017/inventory.json
+  phase2: complete_58_stages_native_commit_and_fresh_reload
+  pending:
+  - linked_gameplay
+  phase2_evidence: build-libretro-gpu/validation/nvram-campaigns/daytonagtx/campaign.json
+nvram_layout:
+  status: verified
+  backup_bank_bytes: 128
+  backup_mirror_offset: 128
+  checksum: CRC16-CCITT, initial 0, little-endian at bytes 8-9, covers bytes 10-127
+  eeprom: 128 bytes, word-byte-swapped backup bank
+  template: Dedicated native-committed daytonagtx-base.srm; no parent template assumption
+controls:
+  enter_test_menu: R3
+  next_item: L3
+  select_or_change: START
+service_menu_inventory:
+  root_menu:
+  - BOOKKEEPING
+  - GAME SYSTEM
+  - COIN ASSIGNMENT
+  - INPUT TEST
+  - OUTPUT TEST
+  - DRIVE BD TEST
+  - SOUND TEST
+  - TGP TEST
+  - MEMORY TEST
+  - BACKUP RAM CLEAR
+  - EXIT
+  diagnostics: Listed Only; No Bookkeeping, Hardware Test Or Destructive Action Acquisition
+  calibration: Listed Only; No Endpoint Acquisition
+  native_exit:
+  - Select Game System EXIT Or Coin Assignment EXIT
+  - Select Test Mode EXIT
+  evidence_manifest: build-libretro-gpu/validation/daytonagtx-service-20261017/inventory.json
+menus:
+  game_system:
+    editable_option_count: 8
+    options:
+    - key: link_id
+      label: LINK ID
+      position: 1
+      native_default: MASTER
+      value_count: 3
+      values:
+      - MASTER
+      - SLAVE
+      - SINGLE
+      cycle_closed: true
+      evidence:
+      - build-libretro-gpu/validation/daytonagtx-service-20261017/menu-run/screenshots/link-id-00.png
+      - build-libretro-gpu/validation/daytonagtx-service-20261017/menu-run/screenshots/link-id-01.png
+      - build-libretro-gpu/validation/daytonagtx-service-20261017/menu-run/screenshots/link-id-02.png
+      - build-libretro-gpu/validation/daytonagtx-service-20261017/menu-run/screenshots/link-id-03.png
+      review: approved
+      storage_mapping:
+        status: verified
+        backup_offset: 11
+        values_in_native_cycle_order:
+        - 1
+        - 2
+        - 0
+      core_default: SINGLE
+      default_policy: preferred_offline_default
+      initial_setup_override: SINGLE
+      implementation_status: implemented
+    - key: car_number
+      label: CAR NUMBER
+      position: 2
+      native_default: 1
+      value_count: 8
+      values:
+      - 1
+      - 2
+      - 3
+      - 4
+      - 5
+      - 6
+      - 7
+      - 8
+      cycle_closed: true
+      evidence:
+      - build-libretro-gpu/validation/daytonagtx-service-20261017/menu-run/screenshots/car-number-00.png
+      - build-libretro-gpu/validation/daytonagtx-service-20261017/menu-run/screenshots/car-number-01.png
+      - build-libretro-gpu/validation/daytonagtx-service-20261017/menu-run/screenshots/car-number-02.png
+      - build-libretro-gpu/validation/daytonagtx-service-20261017/menu-run/screenshots/car-number-03.png
+      - build-libretro-gpu/validation/daytonagtx-service-20261017/menu-run/screenshots/car-number-04.png
+      - build-libretro-gpu/validation/daytonagtx-service-20261017/menu-run/screenshots/car-number-05.png
+      - build-libretro-gpu/validation/daytonagtx-service-20261017/menu-run/screenshots/car-number-06.png
+      - build-libretro-gpu/validation/daytonagtx-service-20261017/menu-run/screenshots/car-number-07.png
+      - build-libretro-gpu/validation/daytonagtx-service-20261017/menu-run/screenshots/car-number-08.png
+      review: approved
+      storage_mapping:
+        status: verified
+        backup_offset: 12
+        values_in_native_cycle_order:
+        - 0
+        - 1
+        - 2
+        - 3
+        - 4
+        - 5
+        - 6
+        - 7
+      core_default: 1
+      initial_setup_policy: preserve_validated_template_value
+      implementation_status: implemented
+    - key: cabinet
+      label: CABINET
+      position: 3
+      native_default: TWIN
+      value_count: 3
+      values:
+      - TWIN
+      - UPLIGHT
+      - DELUXE
+      cycle_closed: true
+      evidence:
+      - build-libretro-gpu/validation/daytonagtx-service-20261017/menu-run/screenshots/cabinet-00.png
+      - build-libretro-gpu/validation/daytonagtx-service-20261017/menu-run/screenshots/cabinet-01.png
+      - build-libretro-gpu/validation/daytonagtx-service-20261017/menu-run/screenshots/cabinet-02.png
+      - build-libretro-gpu/validation/daytonagtx-service-20261017/menu-run/screenshots/cabinet-03.png
+      review: approved
+      storage_mapping:
+        status: verified
+        backup_offset: 26
+        values_in_native_cycle_order:
+        - 1
+        - 2
+        - 0
+      core_default: DELUXE
+      default_policy: agreed_daytona_family_exception
+      initial_setup_override: DELUXE
+      implementation_status: implemented
+      frontend_label_alias: Native UPLIGHT is exposed as canonical UPRIGHT, matching
+        Daytona
+    - key: country
+      label: COUNTRY
+      position: 4
+      native_default: JPN
+      value_count: 3
+      values:
+      - JPN
+      - EXPORT
+      - USA
+      cycle_closed: true
+      evidence:
+      - build-libretro-gpu/validation/daytonagtx-service-20261017/menu-run/screenshots/country-00.png
+      - build-libretro-gpu/validation/daytonagtx-service-20261017/menu-run/screenshots/country-01.png
+      - build-libretro-gpu/validation/daytonagtx-service-20261017/menu-run/screenshots/country-02.png
+      - build-libretro-gpu/validation/daytonagtx-service-20261017/menu-run/screenshots/country-03.png
+      review: approved
+      storage_mapping:
+        status: verified
+        backup_offset: 27
+        values_in_native_cycle_order:
+        - 1
+        - 2
+        - 0
+      core_default: EXPORT
+      default_policy: country_priority_export_europe_usa
+      initial_setup_override: EXPORT
+      implementation_status: implemented
+    - key: difficulty
+      label: DIFFICULTY
+      position: 5
+      native_default: NORMAL
+      value_count: 4
+      values:
+      - NORMAL
+      - HARD
+      - HARDEST
+      - EASY
+      cycle_closed: true
+      evidence:
+      - build-libretro-gpu/validation/daytonagtx-service-20261017/menu-run/screenshots/difficulty-00.png
+      - build-libretro-gpu/validation/daytonagtx-service-20261017/menu-run/screenshots/difficulty-01.png
+      - build-libretro-gpu/validation/daytonagtx-service-20261017/menu-run/screenshots/difficulty-02.png
+      - build-libretro-gpu/validation/daytonagtx-service-20261017/menu-run/screenshots/difficulty-03.png
+      - build-libretro-gpu/validation/daytonagtx-service-20261017/menu-run/screenshots/difficulty-04.png
+      review: approved
+      storage_mapping:
+        status: verified
+        backup_offset: 32
+        values_in_native_cycle_order:
+        - 1
+        - 2
+        - 3
+        - 0
+      core_default: NORMAL
+      initial_setup_policy: preserve_validated_template_value
+      implementation_status: implemented
+    - key: advertise_sound
+      label: ADVERTISE SOUND
+      position: 6
+      native_default: 'ON'
+      value_count: 2
+      values:
+      - 'ON'
+      - 'OFF'
+      cycle_closed: true
+      evidence:
+      - build-libretro-gpu/validation/daytonagtx-service-20261017/menu-run/screenshots/advertise-sound-00.png
+      - build-libretro-gpu/validation/daytonagtx-service-20261017/menu-run/screenshots/advertise-sound-01.png
+      - build-libretro-gpu/validation/daytonagtx-service-20261017/menu-run/screenshots/advertise-sound-02.png
+      review: approved
+      storage_mapping:
+        status: verified
+        backup_offset: 25
+        values_in_native_cycle_order:
+        - 0
+        - 1
+      core_default: 'ON'
+      initial_setup_policy: preserve_validated_template_value
+      implementation_status: implemented
+    - key: game_mode
+      label: GAME MODE
+      position: 7
+      native_default: NORMAL
+      value_count: 3
+      values:
+      - NORMAL
+      - GRAND PRIX
+      - ENDURANCE
+      cycle_closed: true
+      evidence:
+      - build-libretro-gpu/validation/daytonagtx-service-20261017/menu-run/screenshots/game-mode-00.png
+      - build-libretro-gpu/validation/daytonagtx-service-20261017/menu-run/screenshots/game-mode-01.png
+      - build-libretro-gpu/validation/daytonagtx-service-20261017/menu-run/screenshots/game-mode-02.png
+      - build-libretro-gpu/validation/daytonagtx-service-20261017/menu-run/screenshots/game-mode-03.png
+      review: approved
+      storage_mapping:
+        status: verified
+        backup_offset: 28
+        values_in_native_cycle_order:
+        - 0
+        - 1
+        - 2
+      core_default: NORMAL
+      initial_setup_policy: preserve_validated_template_value
+      implementation_status: implemented
+    - key: rival_arrow
+      label: RIVAL ARROW
+      position: 8
+      native_default: 'ON'
+      value_count: 2
+      values:
+      - 'ON'
+      - 'OFF'
+      cycle_closed: true
+      evidence:
+      - build-libretro-gpu/validation/daytonagtx-service-20261017/menu-run/screenshots/rival-arrow-00.png
+      - build-libretro-gpu/validation/daytonagtx-service-20261017/menu-run/screenshots/rival-arrow-01.png
+      - build-libretro-gpu/validation/daytonagtx-service-20261017/menu-run/screenshots/rival-arrow-02.png
+      review: approved
+      storage_mapping:
+        status: verified
+        backup_offset: 29
+        values_in_native_cycle_order:
+        - 0
+        - 1
+      core_default: 'ON'
+      initial_setup_policy: preserve_validated_template_value
+      implementation_status: implemented
+    commands:
+    - label: EXIT
+      position: 0
+  coin_assignment:
+    editable_option_count: 2
+    options:
+    - key: credit_to_start
+      label: CREDIT TO START
+      position: 1
+      native_default: 1
+      value_count: 5
+      values:
+      - 1
+      - 2
+      - 3
+      - 4
+      - 5
+      cycle_closed: true
+      evidence:
+      - build-libretro-gpu/validation/daytonagtx-service-20261017/menu-run/screenshots/credit-to-start-00.png
+      - build-libretro-gpu/validation/daytonagtx-service-20261017/menu-run/screenshots/credit-to-start-01.png
+      - build-libretro-gpu/validation/daytonagtx-service-20261017/menu-run/screenshots/credit-to-start-02.png
+      - build-libretro-gpu/validation/daytonagtx-service-20261017/menu-run/screenshots/credit-to-start-03.png
+      - build-libretro-gpu/validation/daytonagtx-service-20261017/menu-run/screenshots/credit-to-start-04.png
+      - build-libretro-gpu/validation/daytonagtx-service-20261017/menu-run/screenshots/credit-to-start-05.png
+      review: excluded
+      storage_mapping: unverified
+    - key: coin_credit_setting
+      label: COIN/CREDIT SETTING
+      position: 2
+      native_default: "#1"
+      value_count: 27
+      values:
+      - "#1"
+      - "#2"
+      - "#3"
+      - "#4"
+      - "#5"
+      - "#6"
+      - "#7"
+      - "#8"
+      - "#9"
+      - "#10"
+      - "#11"
+      - "#12"
+      - "#13"
+      - "#14"
+      - "#15"
+      - "#16"
+      - "#17"
+      - "#18"
+      - "#19"
+      - "#20"
+      - "#21"
+      - "#22"
+      - "#23"
+      - "#24"
+      - "#25"
+      - "#26"
+      - "#27"
+      cycle_closed: true
+      evidence:
+      - build-libretro-gpu/validation/daytonagtx-service-20261017/menu-run/screenshots/coin-credit-setting-00.png
+      - build-libretro-gpu/validation/daytonagtx-service-20261017/menu-run/screenshots/coin-credit-setting-01.png
+      - build-libretro-gpu/validation/daytonagtx-service-20261017/menu-run/screenshots/coin-credit-setting-02.png
+      - build-libretro-gpu/validation/daytonagtx-service-20261017/menu-run/screenshots/coin-credit-setting-03.png
+      - build-libretro-gpu/validation/daytonagtx-service-20261017/menu-run/screenshots/coin-credit-setting-04.png
+      - build-libretro-gpu/validation/daytonagtx-service-20261017/menu-run/screenshots/coin-credit-setting-05.png
+      - build-libretro-gpu/validation/daytonagtx-service-20261017/menu-run/screenshots/coin-credit-setting-06.png
+      - build-libretro-gpu/validation/daytonagtx-service-20261017/menu-run/screenshots/coin-credit-setting-07.png
+      - build-libretro-gpu/validation/daytonagtx-service-20261017/menu-run/screenshots/coin-credit-setting-08.png
+      - build-libretro-gpu/validation/daytonagtx-service-20261017/menu-run/screenshots/coin-credit-setting-09.png
+      - build-libretro-gpu/validation/daytonagtx-service-20261017/menu-run/screenshots/coin-credit-setting-10.png
+      - build-libretro-gpu/validation/daytonagtx-service-20261017/menu-run/screenshots/coin-credit-setting-11.png
+      - build-libretro-gpu/validation/daytonagtx-service-20261017/menu-run/screenshots/coin-credit-setting-12.png
+      - build-libretro-gpu/validation/daytonagtx-service-20261017/menu-run/screenshots/coin-credit-setting-13.png
+      - build-libretro-gpu/validation/daytonagtx-service-20261017/menu-run/screenshots/coin-credit-setting-14.png
+      - build-libretro-gpu/validation/daytonagtx-service-20261017/menu-run/screenshots/coin-credit-setting-15.png
+      - build-libretro-gpu/validation/daytonagtx-service-20261017/menu-run/screenshots/coin-credit-setting-16.png
+      - build-libretro-gpu/validation/daytonagtx-service-20261017/menu-run/screenshots/coin-credit-setting-17.png
+      - build-libretro-gpu/validation/daytonagtx-service-20261017/menu-run/screenshots/coin-credit-setting-18.png
+      - build-libretro-gpu/validation/daytonagtx-service-20261017/menu-run/screenshots/coin-credit-setting-19.png
+      - build-libretro-gpu/validation/daytonagtx-service-20261017/menu-run/screenshots/coin-credit-setting-20.png
+      - build-libretro-gpu/validation/daytonagtx-service-20261017/menu-run/screenshots/coin-credit-setting-21.png
+      - build-libretro-gpu/validation/daytonagtx-service-20261017/menu-run/screenshots/coin-credit-setting-22.png
+      - build-libretro-gpu/validation/daytonagtx-service-20261017/menu-run/screenshots/coin-credit-setting-23.png
+      - build-libretro-gpu/validation/daytonagtx-service-20261017/menu-run/screenshots/coin-credit-setting-24.png
+      - build-libretro-gpu/validation/daytonagtx-service-20261017/menu-run/screenshots/coin-credit-setting-25.png
+      - build-libretro-gpu/validation/daytonagtx-service-20261017/menu-run/screenshots/coin-credit-setting-26.png
+      - build-libretro-gpu/validation/daytonagtx-service-20261017/menu-run/screenshots/coin-credit-setting-27.png
+      review: excluded
+      storage_mapping: unverified
+    dependent_displays:
+    - CHUTE1
+    - CHUTE2
+    note: 'Chute tariffs are read-only results of the selected preset; #27 is Free
+      Play. Every preset screenshot is retained.'
+    commands:
+    - label: EXIT
+      position: 0
+network_inventory:
+  menu_supported: true
+  native_roles:
+  - MASTER
+  - SLAVE
+  - SINGLE
+  native_default: MASTER
+  identity: CAR NUMBER
+  ids:
+  - 1
+  - 2
+  - 3
+  - 4
+  - 5
+  - 6
+  - 7
+  - 8
+  standalone: SINGLE
+  relay_selector_observed: false
+  runtime_multiplayer: not tested
+review:
+  status: complete
+  date: '2026-10-17'
+  source: Docs/revisione_core_options_model2.xlsx; Core options rows 277-286
+  approved_fields:
+  - link_id
+  - car_number
+  - cabinet
+  - country
+  - difficulty
+  - advertise_sound
+  - game_mode
+  - rival_arrow
+  excluded_fields:
+  - credit_to_start
+  - coin_credit_setting
+initial_setup_review:
+  reference: Existing Daytona family conventions; initial_values in src/libretro/nvram_settings.cpp
+  status: implemented
+  preserve_existing_valid_saves: true
+  parent_mapping_or_template_assumed: false
+  explicit_overrides:
+    link_id: SINGLE
+    cabinet: DELUXE
+    country: EXPORT

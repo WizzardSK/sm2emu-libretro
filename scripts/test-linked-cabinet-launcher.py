@@ -52,19 +52,19 @@ class GameSelectionChecks(unittest.TestCase):
 
     def test_list_selects_the_corresponding_rom(self):
         entries, order, _, _ = launcher.game_plan("vonj,vonu,vonr", None, False)
-        self.assertEqual(entries, [("vonj", "1", 1), ("vonu", "2", 2), ("vonr", "3", 3)])
+        self.assertEqual(entries, [("vonj", "1", 1), ("vonu", "2", 2), ("vonr", "r", 3)])
         self.assertEqual(order, [0, 1, 2])
         self.assertEqual(launcher.game_plan("daytona,stcc,vf2", None, False)[0],
                          [("daytona", "1", 1), ("stcc", "2", 2), ("vf2", "3", 3)])
 
     def test_colon_sets_ans_without_changing_the_rom_name(self):
         entries, order, power, relay = launcher.game_plan(
-            "powsledm:1,powsled:2,powsledr:relay", None, True)
-        self.assertEqual(entries, [("powsledm", "1", 1), ("powsled", "2", 2), ("powsledr", "relay", 3)])
+            "powsledm:1,powsled:2,powsledr:r", None, True)
+        self.assertEqual(entries, [("powsledm", "1", 1), ("powsled", "2", 2), ("powsledr", "r", 3)])
         self.assertEqual(order, [0, 1, 2])  # Relay follows the playable cabinet.
         self.assertTrue(power)
         self.assertFalse(relay)  # Power Sled ignores the optional flag.
-        self.assertTrue(launcher.game_plan("stcc:1,stcc:2,stcc:relay", None, False)[3])
+        self.assertTrue(launcher.game_plan("stcc:1,stcc:2,stcc:r", None, False)[3])
         self.assertEqual(launcher.game_plan("daytona:0,daytona:0", None, False)[0],
                          [("daytona", "0", 1), ("daytona", "0", 2)])
 
@@ -93,8 +93,8 @@ class GameSelectionChecks(unittest.TestCase):
             for game in ("powsledm", "daytona", "vf2"):
                 launcher.runner.write_options(root, game, 1, 0, False, True)
                 text = (root / "config/core-options.cfg").read_text()
-                self.assertIn(f'sm2_linked_cabinets_{game} = "disabled"', text)
-                self.assertIn(f'sm2_automatic_network_{game} = "0"', text)
+                self.assertIn(f'sm2_linked_cabinets_{game} = "-1"', text)
+                self.assertIn(f'sm2_automatic_network_{game} = "{1 if game == "powsledm" else 0}"', text)
                 self.assertNotIn(f"sm2_nvram_{game}_", text)
 
     def test_optional_fields_and_reservations(self):
@@ -111,15 +111,15 @@ class GameSelectionChecks(unittest.TestCase):
                          [("daytona", "2", 2), ("stcc", "1", 1), ("vf2", "3", None)])
         self.assertEqual(launcher.game_plan("daytona::", 2, False)[0],
                          [("daytona", "1", None), ("daytona", "2", None)])
-        self.assertEqual(launcher.game_plan("stcc", 3, True)[0][-1], ("stcc", "relay", 3))
+        self.assertEqual(launcher.game_plan("stcc", 3, True)[0][-1], ("stcc", "r", 3))
 
     def test_four_riders_then_relay_preserve_each_assignment(self):
         entries, order, power, relay = launcher.game_plan(
-            "powsledr:relay:,powsled:2,powsledm:1,powsled:3,powsled:4", None, False)
+            "powsledr:r:,powsled:2,powsledm:1,powsled:3,powsled:4", None, False)
         self.assertTrue(power)
         self.assertFalse(relay)
         self.assertEqual(order, [2, 1, 3, 4, 0])
-        self.assertEqual([entries[i][1] for i in order], ["1", "2", "3", "4", "relay"])
+        self.assertEqual([entries[i][1] for i in order], ["1", "2", "3", "4", "r"])
         positions = [launcher.runner.window_position(i, "side-by-side", 4) for i in range(5)]
         self.assertEqual(len({y for _, y in positions[:4]}), 1)
         self.assertEqual(positions[4][0], positions[0][0])
@@ -167,9 +167,9 @@ class GameSelectionChecks(unittest.TestCase):
 
     def test_relay_short_alias_is_normalized(self):
         self.assertEqual(launcher.game_plan("stcc:1,stcc:r:", None, False),
-                         launcher.game_plan("stcc:1,stcc:relay:", None, False))
+                         launcher.game_plan("stcc:1,stcc:r:", None, False))
         self.assertEqual(launcher.game_plan("powsledr:r:1", None, False)[0],
-                         [("powsledr", "relay", 1)])
+                         [("powsledr", "r", 1)])
 
     def test_game_selection_is_required(self):
         result = launcher.subprocess.run(

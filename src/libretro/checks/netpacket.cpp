@@ -265,7 +265,7 @@ void check_host_adapter()
     check(!transport.ready(), "Host became ready with an incomplete roster");
     feed_hello(hello, 3);
     check(transport.ready(), "Host did not become ready with four cabinets");
-    check(!captured_callbacks->connected(4), "A fifth cabinet was accepted");
+    // Frontend lobby capacity is independent of the current machine total.
 
     const std::array<u8, 4> payload{0xff, 4, 0, 0};
     transport.send(payload);
@@ -446,6 +446,44 @@ void check_netpacket_adapter()
 
 }  // namespace
 
+void check_active_lobby_reconfiguration()
+{
+    libretro::NetpacketTransport transport;
+    libretro::set_netpacket_offline();
+    captured_callbacks->start(0, send_packet, nullptr);
+    check(captured_callbacks->connected(1), "Offline lobby rejected a waiting client");
+    transport.configure("lobby-lifecycle", 2);
+    check(!transport.ready(), "New configuration reused stale frames/roster");
+    auto hello = sent_packet;
+    captured_callbacks->receive(hello.data(), hello.size(), 1);
+    check(transport.ready(), "Existing client not retained on Resume");
+    transport.reset();
+    check(transport.ready(), "Machine reset destroyed the active frontend session");
+    libretro::set_netpacket_offline();
+    check(captured_callbacks->connected(2), "Loopback transition lost lobby capacity");
+    transport.configure("lobby-lifecycle", 3);
+    (void)transport.ready(); hello = sent_packet;
+    captured_callbacks->receive(hello.data(), hello.size(), 1);
+    check(!transport.ready(), "Staggered setup became ready before the third cabinet");
+    captured_callbacks->receive(hello.data(), hello.size(), 2);
+    check(transport.ready(), "Staggered setup did not recover without a new start callback");
+    transport.configure("lobby-lifecycle", 2);
+    (void)transport.ready(); hello = sent_packet;
+    captured_callbacks->receive(hello.data(), hello.size(), 1);
+    check(transport.ready(), "Reduced total discarded a connected frontend client");
+    captured_callbacks->stop();
+
+    hw::M2Comm board;
+    std::array<u8, hw::M2Comm::kSharedSize> shared{};
+    board.attach_shared(shared);
+    board.set_present(false); board.reset(); board.cn_write(1); board.fg_write(1); board.vblank();
+    check(!board.present() && !board.enabled() && board.cn_read() == 0xff && board.fg_read() == 0xff,
+          "Disconnected communication board still acknowledged registers");
+    board.set_present(true); board.reset(); board.cn_write(1); board.fg_write(1);
+    check(board.present() && board.enabled() && board.cn_read() == 0xff,
+          "Communication board could not be fitted again");
+}
+
 int main()
 {
     try {
@@ -486,6 +524,7 @@ int main()
         check_counted_relay_ring();
         check_netpacket_adapter();
         check_power_sled_handshake();
+        check_active_lobby_reconfiguration();
         std::puts("SM2 Libretro Netpacket checks passed");
         return 0;
     } catch (const std::exception& error) {

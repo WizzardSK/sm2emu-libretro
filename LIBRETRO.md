@@ -88,14 +88,22 @@ Il core riconosce esplicitamente tutti gli 87 set parent/clone attuali.
 I profili originali seguono i binding approvati in `Docs/revisione_profili_model2.xlsx`;
 il nuovo profilo Power Sled segue l'upstream come documentato in
 `Docs/UPSTREAM_ROM_LOADER_PACKAGE_2026-10-08.md`. Firme sconosciute o
-cambiate restano nel fallback conservativo. Ogni profilo registra due tipi di
-dispositivo su entrambe le porte: quello predefinito con slot Test/Service
-rimappabili e la variante senza i due slot. Poiché Model 2 dispone soltanto
+cambiate restano nel fallback conservativo. The first Input option, **Controller Profile Type**, selects **Normal** or
+**Normal + Test/Service** (default) globally for every input port. Controls
+registers only the current game-specific device type plus the frontend's None;
+it retains remapping but no longer selects the Test/Service variant. Normal
+removes the supported Test/Service descriptors and polling. Changes apply on
+return to the game, without machine reset. Saved legacy reduced-device IDs are
+accepted, but the Core Option now owns the variant across all ports. Poiché Model 2 dispone soltanto
 delle linee `Service A` e `Test A`, L3/R3 del Player 2 sono binding secondari
 virtuali delle stesse linee, non comandi B distinti.
 
+Historical per-game reports below describe the previously selectable device
+variants; their validation remains historical evidence. Current selection is
+global through Controller Profile Type as described above.
+
 I controlli ROM-free verificano tutti i set riconosciuti, le stringhe dei
-profili e delle azioni, P1/P2 indipendenti, le due varianti del dispositivo e
+profili e delle azioni, P1/P2 indipendenti, the global variants, one-type registration and
 la traduzione hardware. In particolare Virtua Striker associa South/East/West
 a `Short Pass`/`Long Pass`/`Shoot` scrivendo rispettivamente i bit Model 2
 `0x04`/`0x01`/`0x02`; Virtual On usa i due stick analogici per le due leve,
@@ -444,36 +452,27 @@ Start, senza creare un profilo generico separato.
 
 ## Collegamento tra cabinet
 
-La Core Option System `Linked Cabinets`, collocata prima di
-`NVRAM Settings`, offre `Disabled`, predefinito, e valori da `2 Cabinets` a
-`8 Cabinets` per Daytona e Indy 500; STCC arriva a `9 Cabinets` includendo il
-Relay e Sega Rally arriva a `5 Cabinets` includendo il Relay. Motor Raid,
-Wave Runner, Sega Ski Super G, Super GT 24h e Over Rev si fermano a `4 Cabinets`;
-Manx TT e Virtual On offrono `2 Cabinets` e `3 Cabinets`.
-`daytona93` è escluso perché il suo menu acquisito non contiene `Link ID` né
-`Car Number`. L'opzione è specifica per
-contenuto: appare soltanto sui set supportati, così il valore non si propaga a
-contenuti incompatibili. Tutte le dimensioni usano
-esclusivamente l'interfaccia ufficiale Libretro Netpacket. Il core non apre socket:
-RetroArch gestisce host, client e rete, mentre `M2Comm` conserva
-il protocollo della communication board Model 2. La struttura di `M2Comm`, il
-possesso del trasporto e il loopback sono quelli dello standalone upstream
-0.9.7; il core sostituisce il trasporto UDP con l'adattatore Netpacket e attende
-che il roster contenga tutti i cabinet configurati. Handshake, conteggio atteso
-e roster ordinato seguono la struttura del core Supermodel; i frame Model 2
-restano completi e vengono inoltrati al successore dell'anello.
+The System menu exposes exactly two network controls: `Linked Cabinets` and
+`Auto Network Role Settings (ANRS)`. Unsupported games display `Not Supported`.
+Linked Cabinets defaults to Disabled (`-1`, with `0`/`1` aliases); supported
+totals include Relay. ANRS is independent of NVRAM Settings: `-1` manual,
+`0` native Standalone/No Link, positive native IDs, and `r` special role
+(`l`/`s` aliases). Power Sled uses colors 1–4 with fixed program roles; dedicated
+Relay programs offer only `r`. The communication board remains fitted and uses
+local loopback offline, matching upstream, including for the reviewed Dynamite
+Baseball, Pilot Kids, Rail Chase 2 and Zero Gunner families.
+Topology never silently
+converts the selected native role.
 
-`Linked Cabinets` now reconfigures on return from Core Options or on Restart.
-For supported sets, `Automatic Network Settings` appears when `NVRAM Settings`
-is enabled. Its preset applies reviewed Master, Slave/cabinet and Relay values;
-`Disabled` leaves the manual selectors authoritative. With linking disabled,
-an active preset restores safe offline values. Netplay host/client status does
-not select the native cabinet role. A Daytona ABI probe passed the transition
-between one and two cabinets. On 2026-10-07, the isolated RetroArch Nightly
-runner used these presets to form a Daytona Master/Slave 2/2 roster and an
-STCC Car 1/2/3 3/3 roster. Each instance exited normally without residual
-processes. Screenshots showed distinct Daytona cabinet colors and the STCC
-three-player attract screen; they do not establish a synchronized race.
+Changes are retained even when frontend visibility reads consume the option
+update flag. Resume applies effective changes in one machine reset, retaining
+the frontend lobby and callbacks. Hidden manual role selectors track applied
+values for handover when ANRS is disabled. See
+[the current network contract and evidence](Docs/NETWORK_TWO_OPTION_2026-10-17.md)
+and [launcher instructions](Docs/LINKED_CABINET_LAUNCHER.md).
+
+The following dated records describe earlier network qualification, not the
+current option values or defaults.
 
 The first STCC 3/3 attempt exposed a Netpacket startup overflow on the last
 client. Before that client's roster formed, early peer frames and repeated
@@ -1208,38 +1207,18 @@ cattura finale del frontend: il test consegnato include tutti gli stati input.
 
 ## Power Sled Linked Communication — 2026-10-08
 
-Set **Linked Cabinets = 3 Cabinets** on all three instances and load `powsledm`
-(Main), `powsledr` (Relay), and `powsled` (Slave), in that ring order. Disabled
-retains the prior local loopback. The three ROM programs select hardware roles;
-Automatic Network Settings now selects the reviewed Ride color on Main and
-Slave, while the ROM programs retain their native roles. Relay has no color
-selector. NVRAM Settings must be enabled; the core's ANS default is Disabled
-to preserve existing manual Ride choices. This enables the tested topology
-and does not certify gameplay support.
-
-For ordinary interactive use, the generic launcher embeds the roles, assigns
-different pads to local Port 1 and arranges Main / Slave above Relay:
+For a current three-instance launch:
 
 ```sh
 python3 scripts/launch-linked-cabinets.py \
-  --game powsledm:2,powsled:1,powsledr:relay --controllers 0,1,2
+  --game powsledm:1,powsled:2,powsledr:r
 ```
 
-The recommended Power Sled launch lists all three programs; `--relay` is ignored.
-ANS uses one development convention: `0` Disabled, `1` Master / first color,
-`2` first Slave / second color, subsequent numbers for other cabinets or colors,
-and `relay` for Relay. Power Sled colors are `1` Silver, `2` Red, `3` Black;
-its Relay program offers only `relay` and does not override a color. Virtual
-On's dedicated Relay likewise offers only `relay`, retaining native No Link.
-Old ANS names are not supported or migrated; other option compatibility remains
-unchanged.
-
-`--game NAME` repeats that ROM; `--game NAME1,NAME2` selects each instance's
-ROM; optional `:ANS` suffixes explicitly override saved ANS choices. ROMs
-are passed through without script compatibility checks. Without suffixes, Power Sled
-retains valid session colors, or initially selects Main Red / Slave Silver.
-SRAM and other Core Options persist. No Test/Service sequence is run.
-See `Docs/LINKED_CABINET_LAUNCHER.md` for paths, persistence and limitations.
+All instances use Linked Cabinets = 3. Master and Slave use Silver and Red;
+Relay retains its fixed role. ANRS works independently of NVRAM Settings.
+The launcher supports `name[:ANRS[:GAMEPAD]]`, reuses independent saves and
+options, and reapplies resolved role/color IDs. See
+[the launcher guide](Docs/LINKED_CABINET_LAUNCHER.md) for current behavior.
 
 The existing isolated runner accepts:
 
@@ -1298,3 +1277,26 @@ Sega Rally's changed boot PCM matches pristine upstream. VF2 reaches gameplay in
 RetroArch Nightly 1.22.2. Both local installed core copies are updated and verified.
 See `Docs/UPSTREAM_CPU_SCSP_PACKAGE_2026-10-10.md` for exact revisions, measured
 process-time improvement, reproducible evidence and local qualification limits.
+
+## Daytona GTX Support — 2026-10-12
+
+The catalog now includes `daytonagtx` (Daytona USA, GTX 2004 Edition), with
+MAME-derived banked protection and Daytona's established driving profile.
+GTX-specific Service Menu/NVRAM documentation is pending; no unverified parent
+operator overrides or initial template are supplied. Save RAM still persists
+normally. The native code-entry screen permits Gas to cancel. An isolated
+RetroArch Vulkan 1x run reaches a race with audio/SRAM and clean exit; full-course
+completion, networking and physical feedback remain unqualified. See
+[GTX Support](Docs/DAYTONA_GTX_SUPPORT_2026-10-12.md).
+
+### Controller Profile Menu Refresh Correction — 2026-10-12
+
+The first test covered republishing after Resume. A user report clarified that
+the Controls name stayed stale while remaining in the Quick Menu. The modern
+Core Options display callback now republishes the controller type/descriptors
+when the global selector changes, even while the machine is paused. A separate
+isolated RetroArch 1.22.2 VF2 run verifies Normal in Port 1 Controls without
+Resume or restart; the process exits 0. Legacy frontends without this callback
+retain the return-to-game refresh. Gameplay polling still follows the selected
+option when emulation runs; no machine reset or state change is introduced.
+Private evidence: `build-libretro-gpu/validation/controller-profile-type-20261012/menu-refresh/`.

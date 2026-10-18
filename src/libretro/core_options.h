@@ -23,6 +23,40 @@ enum class AVTimingMode { Native, FullFrames60Hz };
 enum class AspectRatioMode { Automatic, FourThree, SixteenNine };
 
 inline retro_environment_t option_environment = nullptr;
+inline bool (*option_controls_update)() = nullptr;
+inline bool option_updates_pending = false;
+inline std::vector<std::string> option_warnings;
+inline std::vector<std::pair<std::string, std::string>> reported_invalid_network_values;
+inline std::vector<std::pair<std::string, std::string>> option_corrections;
+
+inline void retain_option_updates()
+{
+    bool updated = false;
+    if (option_environment && option_environment(RETRO_ENVIRONMENT_GET_VARIABLE_UPDATE, &updated))
+        option_updates_pending |= updated;
+}
+inline bool option_variable(retro_variable& variable)
+{
+    retain_option_updates();
+    return option_environment && option_environment(RETRO_ENVIRONMENT_GET_VARIABLE, &variable);
+}
+inline bool consume_option_updates()
+{
+    retain_option_updates();
+    return std::exchange(option_updates_pending, false);
+}
+inline void invalid_network_option(const std::string& key, const std::string& value,
+                                   const std::string& fallback)
+{
+    const std::pair invalid{key, value};
+    if (std::find(reported_invalid_network_values.begin(), reported_invalid_network_values.end(), invalid) != reported_invalid_network_values.end()) return;
+    reported_invalid_network_values.push_back(invalid);
+    const std::string warning = "Invalid " + key + " value '" + value + "'; using " + fallback;
+    if (std::find(option_warnings.begin(), option_warnings.end(), warning) == option_warnings.end())
+        option_warnings.push_back(warning);
+    if (std::find(option_corrections.begin(), option_corrections.end(), std::pair{key, fallback}) == option_corrections.end())
+        option_corrections.emplace_back(key, fallback);
+}
 inline std::string option_game;
 inline std::string option_content_game;
 inline std::array<bool, 5> option_audio_sources{};
@@ -31,6 +65,7 @@ inline constexpr std::array<const char*, 5> audio_source_keys{{
     "sm2_multipcm2_gain", "sm2_ym3438_gain"}};
 inline bool nvram_master_visible = false;
 inline bool nvram_game_visible = false;
+inline std::string network_visibility;
 inline std::vector<retro_core_option_v2_definition> registered_definitions;
 inline std::vector<retro_core_option_v2_definition> compatible_definitions;
 inline std::deque<std::string> option_key_storage;
@@ -47,8 +82,8 @@ struct LinkedCabinetGame {
     unsigned max_cabinets;
 };
 
-inline constexpr std::array<LinkedCabinetGame, 31> linked_cabinet_games{{
-    {"daytona", "daytona", 8},
+inline constexpr std::array<LinkedCabinetGame, 32> linked_cabinet_games{{
+    {"daytona", "daytona", 8}, {"daytonagtx", "daytonagtx", 8},
     {"daytonas", "daytonas", 8}, {"daytonase", "daytona", 8},
     {"daytonam", "daytona", 8},
     {"stcc", "stcc", 9}, {"stcca", "stcca", 9}, {"stccb", "stccb", 9},
@@ -57,7 +92,7 @@ inline constexpr std::array<LinkedCabinetGame, 31> linked_cabinet_games{{
     {"srallycc", "srallyc", 5},
     {"indy500", "indy500", 8}, {"indy500d", "indy500d", 8},
     {"indy500to", "indy500", 8},
-    {"motoraid", "motoraid", 4}, {"motoraiddx", "motoraiddx", 4},
+    {"motoraid", "motoraid", 5}, {"motoraiddx", "motoraiddx", 5},
     {"waverunr", "waverunr", 4}, {"skisuprg", "skisuprg", 4},
     {"sgt24h", "sgt24h", 4},
     {"overrev", "overrev", 4}, {"overrevb", "overrev", 4},
@@ -70,7 +105,7 @@ inline constexpr std::array<LinkedCabinetGame, 31> linked_cabinet_games{{
 }};
 
 inline constexpr std::array<retro_core_option_value, 9> linked_cabinet_values{{
-    {"disabled", "Disabled"}, {"2", "2 Cabinets"}, {"3", "3 Cabinets"},
+    {"-1", "Disabled"}, {"2", "2 Cabinets"}, {"3", "3 Cabinets"},
     {"4", "4 Cabinets"}, {"5", "5 Cabinets"}, {"6", "6 Cabinets"},
     {"7", "7 Cabinets"}, {"8", "8 Cabinets"}, {"9", "9 Cabinets"},
 }};
@@ -95,31 +130,11 @@ inline std::string_view linked_cabinet_network_family(std::string_view game)
         ? std::string_view{"von"} : game;
 }
 
-inline std::string_view linked_cabinet_rules(const LinkedCabinetGame& linked_game)
-{
-    if (power_sled_program_role(linked_game.name))
-        return "Use one powsledm Master, zero to three powsled Slaves and an optional final powsledr Relay, with two to five total instances. A Master without Slaves requires a Relay and Silver Ride color. Rider colors must be distinct. The program selects its hardware role; Automatic Network Settings selects the Ride color on Main and Slave. Relay has a fixed Relay value. Gameplay support remains preliminary.";
-    if (linked_game.name == "vonr")
-        return "This dedicated Relay program is valid only in a 3 Cabinets session with one Master Twin and one Slave Twin; it displays the linked match and is not playable.";
-    const std::string_view game = linked_game.nvram_game;
-    if (game == "daytona" || game == "daytonas")
-        return "Use exactly one Master and one Slave for every remaining cabinet. Car Numbers must be unique and sequential from 1 through the selected total. Relay is not available.";
-    if (game == "stcc" || game == "stcca" || game == "stccb" || game == "stcco")
-        return "Use unique, sequential Car roles from Car 1 through the number of playable cabinets. One optional Relay may be included in the selected total; never configure more than one Relay.";
-    if (game == "srallyc")
-        return "Use unique, sequential Car roles from Car 1 through the number of playable cabinets. One optional Relay may be included in the selected total; never configure more than one Relay.";
-    if (game == "manxtt")
-        return "For 2 Cabinets use Master and Slave. For 3 Cabinets use Master, Slave and one Relay.";
-    if (game == "von")
-        return "For 2 Cabinets use one Twin set as Master and one Twin set as Slave. For 3 Cabinets add exactly one dedicated vonr Relay set; the Relay displays the linked match and is not a playable cabinet.";
-    if (game == "sgt24h")
-        return "Use Car No.1 Master and sequential Slave roles for the remaining cabinets. Link Max must equal the selected total. Relay is not available.";
-    if (game == "overrev")
-        return "Use Master CarNo.1 and sequential Slave roles for the remaining cabinets. Link Max must equal the selected total. Relay is not available.";
-    if (game == "motoraid" || game == "motoraiddx")
-        return "Use exactly one Master and sequential Slave cabinets with unique IDs. Live is the relay/live-monitor role: it is included in the selected total and at most one cabinet should use it.";
-    return "Use exactly one Master and one Slave for every remaining cabinet. Cabinet IDs must be unique and sequential from 1 through the selected total. Relay is not available.";
-}
+inline constexpr const char* linked_cabinets_help =
+    "Select the total number of linked cabinets, including a Relay where supported. "
+    "Disabled disconnects optional communication boards or keeps required boards in local loopback; "
+    "it does not change the selected native role. Supported totals and role combinations depend on the game. "
+    "Effective changes reset automatically when returning to the game.";
 
 inline std::string retroarch_option_label(std::string_view label)
 {
@@ -179,7 +194,7 @@ inline void build_option_definitions()
     retro_core_option_v2_definition rom_crc{};
     rom_crc.key = "sm2_rom_crc_verification";
     rom_crc.desc = "ROM CRC Verification (Restart Required)";
-    rom_crc.info = "Verify every ROM chip against the CRC32 declared in games.xml. WARNING: Disabling verification matches chips by filename only and may load incorrect, modified or incompatible ROMs, causing emulation errors, crashes or corrupted save data. Use only for troubleshooting and reload content after changing this option.";
+    rom_crc.info = "Verify ROM-chip contents against their declared CRC32 checksums.";
     rom_crc.category_key = "system";
     rom_crc.values[0] = {"enabled", "Enabled"};
     rom_crc.values[1] = {"disabled", "Disabled"};
@@ -189,7 +204,7 @@ inline void build_option_definitions()
     retro_core_option_v2_definition i960_rounding{};
     i960_rounding.key = "sm2_i960_round_nearest_even";
     i960_rounding.desc = "i960 Round-to-Nearest-Even Fix (Restart Required)";
-    i960_rounding.info = "Use the Intel-documented round-to-nearest-even behaviour for i960 roundr, roundrl, cvtri and cvtril in rounding mode 00. Enabled corrects exact half values; Disabled preserves the current upstream SM2-Emu/MAME behaviour, which rounds exact halves away from zero. Reload content after changing this option.";
+    i960_rounding.info = "Correct i960 floating-point rounding to use round-to-nearest-even for exact half values.";
     i960_rounding.category_key = "system";
     i960_rounding.values[0] = {"disabled", "Disabled"};
     i960_rounding.values[1] = {"enabled", "Enabled"};
@@ -198,64 +213,62 @@ inline void build_option_definitions()
 
     retro_core_option_v2_definition initial_nvram{};
     initial_nvram.key = "sm2_initial_nvram_setup";
-    initial_nvram.desc = "Automatic Initial NVRAM Setup";
-    initial_nvram.info = "When no frontend .srm or valid standalone .nv/.eeprom exists, initialize supported sets from a validated game sample or a byte-identical parent sample before the first emulated frame, then apply the selected country, safe offline/link values and core defaults such as Daytona's Deluxe cabinet, Motor Raid Deluxe's Twin cabinet, Over Rev's SEGA STCC hardware and Super GT 24h's I/O Type C and Power Sled's approved handlebar calibration. Automatic setup never replaces existing saves; normal game writes still persist. Delete the game's save data to regenerate the initial setup.";
+    initial_nvram.desc = "Automatic Initial NVRAM Setup (Restart Required)";
+    initial_nvram.info = "Initialize missing save data from a validated NVRAM template and apply approved initial settings while preserving existing valid saves.";
     initial_nvram.category_key = "system";
     initial_nvram.values[0] = {"enabled", "Enabled"};
     initial_nvram.values[1] = {"disabled", "Disabled"};
     initial_nvram.default_value = "enabled";
     registered_definitions.push_back(initial_nvram);
 
+    // Only the matching per-set pair (or unsupported pair) is shown.
     for (const auto& game : linked_cabinet_games) {
         option_key_storage.emplace_back("sm2_linked_cabinets_" + std::string(game.name));
-        retro_core_option_v2_definition linked_cabinets{};
-        linked_cabinets.key = option_key_storage.back().c_str();
-        linked_cabinets.desc = "Linked Cabinets";
-        option_info_storage.emplace_back(
-            "Set the total number of cabinets expected for this game in the RetroArch Netplay session. All displayed totals are supported; there is no even-number requirement. Disabled preserves the standalone one-node loopback. Every instance must use the same core and value; changes apply on Resume or Restart. Use the same ROM unless the game-specific rules below require different Main, Relay or Slave programs. "
-            + std::string(linked_cabinet_rules(game)));
-        linked_cabinets.info = option_info_storage.back().c_str();
-        linked_cabinets.category_key = "system";
-        if (power_sled_program_role(game.name)) {
-            linked_cabinets.values[0] = linked_cabinet_values[0];
-            std::copy_n(linked_cabinet_values.begin() + 1, 4, linked_cabinets.values + 1);
-        } else if (game.name == "vonr") {
-            linked_cabinets.values[0] = linked_cabinet_values[0];
-            linked_cabinets.values[1] = linked_cabinet_values[2];
-        } else {
-            std::copy_n(linked_cabinet_values.begin(), game.max_cabinets,
-                        linked_cabinets.values);
-        }
-        linked_cabinets.default_value = "disabled";
-        registered_definitions.push_back(linked_cabinets);
+        retro_core_option_v2_definition linked{};
+        linked.key = option_key_storage.back().c_str();
+        linked.desc = "Linked Cabinets";
+        linked.info = linked_cabinets_help;
+        linked.category_key = "system";
+        if (game.name == "vonr") {
+            linked.values[0] = linked_cabinet_values[0];
+            linked.values[1] = linked_cabinet_values[2];
+        } else std::copy_n(linked_cabinet_values.begin(), game.max_cabinets, linked.values);
+        linked.default_value = "-1";
+        registered_definitions.push_back(linked);
 
         const bool relay_program = game.name == "vonr" || game.name == "powsledr";
+        const std::string_view catalog = relay_program ? game.name : game.nvram_game;
         option_key_storage.emplace_back("sm2_automatic_network_" + std::string(game.name));
         retro_core_option_v2_definition automatic{};
         automatic.key = option_key_storage.back().c_str();
-        automatic.desc = "Automatic Network Settings";
-        automatic.info = "Available only while NVRAM Settings is enabled. An active preset sets and maintains the corresponding NVRAM selectors for the native role and identity. Linked Cabinets Disabled selects safe offline defaults. Disabled leaves the selectors under manual control. Changes apply when returning to the game; changed persisted values reset the machine automatically. Frontend host/client does not select the native role.";
-        if (power_sled_program_role(game.name))
-            automatic.info = "Available only while NVRAM Settings is enabled. An active preset sets and maintains the Ride ID selector for the Power Sled Ride color, including with Linked Cabinets Disabled. The loaded ROM program selects the Main or Slave role independently of color. Disabled leaves the selector under manual control. Changes apply when returning to the game; changed persisted values reset the machine automatically. Frontend host/client does not select the native role.";
-        if (relay_program)
-            automatic.info = "Available only while NVRAM Settings is enabled. This ROM program has a fixed Relay role. Relay is the only value. Power Sled retains the manual Ride ID selector; Virtual On retains its native No Link operator attribute. Changes apply when returning to the game; changed persisted values reset the machine automatically. Frontend host/client does not select the native role.";
+        automatic.desc = "Auto Network Role Settings";
+        automatic.info = "Apply the native role and game identity independently of Linked Cabinets, even with NVRAM Settings disabled. Disabled restores manual management. Managed native fields are hidden; unrelated settings are preserved. Effective changes reset automatically when returning to the game.";
         automatic.category_key = "system";
-        const auto choices = network::choices(relay_program ? game.name : game.nvram_game,
-                                             game.max_cabinets);
+        const auto choices = network::choices(catalog, game.max_cabinets);
         for (size_t index = 0; index < choices.size(); ++index) {
             option_key_storage.push_back(choices[index].key);
             option_value_label_storage.push_back(choices[index].label);
-            automatic.values[index] = {option_key_storage.back().c_str(),
-                                       option_value_label_storage.back().c_str()};
+            automatic.values[index] = {option_key_storage.back().c_str(), option_value_label_storage.back().c_str()};
         }
-        automatic.default_value = relay_program ? "relay" : "1";
+        automatic.default_value = network::default_preset(catalog).data();
         registered_definitions.push_back(automatic);
+    }
+    for (const auto* key : {"sm2_linked_cabinets_unsupported", "sm2_automatic_network_unsupported"}) {
+        retro_core_option_v2_definition unsupported{};
+        unsupported.key = key;
+        unsupported.desc = std::strcmp(key, "sm2_linked_cabinets_unsupported") == 0
+            ? "Linked Cabinets" : "Auto Network Role Settings";
+        unsupported.info = "Networking is not supported for this game. This setting has no effect.";
+        unsupported.category_key = "system";
+        unsupported.values[0] = {"unsupported", "Not Supported"};
+        unsupported.default_value = "unsupported";
+        registered_definitions.push_back(unsupported);
     }
 
     retro_core_option_v2_definition sled_standalone{};
     sled_standalone.key = "sm2_power_sled_standalone";
-    sled_standalone.desc = "Power Sled Standalone Mode (Restart Required)";
-    sled_standalone.info = "Experimental: run the Power Sled Master alone with one human sled and three native computer opponents, or run the Relay alone in continuous Attract Mode without starting a race. Applies only to powsledm and powsledr with Linked Cabinets Disabled. Has no effect on other games or linked sessions. Relay Audio On Master is selected independently. Reload content after changing this option or switching between standalone and linked play.";
+    sled_standalone.desc = "Power Sled: Standalone Mode (Restart Required)";
+    sled_standalone.info = "Run the master cabinet alone with native computer opponents, or run the relay alone in attract mode.";
     sled_standalone.category_key = "system";
     sled_standalone.values[0] = {"disabled", "Disabled"};
     sled_standalone.values[1] = {"enabled", "Enabled"};
@@ -264,8 +277,8 @@ inline void build_option_definitions()
 
     retro_core_option_v2_definition sled_audio{};
     sled_audio.key = "sm2_power_sled_relay_audio";
-    sled_audio.desc = "Power Sled Relay Audio On Master (Restart Required)";
-    sled_audio.info = "Experimental: run the Relay music sound program on an additional SCSP inside the Power Sled Master, preserving rider effects. Requires matching Relay sound ROMs in the loaded archive or adjacent powsledr set. Has no effect on Slave, Relay or other games. Disable when a separate Relay already supplies the music to avoid duplicate playback. SCSP Gain controls the rider board; Power Sled Relay Audio Gain controls the added Relay board. Reload content after changing this option.";
+    sled_audio.desc = "Power Sled: Relay Audio On Master (Restart Required)";
+    sled_audio.info = "Run relay music on an additional sound board within the master cabinet while preserving rider effects.";
     sled_audio.category_key = "system";
     sled_audio.values[0] = {"disabled", "Disabled"};
     sled_audio.values[1] = {"enabled", "Enabled"};
@@ -274,8 +287,8 @@ inline void build_option_definitions()
 
     retro_core_option_v2_definition sled_commands{};
     sled_commands.key = "sm2_power_sled_relay_commands";
-    sled_commands.desc = "Power Sled Relay Commands On Master (Restart Required)";
-    sled_commands.info = "Experimental: use Coin or Start to open mode selection, Entry P1/P2 to confirm, and automatically enter pre-race after the native departure animation and sound finish. In pre-race, Start or Entry P1/P2 requests the race. During results, Start or Select (Coin) returns the group to the intro. Call P1/P2 activates native Emergency Stop; Coin or Start returns the stopped group to the intro, then another Coin or Start opens selection. Test Menu keeps its original Entry/Call actions. Applies only to powsledm, in linked or Standalone play. Has no effect on Slave, Relay or other games. Relay Audio is selected independently. Reload content after changing this option.";
+    sled_commands.desc = "Power Sled: Relay Commands On Master (Restart Required)";
+    sled_commands.info = "Provide relay-style mode selection, race-start and emergency-stop commands from the master cabinet.";
     sled_commands.category_key = "system";
     sled_commands.values[0] = {"disabled", "Disabled"};
     sled_commands.values[1] = {"enabled", "Enabled"};
@@ -284,8 +297,8 @@ inline void build_option_definitions()
 
     retro_core_option_v2_definition sled_speed{};
     sled_speed.key = "sm2_power_sled_ai_finish_speed_fix";
-    sled_speed.desc = "Power Sled AI Finish Speed Fix (Restart Required)";
-    sled_speed.info = "Experimental: bypass the native computer-opponent speed limit after course index 773. The normal AI driving and final stop beyond index 839 remain unchanged. Applies to Power Sled programs, including Standalone. Enable consistently on every linked instance that owns computer opponents. Disabled preserves original behavior. Reload content after changing this option.";
+    sled_speed.desc = "Power Sled: AI Finish Speed Fix (Restart Required)";
+    sled_speed.info = "Bypass the native computer-opponent speed limit near the course finish.";
     sled_speed.category_key = "system";
     sled_speed.values[0] = {"disabled", "Disabled"};
     sled_speed.values[1] = {"enabled", "Enabled"};
@@ -295,7 +308,7 @@ inline void build_option_definitions()
     retro_core_option_v2_definition master{};
     master.key = "sm2_nvram_settings";
     master.desc = "NVRAM Settings";
-    master.info = "For games with reviewed operator fields, apply the displayed settings at startup and when Core Options change, overriding saved values for these fields. Disabled preserves Service Menu settings. Applying changed persisted values resets the machine automatically. Other fields and calibration are preserved.";
+    master.info = "Apply reviewed operator overrides to saved NVRAM while preserving unrelated fields and calibration.";
     master.category_key = "system";
     master.values[0] = {"disabled", "Disabled"};
     master.values[1] = {"enabled", "Enabled"};
@@ -330,7 +343,7 @@ inline void build_option_definitions()
     retro_core_option_v2_definition renderer{};
     renderer.key = "sm2_renderer";
     renderer.desc = "Renderer (Restart Required)";
-    renderer.info = "Auto follows a supported hardware context preferred by the frontend, otherwise software. Vulkan requires Vulkan 1.3; OpenGL requires OpenGL 4.3 core or OpenGL ES 3.1. Reload content after changing this option.";
+    renderer.info = "Select hardware-accelerated or software rendering.";
     renderer.category_key = "video";
     size_t renderer_value = 0;
     renderer.values[renderer_value++] = {"auto", "Auto"};
@@ -347,7 +360,7 @@ inline void build_option_definitions()
     retro_core_option_v2_definition resolution{};
     resolution.key = "sm2_internal_resolution";
     resolution.desc = "Internal Resolution (Restart Required)";
-    resolution.info = "Hardware rendering resolution for Vulkan and OpenGL. Tilemaps keep their native detail. Software always uses 496 x 384. Automatically reduced to fit the GPU texture dimension limit. Reload content after changing this option.";
+    resolution.info = "Select the internal rendering resolution to balance image quality and GPU load.";
     resolution.category_key = "video";
     resolution.values[0] = {"1", "1x (496 x 384)"};
     resolution.values[1] = {"2", "2x (992 x 768)"};
@@ -363,7 +376,7 @@ inline void build_option_definitions()
     retro_core_option_v2_definition texture_filter{};
     texture_filter.key = "sm2_texture_filter";
     texture_filter.desc = "3D Texture Filtering";
-    texture_filter.info = "Select the native SM2-Emu texture filter used by the 3D renderer. Faithful preserves the original single-sample path. Anisotropic levels add progressively more samples along oblique surfaces. Applies only to Vulkan and OpenGL and takes effect immediately.";
+    texture_filter.info = "Select the texture-sampling filter used by the 3D renderer. Applies only to Vulkan / OpenGL renderers.";
     texture_filter.category_key = "video";
     texture_filter.values[0] = {"faithful", "Faithful"};
     texture_filter.values[1] = {"2", "Anisotropic 2x"};
@@ -376,7 +389,7 @@ inline void build_option_definitions()
     retro_core_option_v2_definition upscale_2d{};
     upscale_2d.key = "sm2_upscale_2d";
     upscale_2d.desc = "2D Layer Upscaling Filter";
-    upscale_2d.info = "Select the native SM2-Emu filter applied to 2D tile layers before they are composited with 3D. Faithful keeps the original crisp pixels; xBR and ScaleFX smooth pixel-art edges. Applies only to Vulkan and OpenGL and takes effect immediately.";
+    upscale_2d.info = "Select the upscaling filter applied to 2D tile layers before compositing with 3D.";
     upscale_2d.category_key = "video";
     upscale_2d.values[0] = {"faithful", "Faithful"};
     upscale_2d.values[1] = {"xbr", "xBR"};
@@ -388,7 +401,7 @@ inline void build_option_definitions()
     retro_core_option_v2_definition software_threading{};
     software_threading.key = "sm2_software_renderer_threading";
     software_threading.desc = "Software Renderer Threading (Restart Required)";
-    software_threading.info = "Asynchronous follows SM2-Emu 0.9.11 and draws each Software-rendered frame on a separate thread while the machine advances, improving throughput at the cost of one frame of latency. Synchronous draws the current frame before returning it. Applies only to the Software renderer; reload content after changing this option.";
+    software_threading.info = "Select synchronous software rendering or render frames asynchronously on a separate thread.";
     software_threading.category_key = "video";
     software_threading.values[0] = {"asynchronous", "Asynchronous"};
     software_threading.values[1] = {"synchronous", "Synchronous"};
@@ -398,7 +411,7 @@ inline void build_option_definitions()
     retro_core_option_v2_definition aspect_ratio{};
     aspect_ratio.key = "sm2_aspect_ratio";
     aspect_ratio.desc = "Aspect Ratio";
-    aspect_ratio.info = "Automatic follows the original cabinet configuration stored in NVRAM: Twin cabinets use 4:3 and supported Deluxe cabinets use 16:9. The explicit values override the cabinet setting. Changes take effect immediately.";
+    aspect_ratio.info = "Select the displayed aspect ratio or derive it automatically from the native monitor or cabinet configuration.";
     aspect_ratio.category_key = "video";
     aspect_ratio.values[0] = {"auto", "Auto"};
     aspect_ratio.values[1] = {"4_3", "4:3"};
@@ -409,7 +422,7 @@ inline void build_option_definitions()
     retro_core_option_v2_definition timing{};
     timing.key = "sm2_av_timing";
     timing.desc = "A/V Timing (Restart Required)";
-    timing.info = "60 Hz runs one new machine frame per callback and is the default, speeding gameplay and sound by about 4.3%. Generated audio is resampled to the board's reported output rate. Native follows the Model 2 hardware cadence of 57.524160 Hz. Reload content after changing this option.";
+    timing.info = "Select the video cadence and corresponding audio timing.";
     timing.category_key = "video";
     timing.values[0] = {"60hz", "60 Hz (Default)"};
     timing.values[1] = {"native", "57.524 Hz (Native Model 2)"};
@@ -419,7 +432,7 @@ inline void build_option_definitions()
     retro_core_option_v2_definition overlay{};
     overlay.key = "sm2_timing_overlay";
     overlay.desc = "Timing / FPS Overlay";
-    overlay.info = "Show a compact in-game panel with 61-frame averages for machine, video and audio work, total retro_run time, worst frame, actual frontend cadence and estimated processing capacity. Auto selects a 13 px native base font. Explicit sizes apply at 1x internal resolution; higher internal resolutions preserve the same visual proportions. The core draws the panel directly into the game frame. Takes effect immediately.";
+    overlay.info = "Display timing and frame-rate measurements to inspect emulation and rendering performance.";
     overlay.category_key = "video";
     overlay.values[0] = {"disabled", "Off"};
     overlay.values[1] = {"auto", "Auto"};
@@ -433,7 +446,7 @@ inline void build_option_definitions()
     retro_core_option_v2_definition audio_balance{};
     audio_balance.key = "sm2_audio_balance";
     audio_balance.desc = "Enhanced Audio Balance";
-    audio_balance.info = "Apply the upstream per-game balance to sources whose Gain is Auto. Manual Gain values override the profile for that source. Disabled gives Auto unity gain; fixed hardware mixer routes and Music Volume still apply. Changes take effect immediately.";
+    audio_balance.info = "Apply the native audio-balance profile to sources using automatic gain.";
     audio_balance.category_key = "audio";
     audio_balance.values[0] = {"enabled", "Enabled"};
     audio_balance.values[1] = {"disabled", "Disabled"};
@@ -442,8 +455,8 @@ inline void build_option_definitions()
 
     retro_core_option_v2_definition manxtt_audio{};
     manxtt_audio.key = "sm2_manxtt_cabinet_audio";
-    manxtt_audio.desc = "Manx TT Cabinet Audio";
-    manxtt_audio.info = "For Manx TT Revision C/D, select Twin or Deluxe sound ROMs from the current Cabinet Type in saved NVRAM. Searches the loaded archive and adjacent manxttc/manxtt/manxttdx sets, with CRC verification. Missing alternate ROMs retain the selected set audio with a notification. Disabled keeps the selected set sound ROMs. The additional Deluxe sound board follows Cabinet Type when its ROMs are available; it is always connected for manxttdx. Committed Service Menu changes take effect automatically. Has no effect on other games.";
+    manxtt_audio.desc = "Manx TT: Cabinet Audio";
+    manxtt_audio.info = "Select cabinet-appropriate sound ROMs and the additional sound board based on the selected cabinet configuration.";
     manxtt_audio.category_key = "audio";
     manxtt_audio.values[0] = {"enabled", "Enabled"};
     manxtt_audio.values[1] = {"disabled", "Disabled"};
@@ -453,7 +466,7 @@ inline void build_option_definitions()
     retro_core_option_v2_definition scsp_low_pass{};
     scsp_low_pass.key = "sm2_scsp_output_low_pass_filter";
     scsp_low_pass.desc = "SCSP Output Low-Pass Filter";
-    scsp_low_pass.info = "Apply an 8 kHz two-pole low-pass filter to SCSP output. Disabled preserves unfiltered output. Has no effect on games without an SCSP or on separate MPEG music. Changes take effect immediately.";
+    scsp_low_pass.info = "Apply a low-pass filter to SCSP audio output.";
     scsp_low_pass.category_key = "audio";
     scsp_low_pass.values[0] = {"disabled", "Disabled"};
     scsp_low_pass.values[1] = {"enabled", "Enabled"};
@@ -463,7 +476,7 @@ inline void build_option_definitions()
     retro_core_option_v2_definition music_volume{};
     music_volume.key = "sm2_music_volume";
     music_volume.desc = "Music Volume";
-    music_volume.info = "Adjust the separate DSB/DSB2 MPEG music volume in supported games. Other audio remains unchanged. Changes take effect immediately.";
+    music_volume.info = "Adjust the output level of the separate MPEG music board.";
     music_volume.category_key = "audio";
     music_volume.values[0] = {"0", "0%"};
     music_volume.values[1] = {"10", "10%"};
@@ -492,15 +505,15 @@ inline void build_option_definitions()
     constexpr std::array<const char*, 6> audio_source_labels{{
         "SCSP Gain", "DSB (MPEG) Gain",
         "MultiPCM 1 Gain", "MultiPCM 2 Gain",
-        "FM (YM3438) Gain", "Power Sled Relay Audio Gain"}};
+        "FM (YM3438) Gain", "Power Sled: Relay Audio Gain"}};
     for (size_t source = 0; source < audio_source_labels.size(); ++source) {
         retro_core_option_v2_definition gain{};
         gain.key = source < audio_source_keys.size()
             ? audio_source_keys[source] : "sm2_power_sled_relay_audio_gain";
         gain.desc = audio_source_labels[source];
-        gain.info = "Set this sound source's output level. Auto uses the upstream game profile when Enhanced Audio Balance is enabled, otherwise unity gain. Manual percentages replace the profile for this source. Fixed hardware mixer routes and Music Volume still apply. Mute silences only the output; the chip and timers keep running. Changes take effect immediately.";
+        gain.info = "Adjust this sound source's output gain without stopping its emulation when muted.";
         if (source == audio_source_keys.size())
-            gain.info = "Set only the added Relay SCSP output on the Power Sled Master when Relay Audio is active. Auto uses the Relay board profile with Enhanced Audio Balance, otherwise unity gain. Mute saves 0 and silences output without stopping the chip. Rider SCSP Gain remains independent; Master Volume applies to the final mix. Has no effect without the added Relay board. Changes take effect immediately.";
+            gain.info = "Adjust the added relay sound-board output independently of rider audio.";
         gain.category_key = "audio";
         gain.values[0] = {"auto", "Auto"};
         gain.values[1] = {"0", "Mute"};
@@ -514,10 +527,20 @@ inline void build_option_definitions()
         registered_definitions.push_back(gain);
     }
 
+    retro_core_option_v2_definition controller_profile{};
+    controller_profile.key = "sm2_controller_profile_type";
+    controller_profile.desc = "Controller Profile Type";
+    controller_profile.info = "Select whether controller profiles include Test/Service inputs while retaining gameplay controls and remapping.";
+    controller_profile.category_key = "input";
+    controller_profile.values[0] = {"normal", "Normal"};
+    controller_profile.values[1] = {"test_service", "Normal + Test/Service"};
+    controller_profile.default_value = "test_service";
+    registered_definitions.push_back(controller_profile);
+
     retro_core_option_v2_definition hide_shot_flash{};
     hide_shot_flash.key = "sm2_hide_shot_flash";
     hide_shot_flash.desc = "Hide Shot Flash";
-    hide_shot_flash.info = "Hide the white shot flash in Virtua Cop, Virtua Cop 2 and House of the Dead. Other games are unaffected. Changes take effect immediately.";
+    hide_shot_flash.info = "Suppress the white flash displayed when firing.";
     hide_shot_flash.category_key = "input";
     hide_shot_flash.values[0] = {"disabled", "Disabled"};
     hide_shot_flash.values[1] = {"enabled", "Enabled"};
@@ -527,7 +550,7 @@ inline void build_option_definitions()
     retro_core_option_v2_definition crosshair{};
     crosshair.key = "sm2_crosshairs";
     crosshair.desc = "Show Crosshair";
-    crosshair.info = "Automatic follows SM2-Emu: Player 1 in serial lightgun games and the game's own reticle in positional-gun games. Explicit player selections also enable the external crosshair for positional guns. Changes take effect immediately.";
+    crosshair.info = "Select external crosshair visibility for each player, or use the automatic native-reticle behavior.";
     crosshair.category_key = "input";
     crosshair.values[0] = {"auto", "Automatic"};
     crosshair.values[1] = {"0", "Disabled"};
@@ -540,7 +563,7 @@ inline void build_option_definitions()
     retro_core_option_v2_definition crosshair_style{};
     crosshair_style.key = "sm2_crosshair_style";
     crosshair_style.desc = "Crosshair Style";
-    crosshair_style.info = "Choose the upstream SM2-Emu circle and cardinal lines or the Supermodel four-wedge vector reticle. Changes take effect immediately.";
+    crosshair_style.info = "Select the shape of the external crosshair in lightgun games.";
     crosshair_style.category_key = "input";
     crosshair_style.values[0] = {"sm2", "SM2-Emu"};
     crosshair_style.values[1] = {"supermodel", "Supermodel"};
@@ -550,8 +573,8 @@ inline void build_option_definitions()
     {
         retro_core_option_v2_definition mapping{};
         mapping.key = "sm2_rail_chase_aim_mapping";
-        mapping.desc = "Rail Chase 2 Aim Mapping";
-        mapping.info = "Custom (SM2-Emu) uses the coordinate tables for Rail Chase 2 and its Rev. A. Linear (MAME) retains the previous port mapping. Other games are unaffected. Changes take effect immediately; recalibrate in the Service Menu after changing this option.";
+        mapping.desc = "Rail Chase 2: Aim Mapping";
+        mapping.info = "Select calibrated coordinate-table aiming or linear coordinate mapping.";
         mapping.category_key = "input";
         mapping.values[0] = {"upstream", "Custom (SM2-Emu)"};
         mapping.values[1] = {"previous", "Linear (MAME)"};
@@ -562,8 +585,8 @@ inline void build_option_definitions()
     {
         retro_core_option_v2_definition mapping{};
         mapping.key = "sm2_hotd_prototype_aim_mapping";
-        mapping.desc = "House Of The Dead Prototype Aim Mapping";
-        mapping.info = "Custom (SM2-Emu) uses the expanded coordinate range for the prototype. Linear (MAME) retains the previous port range. Other games are unaffected. Changes take effect immediately.";
+        mapping.desc = "House Of The Dead: Prototype Aim Mapping";
+        mapping.info = "Select an expanded aiming-coordinate range or the linear coordinate mapping.";
         mapping.category_key = "input";
         mapping.values[0] = {"upstream", "Custom (SM2-Emu)"};
         mapping.values[1] = {"previous", "Linear (MAME)"};
@@ -574,7 +597,7 @@ inline void build_option_definitions()
     retro_core_option_v2_definition gun_input{};
     gun_input.key = "sm2_gun_input";
     gun_input.desc = "Gun Input Mode";
-    gun_input.info = "Input source for gun games. Standard accepts RetroArch Lightgun, Mouse, and the left Analog Stick through one virtual cursor. Mouse + Analog Stick excludes Lightgun coordinates while retaining both relative cursor sources. Dedicated modes restrict input to the selected source. Changes take effect immediately.";
+    gun_input.info = "Select which input devices control the aiming cursor, including combined and dedicated input modes.";
     gun_input.category_key = "input";
     gun_input.values[0] = {"hybrid", "Standard"};
     gun_input.values[1] = {"lightgun", "Lightgun Only"};
@@ -587,7 +610,7 @@ inline void build_option_definitions()
     retro_core_option_v2_definition offscreen_reload{};
     offscreen_reload.key = "sm2_offscreen_reload_shortcut";
     offscreen_reload.desc = "Off-Screen Reload Shortcut";
-    offscreen_reload.info = "For Virtua Cop, Virtua Cop 2 and The House of the Dead, enables explicit forced off-screen reload inputs on RetroPad East/LB, Mouse Right and Lightgun Reload. A physical Lightgun off-screen Trigger remains an intrinsic cabinet action and always works. Takes effect immediately.";
+    offscreen_reload.info = "Enable dedicated inputs that force an off-screen reload while retaining native lightgun off-screen firing.";
     offscreen_reload.category_key = "input";
     offscreen_reload.values[0] = {"enabled", "Enabled"};
     offscreen_reload.values[1] = {"disabled", "Disabled"};
@@ -597,7 +620,7 @@ inline void build_option_definitions()
     retro_core_option_v2_definition mouse_edge_reload{};
     mouse_edge_reload.key = "sm2_mouse_edge_offscreen_reload";
     mouse_edge_reload.desc = "Mouse Edge Off-Screen Reload";
-    mouse_edge_reload.info = "Provides off-screen reload when using a Mouse, because the Libretro Mouse interface does not report whether the pointer is off-screen. In Standard, Mouse + Analog Stick or Mouse Only mode, moving the virtual cursor within the outer five percent of the screen and pressing Mouse Left sends an off-screen shot in Virtua Cop, Virtua Cop 2 and The House of the Dead. A Lightgun already supplies its native off-screen status and does not require this option. Takes effect immediately.";
+    mouse_edge_reload.info = "Allow a mouse shot at the screen edge to trigger off-screen reload.";
     mouse_edge_reload.category_key = "input";
     mouse_edge_reload.values[0] = {"disabled", "Disabled"};
     mouse_edge_reload.values[1] = {"enabled", "Enabled"};
@@ -607,7 +630,7 @@ inline void build_option_definitions()
     retro_core_option_v2_definition gamepad_rumble{};
     gamepad_rumble.key = "sm2_gamepad_rumble";
     gamepad_rumble.desc = "Gamepad Rumble";
-    gamepad_rumble.info = "Enable the SM2-Emu gamepad vibration model for driving games. Drive-board impacts produce short jolts and steering deflection produces a lighter cornering vibration. Other games remain silent. Changes take effect immediately.";
+    gamepad_rumble.info = "Enable gamepad vibration using the game's force-feedback or rumble effects.";
     gamepad_rumble.category_key = "input";
     gamepad_rumble.values[0] = {"enabled", "Enabled"};
     gamepad_rumble.values[1] = {"disabled", "Disabled"};
@@ -617,7 +640,7 @@ inline void build_option_definitions()
     retro_core_option_v2_definition shifter{};
     shifter.key = "sm2_four_speed_shifter";
     shifter.desc = "4-Speed Shifter";
-    shifter.info = "Applied only to recognized 4-Speed driving games. H-Gate selects gears from the four diagonal positions of the right analog stick. Standard assigns first through fourth gear to Up, Down, Left and Right. West remains Neutral and L1/R1 remain sequential Shift Down/Up.";
+    shifter.info = "Select direct directional gear selection or diagonal analog-stick H-gate shifting. Applies only to 4-speed driving games.";
     shifter.category_key = "input";
     shifter.values[0] = {"h_gate", "H-Gate Mode"};
     shifter.values[1] = {"standard", "Standard"};
@@ -627,7 +650,7 @@ inline void build_option_definitions()
     retro_core_option_v2_definition automatic_start_gear{};
     automatic_start_gear.key = "sm2_automatic_start_gear";
     automatic_start_gear.desc = "Automatic Start Gear (Restart Required)";
-    automatic_start_gear.info = "Use the initial gear declared by SM2-Emu for rolling starts. Enabled starts the Daytona USA family in fourth gear; Disabled starts four-speed games in first gear. Reload content after changing this option.";
+    automatic_start_gear.info = "Use the declared initial gear for rolling starts instead of always starting in first gear. Applies only to 4-speed driving games.";
     automatic_start_gear.category_key = "input";
     automatic_start_gear.values[0] = {"enabled", "Enabled"};
     automatic_start_gear.values[1] = {"disabled", "Disabled"};
@@ -636,8 +659,8 @@ inline void build_option_definitions()
 
     retro_core_option_v2_definition desert_elevation_control{};
     desert_elevation_control.key = "sm2_desert_elevation_control";
-    desert_elevation_control.desc = "Desert Tank Elevation Control";
-    desert_elevation_control.info = "Relative treats the centered Left Analog Y axis as a proportional movement control: releasing the stick holds the current turret elevation. Absolute maps the stick position directly to the full elevation range. Applied only to Desert Tank. Changes take effect immediately.";
+    desert_elevation_control.desc = "Desert Tank: Elevation Control";
+    desert_elevation_control.info = "Select relative movement or absolute-position control for turret elevation.";
     desert_elevation_control.category_key = "input";
     desert_elevation_control.values[0] = {"relative", "Relative"};
     desert_elevation_control.values[1] = {"absolute", "Absolute"};
@@ -646,8 +669,8 @@ inline void build_option_definitions()
 
     retro_core_option_v2_definition desert_elevation_speed{};
     desert_elevation_speed.key = "sm2_desert_elevation_speed";
-    desert_elevation_speed.desc = "Desert Tank Elevation Speed (Relative Only)";
-    desert_elevation_speed.info = "Adjust the maximum turret elevation movement speed in Relative mode. Stick displacement continues to control the actual speed proportionally. Applied only to Desert Tank. Changes take effect immediately.";
+    desert_elevation_speed.desc = "Desert Tank: Elevation Speed (Relative Only)";
+    desert_elevation_speed.info = "Adjust the maximum turret elevation speed in relative control mode.";
     desert_elevation_speed.category_key = "input";
     desert_elevation_speed.values[0] = {"10", "10%"};
     desert_elevation_speed.values[1] = {"20", "20%"};
@@ -674,8 +697,8 @@ inline void build_option_definitions()
 
     retro_core_option_v2_definition desert_elevation_axis{};
     desert_elevation_axis.key = "sm2_desert_elevation_axis";
-    desert_elevation_axis.desc = "Desert Tank Elevation Axis Mode";
-    desert_elevation_axis.info = "Normal maps Left Analog Y up/down to turret elevation up/down. Inverted reverses the axis in both Relative and Absolute control modes. Applied only to Desert Tank. Changes take effect immediately.";
+    desert_elevation_axis.desc = "Desert Tank: Elevation Axis Mode";
+    desert_elevation_axis.info = "Select normal or inverted vertical input for turret elevation.";
     desert_elevation_axis.category_key = "input";
     desert_elevation_axis.values[0] = {"normal", "Normal"};
     desert_elevation_axis.values[1] = {"inverted", "Inverted"};
@@ -684,8 +707,8 @@ inline void build_option_definitions()
 
     retro_core_option_v2_definition top_skater_response{};
     top_skater_response.key = "sm2_top_skater_curving_response";
-    top_skater_response.desc = "Top Skater Curving Response";
-    top_skater_response.info = "Applied only to Top Skater. Progressive uses the upstream quadratic response and small center deadzone for finer steering. Linear preserves the previous direct stick response. Both retain full travel. Changes take effect immediately.";
+    top_skater_response.desc = "Top Skater: Curving Response";
+    top_skater_response.info = "Select a progressive or linear curving response while retaining full control travel.";
     top_skater_response.category_key = "input";
     top_skater_response.values[0] = {"linear", "Linear"};
     top_skater_response.values[1] = {"progressive", "Progressive (Fine Center)"};
@@ -695,7 +718,7 @@ inline void build_option_definitions()
     retro_core_option_v2_definition steering_response{};
     steering_response.key = "sm2_steering_response";
     steering_response.desc = "Driving Steering Response";
-    steering_response.info = "Applied only to games recognized as Driving. Select the steering response curve; Progressive and FBNeo Logarithmic reduce sensitivity around the center while retaining the available output range. Changes take effect immediately.";
+    steering_response.info = "Select the steering response curve to adjust sensitivity around the center while retaining full travel.";
     steering_response.category_key = "input";
     steering_response.values[0] = {"linear", "Linear"};
     steering_response.values[1] = {"progressive", "Progressive (Fine Center)"};
@@ -733,13 +756,56 @@ inline void build_option_definitions()
     };
     registered_definitions.push_back(add_output_range(
         "sm2_steering_output_range", "Driving Steering Output Range",
-        "Applied only to games recognized as Driving. Scale steering around its center. Values below 100% reduce the emulated wheel range; values above 100% reach full lock with less physical stick travel. The 63% preset maps full travel to the 30-80-D0 ADC range. Changes take effect immediately.", true));
+        "Scale steering output around its center to adjust the input travel needed for full lock.", true));
     registered_definitions.push_back(add_output_range(
         "sm2_accelerator_output_range", "Driving Accelerator Output Range",
-        "Applied only to games recognized as Driving. Scale the accelerator from its released position. Values below 100% reduce the maximum emulated pedal output; values above 100% reach full output with less physical trigger travel. The 75.3% preset maps full travel to the 00-C0 ADC range. Changes take effect immediately.", false));
+        "Scale accelerator output from its released position to adjust the input travel needed for full acceleration.", false));
     registered_definitions.push_back(add_output_range(
         "sm2_brake_output_range", "Driving Brake Output Range",
-        "Applied only to games recognized as Driving. Scale the brake from its released position. Values below 100% reduce the maximum emulated pedal output; values above 100% reach full output with less physical trigger travel. The 75.3% preset maps full travel to the 00-C0 ADC range. Changes take effect immediately.", false));
+        "Scale brake output from its released position to adjust the input travel needed for full braking.", false));
+
+    // Keep functional controls together, then place game-specific controls last.
+    // System retains its native/operator order.
+    constexpr std::array<std::string_view, 8> video_order{{
+        "sm2_renderer", "sm2_software_renderer_threading",
+        "sm2_internal_resolution", "sm2_upscale_2d", "sm2_texture_filter",
+        "sm2_aspect_ratio", "sm2_av_timing", "sm2_timing_overlay"}};
+    constexpr std::array<std::string_view, 10> audio_order{{
+        "sm2_music_volume", "sm2_audio_balance", "sm2_scsp_gain", "sm2_dsb_gain",
+        "sm2_multipcm1_gain", "sm2_multipcm2_gain", "sm2_ym3438_gain",
+        "sm2_scsp_output_low_pass_filter",
+        "sm2_manxtt_cabinet_audio", "sm2_power_sled_relay_audio_gain"}};
+    constexpr std::array<std::string_view, 20> input_order{{
+        "sm2_controller_profile_type", "sm2_gamepad_rumble",
+        "sm2_hide_shot_flash",
+        "sm2_crosshairs", "sm2_crosshair_style", "sm2_gun_input",
+        "sm2_offscreen_reload_shortcut", "sm2_mouse_edge_offscreen_reload",
+        "sm2_four_speed_shifter",
+        "sm2_automatic_start_gear", "sm2_steering_response",
+        "sm2_steering_output_range", "sm2_accelerator_output_range",
+        "sm2_brake_output_range", "sm2_desert_elevation_control",
+        "sm2_desert_elevation_speed", "sm2_desert_elevation_axis",
+        "sm2_hotd_prototype_aim_mapping", "sm2_rail_chase_aim_mapping",
+        "sm2_top_skater_curving_response"}};
+    const auto order_category = [](std::string_view category, const auto& order) {
+        const auto first = std::find_if(registered_definitions.begin(),
+                                        registered_definitions.end(), [category](const auto& option) {
+            return option.category_key && category == option.category_key;
+        });
+        const auto last = std::find_if(first, registered_definitions.end(),
+                                       [category](const auto& option) {
+            return !option.category_key || category != option.category_key;
+        });
+        const auto rank = [&order](const auto& option) {
+            return std::find(order.begin(), order.end(), std::string_view(option.key));
+        };
+        std::stable_sort(first, last, [&rank](const auto& left, const auto& right) {
+            return rank(left) < rank(right);
+        });
+    };
+    order_category("video", video_order);
+    order_category("audio", audio_order);
+    order_category("input", input_order);
 
     registered_definitions.push_back({});
 }
@@ -747,7 +813,7 @@ inline void build_option_definitions()
 inline AVTimingMode av_timing_mode()
 {
     retro_variable option{"sm2_av_timing", nullptr};
-    if (!option_environment || !option_environment(RETRO_ENVIRONMENT_GET_VARIABLE, &option)
+    if (!option_environment || !option_variable(option)
         || !option.value) return AVTimingMode::FullFrames60Hz;
     if (std::strcmp(option.value, "native") == 0) return AVTimingMode::Native;
     return AVTimingMode::FullFrames60Hz;
@@ -757,7 +823,7 @@ inline bool software_renderer_async_enabled()
 {
     retro_variable option{"sm2_software_renderer_threading", nullptr};
     return !(option_environment
-             && option_environment(RETRO_ENVIRONMENT_GET_VARIABLE, &option)
+             && option_variable(option)
              && option.value && std::strcmp(option.value, "synchronous") == 0);
 }
 
@@ -765,21 +831,21 @@ inline bool rom_crc_verification_enabled()
 {
     retro_variable option{"sm2_rom_crc_verification", nullptr};
     return !(option_environment
-             && option_environment(RETRO_ENVIRONMENT_GET_VARIABLE, &option)
+             && option_variable(option)
              && option.value && std::strcmp(option.value, "disabled") == 0);
 }
 
 inline bool i960_round_nearest_even_enabled()
 {
     retro_variable option{"sm2_i960_round_nearest_even", nullptr};
-    return option_environment && option_environment(RETRO_ENVIRONMENT_GET_VARIABLE, &option)
+    return option_environment && option_variable(option)
            && option.value && std::strcmp(option.value, "enabled") == 0;
 }
 
 inline AspectRatioMode aspect_ratio_mode()
 {
     retro_variable option{"sm2_aspect_ratio", nullptr};
-    if (!(option_environment && option_environment(RETRO_ENVIRONMENT_GET_VARIABLE, &option))
+    if (!(option_environment && option_variable(option))
         || !option.value)
         return AspectRatioMode::Automatic;
     if (std::strcmp(option.value, "4_3") == 0) return AspectRatioMode::FourThree;
@@ -790,7 +856,7 @@ inline AspectRatioMode aspect_ratio_mode()
 inline unsigned timing_overlay_font_pixels()
 {
     retro_variable option{"sm2_timing_overlay", nullptr};
-    if (!(option_environment && option_environment(RETRO_ENVIRONMENT_GET_VARIABLE, &option))
+    if (!(option_environment && option_variable(option))
         || !option.value)
         return 0;
     if (std::strcmp(option.value, "auto") == 0) return 13;
@@ -804,14 +870,14 @@ inline unsigned timing_overlay_font_pixels()
 inline bool hide_shot_flash_enabled()
 {
     retro_variable option{"sm2_hide_shot_flash", nullptr};
-    return option_environment && option_environment(RETRO_ENVIRONMENT_GET_VARIABLE, &option)
+    return option_environment && option_variable(option)
         && option.value && std::strcmp(option.value, "enabled") == 0;
 }
 
 inline unsigned crosshair_mask(const rom::GameSpec& game)
 {
     retro_variable option{"sm2_crosshairs", nullptr};
-    if (!(option_environment && option_environment(RETRO_ENVIRONMENT_GET_VARIABLE, &option))
+    if (!(option_environment && option_variable(option))
         || !option.value)
         return game.lightgun.present ? 1u : 0u;
     if (std::strcmp(option.value, "auto") == 0)
@@ -826,7 +892,7 @@ inline unsigned crosshair_mask(const rom::GameSpec& game)
 inline CrosshairStyle crosshair_style()
 {
     retro_variable option{"sm2_crosshair_style", nullptr};
-    return option_environment && option_environment(RETRO_ENVIRONMENT_GET_VARIABLE, &option)
+    return option_environment && option_variable(option)
                && option.value && std::strcmp(option.value, "supermodel") == 0
            ? CrosshairStyle::Supermodel
            : CrosshairStyle::Sm2;
@@ -835,70 +901,70 @@ inline CrosshairStyle crosshair_style()
 inline bool initial_nvram_setup_enabled()
 {
     retro_variable option{"sm2_initial_nvram_setup", nullptr};
-    return !(option_environment && option_environment(RETRO_ENVIRONMENT_GET_VARIABLE, &option)
+    return !(option_environment && option_variable(option)
              && option.value && std::strcmp(option.value, "disabled") == 0);
 }
 
 inline bool four_speed_h_gate()
 {
     retro_variable option{"sm2_four_speed_shifter", nullptr};
-    return !(option_environment && option_environment(RETRO_ENVIRONMENT_GET_VARIABLE, &option)
+    return !(option_environment && option_variable(option)
              && option.value && std::strcmp(option.value, "standard") == 0);
 }
 
 inline bool automatic_start_gear_enabled()
 {
     retro_variable option{"sm2_automatic_start_gear", nullptr};
-    return !(option_environment && option_environment(RETRO_ENVIRONMENT_GET_VARIABLE, &option)
+    return !(option_environment && option_variable(option)
              && option.value && std::strcmp(option.value, "disabled") == 0);
 }
 
 inline bool gamepad_rumble_enabled()
 {
     retro_variable option{"sm2_gamepad_rumble", nullptr};
-    return !(option_environment && option_environment(RETRO_ENVIRONMENT_GET_VARIABLE, &option)
+    return !(option_environment && option_variable(option)
              && option.value && std::strcmp(option.value, "disabled") == 0);
 }
 
 inline bool audio_balance_enabled()
 {
     retro_variable option{"sm2_audio_balance", nullptr};
-    return !(option_environment && option_environment(RETRO_ENVIRONMENT_GET_VARIABLE, &option)
+    return !(option_environment && option_variable(option)
              && option.value && std::strcmp(option.value, "disabled") == 0);
 }
 
 inline bool manxtt_cabinet_audio_enabled()
 {
     retro_variable option{"sm2_manxtt_cabinet_audio", nullptr};
-    return !(option_environment && option_environment(RETRO_ENVIRONMENT_GET_VARIABLE, &option)
+    return !(option_environment && option_variable(option)
              && option.value && std::strcmp(option.value, "disabled") == 0);
 }
 
 inline bool power_sled_relay_audio_enabled()
 {
     retro_variable option{"sm2_power_sled_relay_audio", nullptr};
-    return !(option_environment && option_environment(RETRO_ENVIRONMENT_GET_VARIABLE, &option)
+    return !(option_environment && option_variable(option)
         && option.value && std::strcmp(option.value, "disabled") == 0);
 }
 
 inline bool power_sled_standalone_enabled()
 {
     retro_variable option{"sm2_power_sled_standalone", nullptr};
-    return !(option_environment && option_environment(RETRO_ENVIRONMENT_GET_VARIABLE, &option)
+    return !(option_environment && option_variable(option)
         && option.value && std::strcmp(option.value, "disabled") == 0);
 }
 
 inline bool power_sled_ai_finish_speed_fix_enabled()
 {
     retro_variable option{"sm2_power_sled_ai_finish_speed_fix", nullptr};
-    return !(option_environment && option_environment(RETRO_ENVIRONMENT_GET_VARIABLE, &option)
+    return !(option_environment && option_variable(option)
         && option.value && std::strcmp(option.value, "disabled") == 0);
 }
 
 inline bool power_sled_relay_commands_enabled()
 {
     retro_variable option{"sm2_power_sled_relay_commands", nullptr};
-    if (option_environment && option_environment(RETRO_ENVIRONMENT_GET_VARIABLE, &option)
+    if (option_environment && option_variable(option)
         && option.value)
         return std::strcmp(option.value, "enabled") == 0;
     return true;
@@ -907,7 +973,7 @@ inline bool power_sled_relay_commands_enabled()
 inline bool scsp_output_low_pass_enabled()
 {
     retro_variable option{"sm2_scsp_output_low_pass_filter", nullptr};
-    if (option_environment && option_environment(RETRO_ENVIRONMENT_GET_VARIABLE, &option)
+    if (option_environment && option_variable(option)
         && option.value) {
         return std::strcmp(option.value, "disabled") != 0;
     }
@@ -918,7 +984,7 @@ inline unsigned music_volume_percent()
 {
     retro_variable option{"sm2_music_volume", nullptr};
     const char* value = option_environment
-            && option_environment(RETRO_ENVIRONMENT_GET_VARIABLE, &option)
+            && option_variable(option)
             && option.value ? option.value : "100";
     return static_cast<unsigned>(std::clamp(std::atoi(value), 0, 200));
 }
@@ -926,7 +992,7 @@ inline unsigned music_volume_percent()
 inline bool audio_gain_automatic(const char* key)
 {
     retro_variable option{key, nullptr};
-    return !(option_environment && option_environment(RETRO_ENVIRONMENT_GET_VARIABLE, &option)
+    return !(option_environment && option_variable(option)
              && option.value) || std::strcmp(option.value, "auto") == 0;
 }
 
@@ -934,7 +1000,7 @@ inline unsigned audio_gain(const char* key)
 {
     retro_variable option{key, nullptr};
     const char* value = option_environment
-        && option_environment(RETRO_ENVIRONMENT_GET_VARIABLE, &option)
+        && option_variable(option)
         && option.value ? option.value : "auto";
     if (std::strcmp(value, "auto") == 0) return 100;
     if (std::strcmp(value, "mute") == 0 || std::strcmp(value, "Mute") == 0
@@ -959,13 +1025,13 @@ inline SpecialAnalogOptions special_analog_options()
 {
     SpecialAnalogOptions options;
     retro_variable response{"sm2_top_skater_curving_response", nullptr};
-    if (option_environment && option_environment(RETRO_ENVIRONMENT_GET_VARIABLE, &response)
+    if (option_environment && option_variable(response)
         && response.value)
         options.top_skater_progressive = std::strcmp(response.value, "linear") != 0;
     for (auto [key, enabled] : {std::pair{"sm2_rail_chase_aim_mapping", &options.rail_chase_upstream},
                                 std::pair{"sm2_hotd_prototype_aim_mapping", &options.hotd_prototype_upstream}}) {
         retro_variable mapping{key, nullptr};
-        if (option_environment && option_environment(RETRO_ENVIRONMENT_GET_VARIABLE, &mapping)
+        if (option_environment && option_variable(mapping)
             && mapping.value)
             *enabled = std::strcmp(mapping.value, "previous") != 0;
     }
@@ -976,7 +1042,7 @@ inline DrivingAnalogOptions driving_analog_options()
 {
     const auto value = [](const char* key, const char* fallback) {
         retro_variable option{key, nullptr};
-        return option_environment && option_environment(RETRO_ENVIRONMENT_GET_VARIABLE, &option)
+        return option_environment && option_variable(option)
                 && option.value
             ? option.value : fallback;
     };
@@ -1000,7 +1066,7 @@ inline DesertElevationOptions desert_elevation_options()
 {
     const auto value = [](const char* key, const char* fallback) {
         retro_variable option{key, nullptr};
-        return option_environment && option_environment(RETRO_ENVIRONMENT_GET_VARIABLE, &option)
+        return option_environment && option_variable(option)
                 && option.value
             ? option.value : fallback;
     };
@@ -1017,7 +1083,7 @@ inline DesertElevationOptions desert_elevation_options()
 inline unsigned texture_filter_quality()
 {
     retro_variable option{"sm2_texture_filter", nullptr};
-    if (!(option_environment && option_environment(RETRO_ENVIRONMENT_GET_VARIABLE, &option))
+    if (!(option_environment && option_variable(option))
         || !option.value || std::strcmp(option.value, "faithful") == 0)
         return 0;
     const unsigned quality = static_cast<unsigned>(std::atoi(option.value));
@@ -1027,7 +1093,7 @@ inline unsigned texture_filter_quality()
 inline unsigned upscale_2d_mode()
 {
     retro_variable option{"sm2_upscale_2d", nullptr};
-    if (!(option_environment && option_environment(RETRO_ENVIRONMENT_GET_VARIABLE, &option))
+    if (!(option_environment && option_variable(option))
         || !option.value)
         return 0;
     if (std::strcmp(option.value, "xbr") == 0) return 1;
@@ -1035,10 +1101,17 @@ inline unsigned upscale_2d_mode()
     return 0;
 }
 
+inline bool controller_test_service_enabled()
+{
+    retro_variable option{"sm2_controller_profile_type", nullptr};
+    return !(option_environment && option_variable(option)
+             && option.value && std::strcmp(option.value, "normal") == 0);
+}
+
 inline GunInputMode gun_input_mode()
 {
     retro_variable option{"sm2_gun_input", nullptr};
-    if (!(option_environment && option_environment(RETRO_ENVIRONMENT_GET_VARIABLE, &option))
+    if (!(option_environment && option_variable(option))
         || !option.value)
         return GunInputMode::Hybrid;
     if (std::strcmp(option.value, "lightgun") == 0) return GunInputMode::Lightgun;
@@ -1051,56 +1124,63 @@ inline GunInputMode gun_input_mode()
 inline bool offscreen_reload_shortcut_enabled()
 {
     retro_variable option{"sm2_offscreen_reload_shortcut", nullptr};
-    return !(option_environment && option_environment(RETRO_ENVIRONMENT_GET_VARIABLE, &option)
+    return !(option_environment && option_variable(option)
              && option.value && std::strcmp(option.value, "disabled") == 0);
 }
 
 inline bool mouse_edge_offscreen_reload_enabled()
 {
     retro_variable option{"sm2_mouse_edge_offscreen_reload", nullptr};
-    return option_environment && option_environment(RETRO_ENVIRONMENT_GET_VARIABLE, &option)
+    return option_environment && option_variable(option)
         && option.value && std::strcmp(option.value, "enabled") == 0;
 }
 
 inline unsigned linked_cabinets(std::string_view game)
 {
-    const auto* linked_game = linked_cabinet_game(game);
-    if (!linked_game) return 1;
+    const auto* linked = linked_cabinet_game(game);
+    if (!linked) return 1;
     const std::string key = "sm2_linked_cabinets_" + std::string(game);
-    retro_variable option{key.c_str(), nullptr};
-    if (!option_environment || !option_environment(RETRO_ENVIRONMENT_GET_VARIABLE, &option)
-        || !option.value || std::strcmp(option.value, "disabled") == 0)
-        return 1;
-    const unsigned cabinets = static_cast<unsigned>(option.value[0] - '0');
+    retro_variable variable{key.c_str(), nullptr};
+    if (!option_variable(variable) || !variable.value) return 1;
+    const std::string value(variable.value);
+    if (value == "-1" || value == "0" || value == "1") return 1;
     const unsigned minimum = game == "vonr" ? 3u : 2u;
-    return cabinets >= minimum && cabinets <= linked_game->max_cabinets
-        && option.value[1] == '\0'
-        ? cabinets : 1;
+    if (value.size() == 1 && value[0] >= static_cast<char>('0' + minimum) && value[0] <= static_cast<char>('0' + linked->max_cabinets))
+        return static_cast<unsigned>(value[0] - '0');
+    invalid_network_option(key, value, "-1");
+    return 1;
 }
 
 inline std::string automatic_network_preset(std::string_view game)
 {
-    const auto* linked_game = linked_cabinet_game(game);
-    if (!linked_game) return "0";
-    const bool relay_program = game == "vonr" || game == "powsledr";
+    const auto* linked = linked_cabinet_game(game);
+    if (!linked) return "-1";
+    const auto catalog = game == "vonr" || game == "powsledr" ? game : linked->nvram_game;
+    const std::string fallback(network::default_preset(catalog));
     const std::string key = "sm2_automatic_network_" + std::string(game);
-    retro_variable option{key.c_str(), nullptr};
-    const std::string selected = option_environment
-        && option_environment(RETRO_ENVIRONMENT_GET_VARIABLE, &option) && option.value
-            ? option.value : relay_program ? "relay" : "1";
-    const auto choices = network::choices(relay_program ? game : linked_game->nvram_game,
-                                         linked_game->max_cabinets);
-    return std::any_of(choices.begin(), choices.end(), [&](const auto& choice) {
-        return choice.key == selected;
-    }) ? selected : "0";
+    retro_variable variable{key.c_str(), nullptr};
+    if (!option_variable(variable) || !variable.value) return fallback;
+    std::string selected(variable.value);
+    if (selected == "l" || selected == "s") selected = "r";
+    const auto choices = network::choices(catalog, linked->max_cabinets);
+    if (std::any_of(choices.begin(), choices.end(), [&](const auto& choice) { return choice.key == selected; }))
+        return selected;
+    invalid_network_option(key, selected, fallback);
+    return fallback;
 }
 
 inline bool update_option_visibility()
 {
     if (!option_environment) return false;
+    retain_option_updates();
     const bool master_visible = !nvram::options_for_game(option_game).empty();
+    const bool supported_network = linked_cabinet_game(option_content_game) != nullptr;
+    const std::string network_selection = supported_network ? automatic_network_preset(option_content_game) : "-1";
+    const bool automated = supported_network && network_selection != "-1";
+    const std::string network_tag = option_content_game + ":" + network_selection;
+    const auto network_catalog = option_content_game == "vonr" ? std::string_view{"vonr"} : std::string_view{option_game};
     retro_variable enabled_option{"sm2_nvram_settings", nullptr};
-    const bool enabled = option_environment(RETRO_ENVIRONMENT_GET_VARIABLE, &enabled_option) &&
+    const bool enabled = option_variable(enabled_option) &&
                          enabled_option.value && std::string(enabled_option.value) == "enabled";
     const bool game_visible = master_visible && enabled;
     retro_core_option_display master{"sm2_nvram_settings", master_visible};
@@ -1118,14 +1198,13 @@ inline bool update_option_visibility()
         }
         if (key.starts_with("sm2_linked_cabinets_")) {
             retro_core_option_display display{definition.key,
-                key.substr(std::strlen("sm2_linked_cabinets_")) == option_content_game};
+                key.substr(std::strlen("sm2_linked_cabinets_")) == (supported_network ? option_content_game : "unsupported")};
             option_environment(RETRO_ENVIRONMENT_SET_CORE_OPTIONS_DISPLAY, &display);
             continue;
         }
         if (key.starts_with("sm2_automatic_network_")) {
             retro_core_option_display display{definition.key,
-                game_visible && key.substr(std::strlen("sm2_automatic_network_"))
-                    == option_content_game};
+                key.substr(std::strlen("sm2_automatic_network_")) == (supported_network ? option_content_game : "unsupported")};
             option_environment(RETRO_ENVIRONMENT_SET_CORE_OPTIONS_DISPLAY, &display);
             continue;
         }
@@ -1144,10 +1223,13 @@ inline bool update_option_visibility()
         }
         const std::string prefix = "sm2_nvram_" + option_game + "_";
         retro_core_option_display display{definition.key,
-            game_visible && std::strncmp(definition.key, prefix.c_str(), prefix.size()) == 0};
+            game_visible && key.starts_with(prefix)
+                && !(automated && network::managed_field(network_catalog, key.substr(prefix.size())))};
         option_environment(RETRO_ENVIRONMENT_SET_CORE_OPTIONS_DISPLAY, &display);
     }
-    const bool changed = master_visible != nvram_master_visible || game_visible != nvram_game_visible;
+    const bool changed = master_visible != nvram_master_visible || game_visible != nvram_game_visible
+        || network_tag != network_visibility;
+    network_visibility = network_tag;
     nvram_master_visible = master_visible;
     nvram_game_visible = game_visible;
     return changed;
@@ -1172,7 +1254,7 @@ inline std::vector<std::string> selected_nvram_values(std::string_view game)
     for (const auto& option : nvram::options_for_game(game)) {
         const std::string key = "sm2_nvram_" + std::string(option.game) + "_" + option.suffix;
         retro_variable variable{key.c_str(), nullptr};
-        if (option_environment && option_environment(RETRO_ENVIRONMENT_GET_VARIABLE, &variable) &&
+        if (option_environment && option_variable(variable) &&
             variable.value)
             selected.emplace_back(variable.value);
         else
@@ -1184,7 +1266,7 @@ inline std::vector<std::string> selected_nvram_values(std::string_view game)
 inline bool nvram_settings_enabled()
 {
     retro_variable option{"sm2_nvram_settings", nullptr};
-    return option_environment && option_environment(RETRO_ENVIRONMENT_GET_VARIABLE, &option) &&
+    return option_environment && option_variable(option) &&
            option.value && std::string(option.value) == "enabled";
 }
 
@@ -1198,7 +1280,7 @@ inline void prepare_gain_compatibility(bool probe_all)
         while (definition.values[end].value) ++end;
         retro_variable selected{definition.key, nullptr};
         const char* saved = !probe_all && option_environment
-            && option_environment(RETRO_ENVIRONMENT_GET_VARIABLE, &selected)
+            && option_variable(selected)
             ? selected.value : nullptr;
         for (unsigned percent = 110; percent <= 200; percent += 10) {
             const std::string value = std::to_string(percent);
@@ -1215,9 +1297,20 @@ inline void prepare_gain_compatibility(bool probe_all)
     }
 }
 
+inline bool update_option_display()
+{
+    const bool visibility_changed = update_option_visibility();
+    const bool controls_changed = option_controls_update && option_controls_update();
+    return visibility_changed || controls_changed;
+}
+
 inline void register_core_options(retro_environment_t env)
 {
     option_environment = env;
+    option_updates_pending = false;
+    option_warnings.clear();
+    reported_invalid_network_values.clear();
+    option_corrections.clear();
     build_option_definitions();
     static retro_core_option_v2_category categories[] = {
         {"system", "System", "Machine settings stored in battery-backed memory."},
@@ -1234,7 +1327,7 @@ inline void register_core_options(retro_environment_t env)
         prepare_gain_compatibility(false);
         options.definitions = compatible_definitions.data();
         env(RETRO_ENVIRONMENT_SET_CORE_OPTIONS_V2, &options);
-        retro_core_options_update_display_callback callback{update_option_visibility};
+        retro_core_options_update_display_callback callback{update_option_display};
         env(RETRO_ENVIRONMENT_SET_CORE_OPTIONS_UPDATE_DISPLAY_CALLBACK, &callback);
         update_option_visibility();
         return;
@@ -1248,9 +1341,14 @@ inline void register_core_options(retro_environment_t env)
         for (const auto& definition : compatible_definitions) {
             if (!definition.key) break;
             std::string line = std::string(definition.desc) + "; ";
+            const bool network_option = std::string_view(definition.key).starts_with("sm2_linked_cabinets_")
+                || std::string_view(definition.key).starts_with("sm2_automatic_network_");
             bool first = true;
+            // The legacy ABI encodes its default as the first token.
+            if (network_option) { line += definition.default_value; first = false; }
             for (const auto& value : definition.values) {
                 if (!value.value) break;
+                if (network_option && std::strcmp(value.value, definition.default_value) == 0) continue;
                 if (!first) line += '|';
                 line += value.value;
                 first = false;

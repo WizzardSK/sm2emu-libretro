@@ -203,6 +203,9 @@ public:
 
     virtual void reset() = 0;
 
+    /// Mutable program storage for guarded host patches between frames; reset afterwards.
+    [[nodiscard]] virtual std::span<u8> program_rom() = 0;
+
     /// Advance one video frame, including the vertical blank interrupt.
     virtual void run_frame() = 0;
 

@@ -13,6 +13,14 @@ change was first reviewed does not affect its priority or status.
 
 ## Mandatory Frontend References
 
+The shared reference is the user's Libretro Core Framework at
+`/Users/andrea/dev/libretro-core-framework/FRAMEWORK.md`, with its inspected
+sources in `REFERENCE_SOURCES.md`. Consult the current Framework contracts
+before adopting shared guidelines, tools, menu structures or equivalent behavior.
+Explicit user instructions and approved core-specific exceptions take precedence;
+an observed difference or pending Framework item is not permission to change a
+published core contract. See [Framework Adoption And Solution Exchange](LIBRETRO_FRAMEWORK_REFERENCE.md).
+
 Before changing menu organization, equivalent option names, descriptions/help text,
 choices, defaults or application behavior, inspect the current Supermodel Libretro and TGPulse
 Libretro reference implementations read-only. Compare their actual code and
@@ -29,6 +37,12 @@ reviewed for transfer to the other reference cores. Use an interchange file and
 the destination chat to record applicable candidates in its roadmap. Verify
 that the destination records the requirement before closing the originating
 handoff; implementation requires its own approved scope.
+
+Transferable SM2 solutions must also be considered for the Framework; Framework
+solutions must be reviewed for applicability to SM2. Use the Framework's own
+chat for its changes and this project's chat for SM2 implementation. Retain the
+interchange file, source evidence, compatibility impact and validation limits.
+Framework adoption does not imply that every core already implements a solution.
 
 ## Single-View Input Convention
 
@@ -177,3 +191,14 @@ do not ask the user to authorize every sample or continuation. Pause only for a
 concrete failed validation, missing prerequisite, or an actual user decision.
 Fix routine runner failures and resume the same campaign autonomously. Keep
 numeric representative sampling and complete small-selector cycles as agreed.
+
+## New Set Review Continuity
+
+Adding a set must reuse the established inventory, review, acquisition, native
+validation, implementation and delivery workflow. Inspect the same-family sets
+before defining defaults or exceptions. Carry applicable existing conventions
+into the review, including core selector defaults and Automatic Initial NVRAM
+Setup overrides, while retaining independently observed native defaults. A menu
+inventory alone is not the complete review. Record implementation status
+explicitly; shared conventions do not establish binary mappings or validate a
+parent template for a new set. Preserve native table banding and reviewer edits.

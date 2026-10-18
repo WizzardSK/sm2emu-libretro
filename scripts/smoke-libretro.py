@@ -73,6 +73,8 @@ def main():
     parser.add_argument('--reference', type=Path)
     parser.add_argument('--backpressure', action='store_true')
     parser.add_argument('--exercise', action='store_true')
+    parser.add_argument('--audio-reset-test', action='store_true',
+                        help='Check PCM recovery after repeated explicit and VF2 operator-option resets')
     parser.add_argument('--save-state-test', action='store_true',
                         help='Verify deterministic Libretro save/load and corrupt-state rejection')
     parser.add_argument('--save-state-stress-cycles', type=int, default=0,
@@ -105,6 +107,8 @@ def main():
     if args.frames <= 0: parser.error('--frames must be positive')
     if args.save_state_stress_cycles < 0:
         parser.error('--save-state-stress-cycles must be non-negative')
+    if args.audio_reset_test and args.rom.stem != 'vf2':
+        parser.error('--audio-reset-test currently uses the reviewed VF2 Difficulty setting')
     out = args.output.resolve(); out.mkdir(parents=True, exist_ok=False)
     saves = out/'saves'; saves.mkdir()
     directories = {9: str(args.system.resolve()).encode(), 31: str(saves).encode()}
@@ -116,6 +120,9 @@ def main():
                      b'sm2_crosshair_style': args.crosshair_style.encode(),
                      b'sm2_automatic_start_gear': args.automatic_start_gear.encode()}
     if args.unset_av_timing: option_values.pop(b'sm2_av_timing')
+    if args.audio_reset_test:
+        option_values[b'sm2_nvram_settings'] = b'enabled'
+        option_values[b'sm2_nvram_vf2_difficulty'] = b'normal'
     effective_av_timing = '60hz' if args.unset_av_timing else args.av_timing
     for assignment in args.core_option:
         if '=' not in assignment: parser.error('--core-option requires KEY=VALUE')
@@ -175,6 +182,8 @@ def main():
             return True
         if cmd == 60:
             statuses.append(C.cast(data,C.POINTER(MessageExt)).contents.msg.decode()); return True
+        if cmd == 6:
+            statuses.append(C.cast(data,C.POINTER(C.c_char_p))[0].decode()); return True
         if cmd == 87:
             serialization_quirks = C.cast(data, C.POINTER(C.c_uint64))[0]
             return True
@@ -425,9 +434,40 @@ def main():
             lib.retro_unload_game()
         lib.retro_set_audio_sample_batch(batch)
         report['sample_callback_and_rate_transitions']=True
+    if args.audio_reset_test:
+        assert lib.retro_load_game(C.byref(game))
+        segments=[]
+
+        def measure_audio(label):
+            start=len(pcm)
+            start_batches=batches
+            for _ in range(360):
+                lib.retro_run()
+                assert not shutdown, 'Core requested shutdown after audio reset'
+            audio=pcm[start:]
+            samples=memoryview(audio).cast('h')
+            nonzero=sum(sample != 0 for sample in samples)
+            assert len(audio) >= 360 * 4 * int(av.timing.rate / av.timing.fps - 2)
+            assert batches > start_batches and nonzero > 0, f'No PCM recovery after {label}'
+            segments.append({'phase':label,'frames':len(audio)//4,
+                             'nonzero_samples':nonzero,'batch_calls':batches-start_batches,
+                             'sha256':sha(audio)})
+
+        measure_audio('initial')
+        option_values[b'sm2_nvram_vf2_difficulty']=b'hard'
+        variable_update=True
+        before_status=len(statuses)
+        measure_audio('option_change')
+        assert any('Applied NVRAM Settings; machine reset' in notice
+                   for notice in statuses[before_status:]), 'Operator option did not reset the machine'
+        for cycle in range(2):
+            lib.retro_reset()
+            measure_audio(f'explicit_reset_{cycle+1}')
+        lib.retro_unload_game()
+        report['audio_reset_recovery']=segments
     if args.link_reconfigure_test:
         key=f'sm2_linked_cabinets_{args.rom.stem}'.encode()
-        option_values[key]=b'disabled'
+        option_values[key]=b'-1'
         assert lib.retro_load_game(C.byref(game))
         state_size=lib.retro_serialize_size()
         state_data=C.create_string_buffer(state_size)
@@ -435,13 +475,13 @@ def main():
         option_values[key]=b'2'; variable_update=True
         lib.retro_run()  # Resume from Core Options
         assert not lib.retro_serialize(state_data,state_size)
-        option_values[key]=b'disabled'; variable_update=True
+        option_values[key]=b'-1'; variable_update=True
         lib.retro_run()
         assert lib.retro_serialize(state_data,state_size)
         option_values[key]=b'2'
         lib.retro_reset()  # RetroArch Restart
         assert not lib.retro_serialize(state_data,state_size)
-        option_values[key]=b'disabled'
+        option_values[key]=b'-1'
         lib.retro_reset()
         assert lib.retro_serialize(state_data,state_size)
         lib.retro_unload_game()

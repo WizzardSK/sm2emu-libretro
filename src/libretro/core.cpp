@@ -91,6 +91,7 @@ constexpr size_t frontend_state_size = 96;
 struct Content {
     rom::GameSpec game;
     libretro::ControllerConfiguration controllers;
+    bool published_test_service = true;
     libretro::InputRuntime input_runtime;
     libretro::ManxTtAudio manxtt_audio;  // ROM storage must outlive the machine.
     libretro::PowerSledAudio power_sled_audio;
@@ -121,7 +122,14 @@ struct Content {
     unsigned requested_scale = 1;
     bool save_ram_initialized = false;
     bool native_nvram_available = false;
+    bool first_frame_complete = false;
     bool option_pending = false;
+    bool reset_pending = false;
+    bool automation_applied = false;
+    bool automation_requested = false;
+    std::vector<libretro::network::ManagedValue> managed_requested;
+    std::vector<libretro::network::ManagedValue> managed_applied;
+    std::array<std::vector<u8>, 2> power_sled_programs;
     unsigned option_wait_frames = 0;
     std::string nvram_game;
     std::vector<std::string> nvram_values;
@@ -415,9 +423,7 @@ void initialize_frontend_save(Content& c)
                                                    c.machine->backup_ram(),
                                                    c.machine->settings_eeprom());
     if (result == libretro::SaveImportResult::Loaded) {
-        c.machine->reset();
-        c.machine->sound_board().clear_pending_samples();
-        c.audio.clear();
+        c.reset_pending = true;
         message(RETRO_LOG_INFO, "Loaded frontend-managed save RAM");
     } else {
         if (result == libretro::SaveImportResult::Invalid)
@@ -443,9 +449,7 @@ void initialize_frontend_save(Content& c)
                             || applied == libretro::nvram::ApplyResult::LayoutNotReady)
                             throw std::runtime_error("Embedded initial NVRAM template has an unsupported layout");
                     }
-                    c.machine->reset();
-                    c.machine->sound_board().clear_pending_samples();
-                    c.audio.clear();
+                    c.reset_pending = true;
                     seeded = true;
                     message(RETRO_LOG_INFO, "Applied automatic initial NVRAM setup before the first frame");
                 }
@@ -458,62 +462,107 @@ void initialize_frontend_save(Content& c)
     export_frontend_save(c);
 }
 
+#if defined(SM2_LIBRETRO_VULKAN) || defined(SM2_LIBRETRO_OPENGL)
+void context_destroy();
+void context_reset();
+#endif
+
+void reset_configured_machine(Content& c)
+{
+    reset_async_software_renderer(c);
+    c.rumble.stop();
+    c.machine->reset();
+    c.machine->sound_board().clear_pending_samples();
+    c.audio.clear();
+    c.output_dc.reset();
+    c.cadence_accumulator = 60.0 - c.native_fps;
+    c.input_runtime = {};
+    c.audio_frame_remainder = 0;
+    c.audio_frames_due = 0;
+    c.have_previous_run_start = false;
+    reset_timing_measurements(c);
+    c.failed = false;
+    c.reset_pending = false;
+#if defined(SM2_LIBRETRO_VULKAN) || defined(SM2_LIBRETRO_OPENGL)
+    if (c.renderer_api != RendererApi::Software) {
+        context_destroy();
+        context_reset();
+    }
+#endif
+}
+
+void publish_option_corrections()
+{
+    // Move before calling the frontend: display callbacks can re-enter readers.
+    const auto corrections = std::exchange(libretro::option_corrections, {});
+    const auto warnings = std::exchange(libretro::option_warnings, {});
+    if (environment) for (const auto& [key, value] : corrections) {
+        retro_variable variable{key.c_str(), value.c_str()};
+        environment(RETRO_ENVIRONMENT_SET_VARIABLE, &variable);
+    }
+    for (const auto& warning : warnings) message(RETRO_LOG_WARN, warning.c_str(), true);
+}
+
 void apply_pending_option(Content& c)
 {
-    if (!c.option_pending) return;
-    const auto result = libretro::nvram::apply(c.nvram_game, c.machine->backup_ram(),
-                                                c.machine->settings_eeprom(),
-                                                c.nvram_values);
-    if (result == libretro::nvram::ApplyResult::LayoutNotReady) return;
-    c.option_pending = false;
-    if (result == libretro::nvram::ApplyResult::Changed) {
-        c.machine->reset();
-        c.machine->sound_board().clear_pending_samples();
-        c.audio.clear();
-        c.cadence_accumulator = 60.0 - c.native_fps;
-        c.audio_frame_remainder = 0;
-        c.audio_frames_due = 0;
-        export_frontend_save(c);
-        message(RETRO_LOG_INFO, "Applied NVRAM Settings; machine reset", true);
-    }
-    if (environment) {
-        for (const auto& [key, value] : c.network_option_updates) {
+    bool changed = false;
+    if (c.option_pending) {
+        const auto result = libretro::nvram::apply(c.nvram_game, c.machine->backup_ram(),
+                                                  c.machine->settings_eeprom(), c.nvram_values);
+        if (result == libretro::nvram::ApplyResult::LayoutNotReady) return;
+        c.option_pending = false;
+        changed = result == libretro::nvram::ApplyResult::Changed;
+        if (changed) export_frontend_save(c);
+        if (result != libretro::nvram::ApplyResult::Unsupported) {
+            c.automation_applied = c.automation_requested;
+            if (c.automation_requested) c.managed_applied = c.managed_requested;
+        }
+        const auto updates = std::exchange(c.network_option_updates, {});
+        if (environment) for (const auto& [key, value] : updates) {
             retro_variable variable{key.c_str(), value.c_str()};
             environment(RETRO_ENVIRONMENT_SET_VARIABLE, &variable);
         }
     }
-    c.network_option_updates.clear();
+    const bool topology_changed = c.reset_pending;
+    if (changed || topology_changed) {
+        reset_configured_machine(c);
+        if (changed && c.first_frame_complete) message(RETRO_LOG_INFO, "Applied NVRAM Settings; machine reset", true);
+        else if (!changed && c.first_frame_complete) message(RETRO_LOG_INFO, "Applied Network Settings; machine reset", true);
+    }
+    publish_option_corrections();
 }
 
 void refresh_nvram_options(Content& c)
 {
-    auto selected = libretro::selected_nvram_values(c.nvram_game);
+    const auto manual = libretro::selected_nvram_values(c.nvram_game);
+    const bool enabled = libretro::nvram_settings_enabled();
+    auto selected = enabled ? manual : std::vector<std::string>(manual.size());
+    const auto* network = libretro::linked_cabinet_game(c.game.name);
+    const std::string preset = libretro::automatic_network_preset(c.game.name);
+    c.automation_requested = network && preset != "-1";
+    const auto catalog = c.game.name == "vonr" ? std::string_view{"vonr"} : std::string_view{c.nvram_game};
+    c.managed_requested = c.automation_requested
+        ? libretro::network::managed_values(catalog, c.linked_cabinets, preset)
+        : std::vector<libretro::network::ManagedValue>{};
+    const auto& managed = c.automation_requested ? c.managed_requested
+        : c.automation_applied ? c.managed_applied : c.managed_requested;
     c.network_option_updates.clear();
-    if (libretro::nvram_settings_enabled()) {
-        const auto managed = libretro::network::managed_values(
-            c.nvram_game, c.linked_cabinets,
-            libretro::automatic_network_preset(c.game.name));
-        const auto options = libretro::nvram::options_for_game(c.nvram_game);
-        for (const auto& target : managed) {
-            for (size_t index = 0; index < options.size(); ++index) {
-                if (target.suffix != options[index].suffix) continue;
-                const auto* begin = options[index].values;
-                const auto* end = begin + options[index].value_count;
-                if (std::find_if(begin, end, [&](const auto& value) {
-                    return target.key == value.key;
-                }) == end) break;
-                if (selected[index] != target.key) {
-                    c.network_option_updates.emplace_back(
-                        "sm2_nvram_" + c.nvram_game + "_" + options[index].suffix,
-                        target.key);
-                }
-                selected[index] = target.key;
-                break;
-            }
+    const auto options = libretro::nvram::options_for_game(c.nvram_game);
+    for (const auto& target : managed) {
+        for (size_t index = 0; index < options.size(); ++index) {
+            if (target.suffix != options[index].suffix) continue;
+            const auto* begin = options[index].values;
+            const auto* end = begin + options[index].value_count;
+            if (std::find_if(begin, end, [&](const auto& v) { return target.key == v.key; }) == end)
+                throw std::runtime_error("ANRS mapping is absent from the reviewed native catalog");
+            if (manual[index] != target.key)
+                c.network_option_updates.emplace_back("sm2_nvram_" + c.nvram_game + "_" + std::string(target.suffix), target.key);
+            if (enabled || c.automation_requested) selected[index] = target.key;
+            break;
         }
     }
     c.nvram_values = std::move(selected);
-    c.option_pending = libretro::nvram_settings_enabled() && !c.nvram_values.empty();
+    c.option_pending = !c.nvram_values.empty() && (enabled || !managed.empty());
     c.option_wait_frames = 0;
 }
 
@@ -718,15 +767,39 @@ void publish_controls()
 {
     if (!content || !environment) return;
     const auto gun_mode = libretro::gun_input_mode();
-    libretro::configure_controllers(content->game, content->controllers, gun_mode);
+    const bool test_service = libretro::controller_test_service_enabled();
+    content->published_test_service = test_service;
+    libretro::configure_controllers(content->game, content->controllers, gun_mode, test_service);
     content->input_descriptors = libretro::descriptors(
-        content->game, devices, gun_mode, libretro::offscreen_reload_shortcut_enabled());
+        content->game, libretro::profile_devices(devices, test_service), gun_mode,
+        libretro::offscreen_reload_shortcut_enabled());
     environment(RETRO_ENVIRONMENT_SET_CONTROLLER_INFO, content->controllers.ports.data());
     environment(RETRO_ENVIRONMENT_SET_INPUT_DESCRIPTORS, content->input_descriptors.data());
 }
 
+bool update_profile_controls()
+{
+    if (!content || content->published_test_service == libretro::controller_test_service_enabled())
+        return false;
+    publish_controls();
+    return true;
+}
+
 void configure_linked_cabinets(Content& c, unsigned cabinets)
 {
+    const bool sled_local = (c.game.name == "powsledm" || c.game.name == "powsledr")
+        && c.power_sled_standalone_requested && cabinets == 1;
+    if (sled_local != c.power_sled_standalone) {
+        const auto& program = c.power_sled_programs[sled_local ? 1 : 0];
+        auto destination = c.machine->program_rom();
+        if (program.size() != destination.size())
+            throw std::runtime_error("Power Sled topology program is unavailable");
+        std::copy(program.begin(), program.end(), destination.begin());
+        c.power_sled_standalone = sled_local;
+    }
+    // Match the standalone emulator: keep the board fitted, using local
+    // loopback when no external cabinet link is configured.
+    c.machine->comm().set_present(true);
     if (cabinets > 1) {
         auto network = std::make_unique<libretro::NetpacketTransport>();
         network->configure(libretro::linked_cabinet_network_family(c.game.name), cabinets,
@@ -808,6 +881,9 @@ extern "C" {
 void retro_set_environment(retro_environment_t cb)
 {
     environment = cb;
+    libretro::option_environment = cb;
+    libretro::option_updates_pending = false;
+    libretro::option_controls_update = cb ? update_profile_controls : nullptr;
     if (cb) {
         bool no_game = false;
         cb(RETRO_ENVIRONMENT_SET_SUPPORT_NO_GAME, &no_game);
@@ -895,6 +971,9 @@ bool retro_load_game(const retro_game_info* game)
             message(RETRO_LOG_INFO, "Power Sled Master program: Relay-derived");
         next->power_sled_audio.prepare(database, game->path, next->game.name,
             loaded->roms, libretro::power_sled_relay_audio_enabled());
+        const auto original_program = loaded->roms.region("maincpu");
+        const std::vector<u8> sled_program = (next->game.name == "powsledm" || next->game.name == "powsledr")
+            ? std::vector<u8>(original_program.begin(), original_program.end()) : std::vector<u8>{};
         next->power_sled_standalone_requested = libretro::power_sled_standalone_enabled();
         if ((next->game.name == "powsledm" || next->game.name == "powsledr") && next->power_sled_standalone_requested
             && libretro::linked_cabinets(next->game.name) == 1) {
@@ -922,6 +1001,23 @@ bool retro_load_game(const retro_game_info* game)
                 ? "Power Sled AI Finish Speed Fix: native late-course clamp bypassed"
                 : "Power Sled AI Finish Speed Fix: unsupported program; keeping original behavior");
         }
+        if (!sled_program.empty()) {
+            const auto current = loaded->roms.region("maincpu");
+            next->power_sled_programs[next->power_sled_standalone ? 1 : 0].assign(current.begin(), current.end());
+            rom::RomSet alternate;
+            alternate.add("maincpu", sled_program);
+            bool valid = true;
+            if (!next->power_sled_standalone)
+                valid = next->game.name == "powsledr" ? libretro::prepare_power_sled_relay_attract(alternate)
+                    : libretro::prepare_power_sled_standalone(alternate);
+            if (next->game.name == "powsledm" && next->power_sled_commands_requested)
+                valid &= libretro::prepare_power_sled_commands(alternate);
+            if (next->power_sled_ai_finish_speed_fix_requested)
+                valid &= libretro::prepare_power_sled_ai_finish_speed_fix(alternate, next->game.name);
+            if (!valid) throw std::runtime_error("Cannot prepare the guarded Power Sled topology variant");
+            const auto program = alternate.region("maincpu");
+            next->power_sled_programs[next->power_sled_standalone ? 0 : 1].assign(program.begin(), program.end());
+        }
         next->machine = hw::create_machine(next->game, std::move(loaded->roms));
         if (!next->machine) throw std::runtime_error("Machine initialization failed");
         next->power_sled_audio.attach(*next->machine);
@@ -941,8 +1037,8 @@ bool retro_load_game(const retro_game_info* game)
             next->game.name, next->game.parent);
         libretro::set_option_game(next->nvram_game, next->game.name);
         const unsigned linked_cabinets = libretro::linked_cabinets(next->game.name);
+        configure_linked_cabinets(*next, linked_cabinets);
         if (linked_cabinets > 1) {
-            configure_linked_cabinets(*next, linked_cabinets);
             const std::string link_message = "Linked-cabinet communication selected for "
                 + next->game.name + "; awaiting a RetroArch Netplay session";
             message(RETRO_LOG_INFO, link_message.c_str());
@@ -1023,31 +1119,13 @@ void retro_reset()
 {
     if (!content) return;
     try {
-        reset_async_software_renderer(*content);
-        content->rumble.stop();
-        const unsigned linked_cabinets = content->power_sled_standalone
-            ? 1u : libretro::linked_cabinets(content->game.name);
-        if (linked_cabinets != content->linked_cabinets || linked_cabinets > 1)
-            configure_linked_cabinets(*content, linked_cabinets);
-        content->machine->reset();
+        (void)libretro::consume_option_updates();
+        configure_linked_cabinets(*content, libretro::linked_cabinets(content->game.name));
         refresh_nvram_options(*content);
-        content->machine->sound_board().clear_pending_samples();
-        content->audio.clear();
-        content->output_dc.reset();
-        content->cadence_accumulator = 60.0 - content->native_fps;
-        content->input_runtime = {};
-        content->audio_frame_remainder = 0;
-        content->audio_frames_due = 0;
-        content->have_previous_run_start = false;
-        reset_timing_measurements(*content);
-        content->failed = false;
-#if defined(SM2_LIBRETRO_VULKAN) || defined(SM2_LIBRETRO_OPENGL)
-        // A machine reset can reuse generation numbers: discard GPU caches.
-        if (content->renderer_api != RendererApi::Software) {
-            context_destroy();
-            context_reset();
-        }
-#endif
+        if (!content->save_ram_initialized) initialize_frontend_save(*content);
+        content->reset_pending = true;
+        apply_pending_option(*content);
+        libretro::update_option_visibility();
     } catch (const std::exception& error) { failure(error.what()); }
     catch (...) { failure("Unexpected reset failure"); }
 }
@@ -1062,16 +1140,13 @@ void retro_run()
         }
         content->previous_run_start = run_start;
         content->have_previous_run_start = true;
-        bool variables_updated = false;
-        if (environment && environment(RETRO_ENVIRONMENT_GET_VARIABLE_UPDATE, &variables_updated)
-            && variables_updated) {
+        if (libretro::consume_option_updates()) {
             if (content->game.name == "powsledm"
                 && content->power_sled_audio.requested() != libretro::power_sled_relay_audio_enabled())
                 message(RETRO_LOG_INFO, "Power Sled Relay Audio changed: reload content to apply");
             if ((content->game.name == "powsledm" || content->game.name == "powsledr")
                 && (content->power_sled_standalone_requested != libretro::power_sled_standalone_enabled()
-                    || (content->power_sled_standalone != (content->power_sled_standalone_requested
-                        && libretro::linked_cabinets(content->game.name) == 1))))
+))
                 message(RETRO_LOG_INFO, "Power Sled Standalone changed: reload content to apply");
             if (content->game.name == "powsledm"
                 && content->power_sled_commands_requested != libretro::power_sled_relay_commands_enabled())
@@ -1079,11 +1154,12 @@ void retro_run()
             if (libretro::power_sled_program_role(content->game.name)
                 && content->power_sled_ai_finish_speed_fix_requested != libretro::power_sled_ai_finish_speed_fix_enabled())
                 message(RETRO_LOG_INFO, "Power Sled AI Finish Speed Fix changed: reload content to apply");
-            if (!content->power_sled_standalone
-                && libretro::linked_cabinets(content->game.name) != content->linked_cabinets)
-                retro_reset();
-            else
-                refresh_nvram_options(*content);
+            const unsigned cabinets = libretro::linked_cabinets(content->game.name);
+            if (cabinets != content->linked_cabinets) {
+                configure_linked_cabinets(*content, cabinets);
+                content->reset_pending = true;
+            }
+            refresh_nvram_options(*content);
             libretro::update_option_visibility();
             const unsigned overlay_font_pixels = libretro::timing_overlay_font_pixels();
             const bool overlay = overlay_font_pixels != 0;
@@ -1105,6 +1181,7 @@ void retro_run()
         }
         if (!content->save_ram_initialized) initialize_frontend_save(*content);
         apply_pending_option(*content);
+        content->first_frame_complete = true;
         const auto cabinet_audio = content->manxtt_audio.update(
             *content->machine, libretro::manxtt_cabinet_audio_enabled());
         if (!cabinet_audio.notice.empty()) message(RETRO_LOG_INFO, cabinet_audio.notice.c_str());
@@ -1119,7 +1196,8 @@ void retro_run()
         if (input_state_cb && devices[0] != RETRO_DEVICE_NONE)
             rumble_steering = input_state_cb(0, RETRO_DEVICE_ANALOG,
                 RETRO_DEVICE_INDEX_ANALOG_LEFT, RETRO_DEVICE_ID_ANALOG_X);
-        libretro::poll_input(content->machine->inputs(), content->game, devices,
+        libretro::poll_input(content->machine->inputs(), content->game,
+                             libretro::profile_devices(devices, libretro::controller_test_service_enabled()),
                              content->input_runtime, libretro::four_speed_h_gate(),
                              input_state_cb, libretro::gun_input_mode(),
                              libretro::offscreen_reload_shortcut_enabled(),

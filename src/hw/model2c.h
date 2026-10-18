@@ -206,6 +206,7 @@ public:
 
     [[nodiscard]] bool init(const rom::GameSpec& game, rom::RomSet roms) override;
     void reset() override;
+    [[nodiscard]] std::span<u8> program_rom() override { return m_roms.region_mutable("maincpu"); }
     void run_frame() override;
 
     [[nodiscard]] Inputs& inputs() override { return m_inputs; }

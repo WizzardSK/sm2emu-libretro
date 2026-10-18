@@ -44,7 +44,7 @@ python3 scripts/libretro_nvram_samples.py scripts/libretro_nvram_samples.indy500
 python3 scripts/libretro_nvram_samples.py scripts/libretro_nvram_samples.indy500d.toml
 ```
 
-Il catalogo ricavato dagli screenshot e i 56 YAML diagnostici si controllano
+Il catalogo ricavato dagli screenshot e i 57 YAML diagnostici si controllano
 con:
 
 ```sh
@@ -234,3 +234,26 @@ menus remain listed only. See
 `Docs/POWER_SLED_NVRAM_INTEGRITY_2026-10-09.md` for the limits and the independent
 initial-image gate. Payloads and ROM-derived diagnostics stay in the ignored
 build directory; no saves or ROMs belong in Git.
+
+## Daytona USA GTX — Approved Inventory And Qualified Acquisition
+
+Independent GTX inventory was acquired in SM2-Emu Libretro/RetroArch on
+2026-10-17: ten operator fields and complete cycles, including native network
+roles and IDs. See `Docs/DAYTONA_GTX_SERVICE_MENU_2026-10-17.md` and
+`data/diagnostic-menus/daytonagtx.yaml`. Eight Game System fields are approved and acquired through the complete recipe below; both credit fields are excluded. A dedicated GTX template and the approved overrides are implemented.
+
+### Review Workbook Row Banding
+
+Use the native table style with row stripes enabled. Do not apply alternating
+direct cell background fills; filtering must preserve the table's alternation.
+Preserve reviewer edits and distinguish observation, approval and implementation.
+
+## Daytona GTX Approved Campaign — 2026-10-17
+
+Run `python3 scripts/run-daytona-gtx-nvram-campaign.py scripts/libretro_nvram_samples.daytonagtx.toml`
+with the bundled Python/Pillow runtime. The whole 58-stage recipe resumes only
+validated stages from its pinned core/recipe manifest. It captures all 28 values
+of the eight approved Game System fields, each followed by native commit and
+fresh-process visible reload. Boot diagnostic screens cannot qualify as menu
+evidence. Keep attempts, raw saves, logs, screenshots and the manifest in the
+ignored validation directory. No calibration endpoints are acquired.

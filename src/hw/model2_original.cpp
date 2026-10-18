@@ -111,6 +111,7 @@ constexpr u32 kDualPortWindow  = 0x1000;      // i960 bytes the 2K occupies
 constexpr u32 kUart            = 0x01c80000;
 constexpr u32 kNvram           = 0x01d00000;  // 16 KB
 constexpr u32 kRomMainData     = 0x02000000;  // 32 MB window
+constexpr u32 kGtxOverlay = 0x02c00000; // 1 MB read-triggered bank window
 constexpr u32 kRomMainDataHigh = 0x06000000;  // 16 MB window at region offset 0x1000000
 constexpr u32 kRenderMode      = 0x10000000;
 constexpr u32 kPolygonCount    = 0x10400000;
@@ -145,6 +146,11 @@ bool Model2Original::init(const rom::GameSpec& game, rom::RomSet roms)
 
     m_rom_maincpu   = m_roms.region("maincpu");
     m_rom_main_data = m_roms.region("main_data");
+    m_rom_gtx = m_roms.region("prot_data");
+    if (game.protection == rom::Protection::DaytonaGtx && m_rom_gtx.size() != 0x300000) {
+        SM2_ERROR("model2o: GTX requires the 3 MB 'prot_data' region");
+        return false;
+    }
 
     if (m_rom_maincpu.empty()) {
         SM2_ERROR("model2o: the 'maincpu' region is missing");
@@ -300,6 +306,7 @@ void Model2Original::reset()
     m_geometry.reset();
     m_render_list.clear();
     m_maxx_state = 0;
+    m_gtx_state = 0;
 
     m_copro_debt    = 0;
     m_in_copro_sync = false;
@@ -730,6 +737,29 @@ u16 Model2Original::register_flags(u32 address)
     return cpu::kBusFlagNone;
 }
 
+bool Model2Original::has_gtx_overlay(u32 address) const
+{
+    return m_game.protection == rom::Protection::DaytonaGtx
+        && address >= kGtxOverlay && address < kGtxOverlay + 0x100000;
+}
+
+u32 Model2Original::gtx_read(u32 address, u32 width)
+{
+    // MAME model2o_gtx_state::gtx_r, BSD-3-Clause; R. Belmont, Olivier
+    // Galibert, ElSemi, Angelo Salese, Matthew Daniels. Reads switch banks
+    // before returning the triggering byte. Its disabled bank is erased FF,
+    // not a guessed fallback to main_data. All byte lanes retain side effects.
+    u32 value = 0;
+    for (u32 lane = 0; lane < width; ++lane) {
+        const u32 offset = (address - kGtxOverlay + lane) & 0xfffff;
+        if (offset == 0xffffc) m_gtx_state = 2;
+        else if (offset == 0xff00c || offset == 0xf0003) m_gtx_state = 0;
+        else if (offset == 0xff000) m_gtx_state = 1;
+        value |= u32{m_rom_gtx[u32{m_gtx_state} * 0x100000 + offset]} << (lane * 8);
+    }
+    return value;
+}
+
 bool Model2Original::has_maxx_pic() const
 {
     return m_game.protection == rom::Protection::DaytonaMaxx;
@@ -1131,6 +1161,7 @@ u8* Model2Original::hot_write(u32 address, u32 width)
 u8 Model2Original::read8(u32 address)
 {
     charge_area(address);
+    if (has_gtx_overlay(address)) return static_cast<u8>(gtx_read(address, 1));
     if (has_maxx_pic() && address >= kMaxxPic && address < kMaxxPic + 0x10000) {
         return static_cast<u8>(maxx_read(address, 1));
     }
@@ -1145,6 +1176,7 @@ u8 Model2Original::read8(u32 address)
 u16 Model2Original::read16(u32 address)
 {
     charge_area(address);
+    if (has_gtx_overlay(address)) return static_cast<u16>(gtx_read(address, 2));
     if (has_maxx_pic() && address >= kMaxxPic && address < kMaxxPic + 0x10000) {
         return static_cast<u16>(maxx_read(address, 2));
     }
@@ -1171,6 +1203,7 @@ u32 Model2Original::fetch32(u32 address)
 u32 Model2Original::read32(u32 address)
 {
     charge_area(address);
+    if (has_gtx_overlay(address)) return static_cast<u32>(gtx_read(address, 4));
     if (has_maxx_pic() && address >= kMaxxPic && address < kMaxxPic + 0x10000) {
         return maxx_read(address, 4);
     }
@@ -1198,6 +1231,7 @@ u32 Model2Original::read32(u32 address)
 std::pair<u8, u16> Model2Original::read8_flags(u32 address)
 {
     charge_area(address);
+    if (has_gtx_overlay(address)) return {static_cast<u8>(gtx_read(address, 1)), cpu::kBusFlagBurst};
     if (has_maxx_pic() && address >= kMaxxPic && address < kMaxxPic + 0x10000) {
         return {static_cast<u8>(maxx_read(address, 1)), cpu::kBusFlagNone};
     }
@@ -1242,6 +1276,7 @@ u16 Model2Original::write8_flags(u32 address, u8 value)
 std::pair<u32, u16> Model2Original::read32_flags(u32 address)
 {
     charge_area(address);
+    if (has_gtx_overlay(address)) return {static_cast<u32>(gtx_read(address, 4)), cpu::kBusFlagBurst};
     if (has_maxx_pic() && address >= kMaxxPic && address < kMaxxPic + 0x10000) {
         return {maxx_read(address, 4), cpu::kBusFlagNone};
     }
@@ -1648,6 +1683,11 @@ void Model2Original::serialize(Archive& ar)
     ar.bytes(m_comm_ram.data(), m_comm_ram.size());
 
     ar.raw(m_maxx_state);
+    // New set only: keep all previously published game's state layouts intact.
+    if (m_game.protection == rom::Protection::DaytonaGtx) {
+        ar.raw(m_gtx_state);
+        if (ar.loading() && m_gtx_state > 2) { ar.invalidate(); return; }
+    }
     ar.raw(m_intreq);
     ar.raw(m_intena);
     for (Timer& timer : m_timers) {

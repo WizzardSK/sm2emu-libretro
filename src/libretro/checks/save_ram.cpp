@@ -23,11 +23,13 @@ std::map<std::string, std::string> option_labels;
 std::map<std::string, std::string> option_infos;
 std::map<std::string, bool> option_visibility;
 std::map<std::string, std::string> option_values;
+bool legacy_registration = false;
+std::vector<std::string> legacy_keys;
 
 bool option_environment(unsigned command, void* data)
 {
     if (command == RETRO_ENVIRONMENT_GET_CORE_OPTIONS_VERSION) {
-        *static_cast<unsigned*>(data) = 2;
+        *static_cast<unsigned*>(data) = legacy_registration ? 0 : 2;
         return true;
     }
     if (command == RETRO_ENVIRONMENT_SET_CORE_OPTIONS_V2) {
@@ -36,6 +38,13 @@ bool option_environment(unsigned command, void* data)
             option_labels[definition->key] = definition->desc ? definition->desc : "";
             option_infos[definition->key] = definition->info ? definition->info : "";
         }
+        return true;
+    }
+    if (command == RETRO_ENVIRONMENT_SET_VARIABLES) {
+        legacy_keys.clear();
+        const auto* variables = static_cast<retro_variable*>(data);
+        for (const auto* variable = variables; variable->key; ++variable)
+            legacy_keys.emplace_back(variable->key);
         return true;
     }
     if (command == RETRO_ENVIRONMENT_GET_VARIABLE) {
@@ -121,6 +130,75 @@ int main()
             if (key == definition->key) return definition;
         return static_cast<const retro_core_option_v2_definition*>(nullptr);
     };
+    const auto* profile_type = find_definition("sm2_controller_profile_type");
+    const auto* first_input = definitions;
+    while (first_input->key && (!first_input->category_key
+           || std::string_view(first_input->category_key) != "input")) ++first_input;
+    expect(profile_type && first_input == profile_type
+               && std::string_view(profile_type->desc) == "Controller Profile Type"
+               && std::string_view(profile_type->default_value) == "test_service"
+               && std::string_view(profile_type->values[0].label) == "Normal"
+               && std::string_view(profile_type->values[1].label) == "Normal + Test/Service",
+           "Global controller type is first in Input with approved choices/default");
+    expect(profile_type && profile_type[1].key
+               && std::string_view(profile_type[1].key) == "sm2_gamepad_rumble",
+           "Global rumble control follows the controller type before specialized input groups");
+    for (const std::string_view category : {"audio", "input"}) {
+        bool seen_game_option = false;
+        std::string_view previous_game;
+        for (const auto* item = definitions; item->key; ++item) {
+            if (!item->category_key || category != item->category_key) continue;
+            const std::string_view label(item->desc);
+            const size_t separator = label.find(": ");
+            if (separator == std::string_view::npos) {
+                expect(!seen_game_option, "global options precede game-specific options");
+                continue;
+            }
+            const std::string_view game = label.substr(0, separator);
+            expect(previous_game.empty() || previous_game <= game,
+                   "game-specific option groups follow displayed game-name order");
+            previous_game = game;
+            seen_game_option = true;
+        }
+    }
+    const auto adjacent = [find_definition](std::string_view first, std::string_view second) {
+        const auto* left = find_definition(first);
+        return left && left[1].key && second == left[1].key;
+    };
+    expect(adjacent("sm2_renderer", "sm2_software_renderer_threading")
+               && adjacent("sm2_software_renderer_threading", "sm2_internal_resolution")
+               && adjacent("sm2_internal_resolution", "sm2_upscale_2d")
+               && adjacent("sm2_upscale_2d", "sm2_texture_filter"),
+           "renderer, software threading and 2D/3D hardware controls follow reviewed order");
+    expect(adjacent("sm2_music_volume", "sm2_audio_balance")
+               && adjacent("sm2_audio_balance", "sm2_scsp_gain")
+               && adjacent("sm2_scsp_gain", "sm2_dsb_gain")
+               && adjacent("sm2_dsb_gain", "sm2_multipcm1_gain")
+               && adjacent("sm2_multipcm1_gain", "sm2_multipcm2_gain")
+               && adjacent("sm2_multipcm2_gain", "sm2_ym3438_gain")
+               && adjacent("sm2_ym3438_gain", "sm2_scsp_output_low_pass_filter"),
+           "music level leads the balance, numbered gains and SCSP filter");
+    expect(adjacent("sm2_hide_shot_flash", "sm2_crosshairs")
+               && adjacent("sm2_crosshairs", "sm2_crosshair_style")
+               && adjacent("sm2_crosshair_style", "sm2_gun_input")
+               && adjacent("sm2_gun_input", "sm2_offscreen_reload_shortcut")
+               && adjacent("sm2_offscreen_reload_shortcut", "sm2_mouse_edge_offscreen_reload"),
+           "lightgun controls retain their approved order");
+    expect(adjacent("sm2_desert_elevation_control", "sm2_desert_elevation_speed")
+               && adjacent("sm2_desert_elevation_speed", "sm2_desert_elevation_axis")
+               && adjacent("sm2_four_speed_shifter", "sm2_automatic_start_gear")
+               && adjacent("sm2_steering_response", "sm2_steering_output_range")
+               && adjacent("sm2_steering_output_range", "sm2_accelerator_output_range")
+               && adjacent("sm2_accelerator_output_range", "sm2_brake_output_range"),
+           "gear, steering, pedal and Desert Tank groups retain their reviewed order");
+    expect(libretro::controller_test_service_enabled(), "Absent profile option preserves full default");
+    option_values["sm2_controller_profile_type"] = "normal";
+    expect(!libretro::controller_test_service_enabled(), "Normal disables Test/Service globally");
+    option_values["sm2_controller_profile_type"] = "test_service";
+    expect(libretro::controller_test_service_enabled(), "Full profile enables Test/Service globally");
+    option_values["sm2_controller_profile_type"] = "unknown";
+    expect(libretro::controller_test_service_enabled(), "Unknown profile option uses approved default");
+    option_values.erase("sm2_controller_profile_type");
     const auto* relay_gain = find_definition("sm2_power_sled_relay_audio_gain");
     expect(relay_gain && std::string_view(relay_gain->default_value) == "auto"
         && std::string_view(relay_gain->values[0].label) == "Auto"
@@ -344,12 +422,8 @@ int main()
     expect(mouse_edge_reload
                && std::string_view(mouse_edge_reload->desc)
                     == "Mouse Edge Off-Screen Reload"
-               && std::string_view(mouse_edge_reload->default_value) == "disabled"
-               && std::string_view(mouse_edge_reload->info).find(
-                      "Libretro Mouse interface does not report") != std::string_view::npos
-               && std::string_view(mouse_edge_reload->info).find(
-                      "Lightgun already supplies") != std::string_view::npos,
-           "Mouse edge reload explains why Mouse modes need the optional fallback");
+               && std::string_view(mouse_edge_reload->default_value) == "disabled",
+           "Mouse edge reload remains an optional fallback disabled by default");
     expect(linked_cabinets && stcc_linked_cabinets && rally_linked_cabinets
                && indy_linked_cabinets
                && motor_linked_cabinets && sgt24h_linked_cabinets
@@ -361,8 +435,8 @@ int main()
                && rally_linked_cabinets < indy_linked_cabinets
                && indy_linked_cabinets < motor_linked_cabinets
                && motor_linked_cabinets < nvram_settings
-               && std::string_view(linked_cabinets->default_value) == "disabled"
-               && std::string_view(linked_cabinets->values[0].value) == "disabled"
+               && std::string_view(linked_cabinets->default_value) == "-1"
+               && std::string_view(linked_cabinets->values[0].value) == "-1"
                && std::string_view(linked_cabinets->values[0].label) == "Disabled"
                && std::string_view(linked_cabinets->values[1].value) == "2"
                && std::string_view(linked_cabinets->values[1].label) == "2 Cabinets"
@@ -372,8 +446,8 @@ int main()
                && std::string_view(stcc_linked_cabinets->values[8].label) == "9 Cabinets"
                && std::string_view(rally_linked_cabinets->values[4].label) == "5 Cabinets"
                && rally_linked_cabinets->values[5].value == nullptr
-               && std::string_view(motor_linked_cabinets->values[3].label) == "4 Cabinets"
-               && motor_linked_cabinets->values[4].value == nullptr
+               && std::string_view(motor_linked_cabinets->values[4].label) == "5 Cabinets"
+               && motor_linked_cabinets->values[5].value == nullptr
                && std::string_view(sgt24h_linked_cabinets->values[3].label) == "4 Cabinets"
                && sgt24h_linked_cabinets->values[4].value == nullptr
                && std::string_view(overrev_linked_cabinets->values[3].label) == "4 Cabinets"
@@ -385,24 +459,11 @@ int main()
                && std::string_view(vonr_linked_cabinets->values[1].label) == "3 Cabinets"
                && vonr_linked_cabinets->values[2].value == nullptr,
            "Linked Cabinets precedes NVRAM Settings and applies each game's cabinet limit");
-    expect(std::string_view(stcc_linked_cabinets->info).find("One optional Relay")
-               != std::string_view::npos,
-           "STCC Linked Cabinets documents its optional single Relay");
-    expect(std::string_view(rally_linked_cabinets->info).find("One optional Relay")
-               != std::string_view::npos,
-           "Sega Rally Linked Cabinets documents its optional single Relay");
-    expect(std::string_view(manxtt_linked_cabinets->info).find(
-               "For 3 Cabinets use Master, Slave and one Relay") != std::string_view::npos,
-           "Manx TT Linked Cabinets documents its fixed three-participant combination");
-    expect(std::string_view(von_linked_cabinets->info).find(
-               "one dedicated vonr Relay set") != std::string_view::npos,
-           "Virtual On Linked Cabinets documents its dedicated Relay program");
-    expect(std::string_view(vonr_linked_cabinets->info).find(
-               "valid only in a 3 Cabinets session") != std::string_view::npos,
-           "Virtual On Relay documents its only valid participant count");
-    expect(std::string_view(linked_cabinets->info).find("Relay is not available")
-               != std::string_view::npos,
-           "Daytona Linked Cabinets documents that Relay is unavailable");
+    for (const auto& game : libretro::linked_cabinet_games) {
+        const std::string key = "sm2_linked_cabinets_" + std::string(game.name);
+        expect_game(option_infos[key] == libretro::linked_cabinets_help, game.name,
+                    "Linked Cabinets uses the same help text for every supported game");
+    }
     option_values["sm2_linked_cabinets_daytona"] = "2";
     expect(libretro::linked_cabinets("daytona") == 2,
            "Linked Cabinets reads the validated two-cabinet value");
@@ -431,7 +492,7 @@ int main()
     option_values["sm2_linked_cabinets_motoraid"] = "4";
     expect(libretro::linked_cabinets("motoraid") == 4,
            "Motor Raid accepts four linked cabinets");
-    option_values["sm2_linked_cabinets_motoraid"] = "5";
+    option_values["sm2_linked_cabinets_motoraid"] = "6";
     expect(libretro::linked_cabinets("motoraid") == 1,
            "Motor Raid rejects a cabinet count above its hardware limit");
     option_values["sm2_linked_cabinets_sgt24h"] = "4";
@@ -620,7 +681,7 @@ int main()
         if (key.starts_with("sm2_nvram_daytona_")) ++visible_daytona;
         else if (key.starts_with("sm2_nvram_")) ++visible_other_games;
     }
-    expect(visible_daytona == 8 && visible_other_games == 0,
+    expect(visible_daytona == 6 && visible_other_games == 0,
            "only the loaded game's NVRAM option group is visible");
     for (const auto* definition = definitions; definition->key; ++definition) {
         const std::string_view key = definition->key;
@@ -651,8 +712,8 @@ int main()
            "Linked Cabinets is visible for the supported Daytona family");
     option_values["sm2_nvram_settings"] = "disabled";
     libretro::update_option_visibility();
-    expect(!option_visibility["sm2_automatic_network_daytona"],
-           "Automatic Network Settings is hidden while NVRAM Settings is disabled");
+    expect(option_visibility["sm2_automatic_network_daytona"],
+           "ANRS remains visible with NVRAM Settings disabled");
     option_values["sm2_nvram_settings"] = "enabled";
     libretro::update_option_visibility();
     expect(option_visibility["sm2_automatic_network_daytona"]
@@ -710,7 +771,7 @@ int main()
     {
         const auto options = libretro::nvram::all_options();
         std::set<std::string> keys;
-        expect(options.size() == 332, "reviewed NVRAM option catalog has 332 entries");
+        expect(options.size() == 340, "reviewed NVRAM option catalog has 340 entries");
         for (const auto& option : options) {
             const std::string key = std::string(option.game) + ":" + option.suffix;
             expect(keys.insert(key).second, "NVRAM option keys are unique");
@@ -804,9 +865,9 @@ int main()
 
         std::set<std::string> games;
         for (const auto& option : options) games.insert(option.game);
-        expect(games.size() == 55, "initial NVRAM catalog covers 55 reviewed sets");
+        expect(games.size() == 56, "initial NVRAM catalog covers 56 reviewed sets");
         const std::set<std::pair<std::string, std::string>> offline = {
-            {"daytona", "link_id"}, {"daytonas", "link_id"},
+            {"daytona", "link_id"}, {"daytonagtx", "link_id"}, {"daytonas", "link_id"},
             {"manxtt", "link_type"}, {"motoraiddx", "network_type"}, {"indy500d", "network_type"},
             {"overrev", "link_max"}, {"sgt24h", "link_type"},
             {"srallyc", "link_type"}, {"stcc", "link_type"},
@@ -815,7 +876,7 @@ int main()
             {"von", "network_link_attribute"},
         };
         const std::set<std::pair<std::string, std::string>> title_defaults = {
-            {"daytona", "cabinet"}, {"daytona93", "cabinet"},
+            {"daytona", "cabinet"}, {"daytonagtx", "cabinet"}, {"daytona93", "cabinet"},
             {"daytonas", "cabinet"},
             {"manxtt", "cabinet_type"},
             {"motoraiddx", "cabinet_type"},
@@ -876,7 +937,7 @@ int main()
             expect_game(applied == libretro::nvram::ApplyResult::Changed
                             || applied == libretro::nvram::ApplyResult::Unchanged,
                         game, "initial NVRAM defaults apply before the first frame");
-            if (game == "daytona" || game == "daytona93" || game == "daytonas") {
+            if (game == "daytona" || game == "daytona93" || game == "daytonas" || game == "daytonagtx") {
                 expect(initial_backup[0x1a] == 0 && initial_backup[0x9a] == 0,
                        "Daytona initial NVRAM applies DELUXE to both settings banks");
                 expect(initial_eeprom[0x1a] == initial_backup[0x1b]
@@ -972,12 +1033,12 @@ int main()
         }
 
         static constexpr std::string_view clone_specific_catalogs[] = {
-            "daytona93", "daytonas", "dyndeka2", "dyndeka2b", "hotdp",
+            "daytonagtx", "daytona93", "daytonas", "dyndeka2", "dyndeka2b", "hotdp",
             "indy500d", "manxttdx", "motoraiddx", "sfight", "srallycdx", "srallycdxa",
             "stcca", "stccb", "stcco", "vf2a", "vf2o", "vstrikero",
         };
-        expect(std::size(clone_specific_catalogs) == 17,
-               "17 clone Service Menus use a reviewed clone-specific catalog");
+        expect(std::size(clone_specific_catalogs) == 18,
+               "18 clone Service Menus use a reviewed clone-specific catalog");
         for (const auto clone : clone_specific_catalogs)
         {
             expect_game(!libretro::nvram::options_for_game(clone).empty(), clone,
@@ -989,7 +1050,7 @@ int main()
                "Royal Ascot II exposes no ordinary NVRAM Settings catalog");
 
         static constexpr std::pair<std::string_view, std::string_view> clone_templates[] = {
-            {"daytonase", "daytona"}, {"indy500to", "indy500"},
+            {"daytonagtx", "daytonagtx"}, {"daytonase", "daytona"}, {"indy500to", "indy500"},
             {"manxttc", "manxtt"}, {"sfight", "sfight"},
             {"srallycdx", "srallycdx"},
             {"doaa", "doa"}, {"doaab", "doa"}, {"doaae", "doa"}, {"doab", "doa"},
@@ -1599,17 +1660,17 @@ int main()
             relay_program ? linked.name : linked.nvram_game, linked.max_cabinets);
         const bool sled = libretro::power_sled_program_role(linked.name) != 0;
         expect(definition && std::string_view(definition->default_value) ==
-                   (relay_program ? "relay" : "1")
+                   libretro::network::default_preset(relay_program ? linked.name : linked.nvram_game)
                    && definition->category_key == std::string_view("system"),
                "automatic network option is registered for each linked set");
         const auto options = libretro::nvram::options_for_game(linked.nvram_game);
         if (relay_program) {
-            expect(choices.size() == 1 && choices[0].key == "relay",
+            expect(choices.size() == 1 && choices[0].key == "r",
                    "dedicated Relay programs offer only relay");
         } else if (sled) {
-            expect(choices.size() == 5 && choices[0].key == "1"
-                       && choices[1].key == "2" && choices[2].key == "3"
-                       && choices[3].key == "4" && choices[4].key == "0",
+            expect(choices.size() == 5 && choices[0].key == "-1"
+                       && choices[1].key == "1" && choices[2].key == "2"
+                       && choices[3].key == "3" && choices[4].key == "4",
                    "Power Sled automatic network offers reviewed colors only");
             expect(libretro::network::managed_values(linked.nvram_game, 3, "master").empty(),
                    "Power Sled ROM role cannot be changed by automatic color settings");
@@ -1618,10 +1679,10 @@ int main()
             option_values[key] = choice.key;
             expect(libretro::automatic_network_preset(linked.name) == choice.key,
                    "frontend ANS values follow the canonical convention");
-            if (choice.key == "0") continue;
+            if (choice.key == "-1") continue;
             for (unsigned total : {1u, linked.max_cabinets}) {
                 const auto managed = libretro::network::managed_values(
-                    linked.nvram_game, total, choice.key);
+                    relay_program ? linked.name : linked.nvram_game, total, choice.key);
                 expect(linked.name == "powsledr" ? managed.empty() : !managed.empty(),
                        "Relay Power Sled preserves native fields; other presets manage reviewed fields");
                 for (const auto& field : managed) {
@@ -1638,7 +1699,7 @@ int main()
         }
         for (const auto* old : {"master", "slave_2", "disabled", "silver", "red", "black"}) {
             option_values[key] = old;
-            expect(libretro::automatic_network_preset(linked.name) == "0",
+            expect(libretro::automatic_network_preset(linked.name) == libretro::network::default_preset(relay_program ? linked.name : linked.nvram_game),
                    "ANS does not interpret old development values");
         }
         option_values.erase(key);
@@ -1649,8 +1710,8 @@ int main()
             libretro::set_option_game(std::string(game.nvram_game), std::string(game.name));
             for (const auto& other : libretro::linked_cabinet_games) {
                 const std::string key = "sm2_automatic_network_" + std::string(other.name);
-                expect(option_visibility[key] == (enabled && game.name == other.name),
-                       "ANS is generic across network sets and requires NVRAM Settings");
+                expect(option_visibility[key] == (game.name == other.name),
+                       "ANRS is visible for the loaded network set independently of NVRAM Settings");
             }
         }
     }
@@ -1684,8 +1745,8 @@ int main()
                && managed_key("daytona", 2, "2", "link_id") == "slave"
                && managed_key("daytona", 2, "2", "car_number") == "2",
            "numeric ANS preserves Daytona native roles and car numbers");
-    expect(managed_key("stcc", 3, "relay", "link_type") == "relay"
-               && managed_key("von", 3, "relay", "network_link_attribute") == "no_link",
+    expect(managed_key("stcc", 3, "r", "link_type") == "relay"
+               && managed_key("vonr", 3, "r", "network_link_attribute") == "no_link",
            "relay preserves native generic and dedicated-program settings");
     for (const auto game : {"powsledm", "powsled"}) {
         expect(managed_key(game, 3, "1", "ride_id") == "silver"
@@ -1695,6 +1756,15 @@ int main()
                    && libretro::network::managed_values(game, 3, "0").empty(),
                "Power Sled numeric ANS maps ordered colors and disabled");
     }
+
+    legacy_registration = true;
+    libretro::register_core_options(option_environment);
+    legacy_registration = false;
+    std::vector<std::string> v2_keys;
+    for (const auto* item = definitions; item->key; ++item)
+        v2_keys.emplace_back(item->key);
+    expect(legacy_keys == v2_keys,
+           "legacy registration preserves final V2 presentation order");
 
     if (failures) return 1;
     std::puts("All Libretro save RAM checks passed");
