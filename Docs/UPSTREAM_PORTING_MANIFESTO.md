@@ -110,6 +110,22 @@ coverage, and align the runtime version, core-info metadata, release tag/title,
 README, release notes and current roadmap status. Do not retain an obsolete
 upstream component merely because imports were documented separately.
 
+### GitHub Project Page — Mandatory Publication Check
+
+Before every commit intended for GitHub publication, review the main README
+against the changes being committed. Update it in the same publication whenever
+features, defaults, support, installation, limitations or project status change.
+For internal-only changes, explicitly verify that the existing overview remains
+accurate; do not add artificial user-facing changes merely to touch the file.
+
+Every release must include an updated GitHub project overview with the current
+version and a maintained account of the port's integrations and extensions
+relative to upstream. A list of newly imported upstream fixes or a link to
+technical reports alone does not satisfy this requirement. Preserve the
+cumulative port feature summary when updating the latest-release section.
+Verify the published README after pushing, alongside the release title, notes
+and assets. Updating release notes does not update the repository's main page.
+
 For SM2-Emu, the approved correction is 0.9.44.0 after reconciliation through
 0.9.44, replacing the mistaken 0.9.13.1 release numbering. Recording this rule
 does not itself change an existing release or authorize rewriting public tags.

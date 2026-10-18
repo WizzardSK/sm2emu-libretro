@@ -49,7 +49,7 @@ Save RAM is managed by the frontend as a normal `.srm` file.
 - Optional experimental widescreen expansion with native HUD proportions and
   automatic background side fill on hardware renderers. Disabled by default.
 
-- Software rendering plus Vulkan and OpenGL hardware rendering at 1x–4x
+- Software rendering plus Vulkan and OpenGL hardware rendering at 1x–8x
   internal resolution.
 - 60 Hz (Default) and 57.524 Hz (Native Model 2) timing.
 - Game-aware RetroPad, analog, mouse, and lightgun profiles.
@@ -65,10 +65,108 @@ Rendering, input, NVRAM, and networking options are exposed through RetroArch's
 Core Options menu. Options that represent operator settings are shown only for
 the loaded game.
 
+## What This Port Adds To Upstream
+
+Beyond importing upstream emulation fixes, this project adds the following
+Libretro integration and cabinet-specific extensions. Upstream rendering and
+sound emulation remain the foundation; the features below describe the port's
+frontend behavior and additional game support.
+
+### Frontend Integration And Controls
+
+- **Frontend-owned rendering and persistence:** software, Vulkan and OpenGL
+  output through Libretro, frontend-managed Save RAM and Save States, and
+  presentation at 60 Hz or native Model 2 timing. The core does not create an
+  SDL window or manage physical input devices.
+- **Game-aware controller profiles:** RetroPad mappings for driving, fighting,
+  flight, twin-stick, gun and special cabinet controls. **Controller Profile
+  Type** selects Normal or Normal + Test/Service globally; the latter is the
+  default. Single-view-button games also accept D-Pad Up.
+- **Combined gun input:** Standard mode combines lightgun, mouse and analog
+  stick input, retaining mouse/stick fallback without an active gun. Dedicated
+  source modes, crosshairs and off-screen reload shortcuts are available.
+  Gunblade NY, Rail Chase 2 and HOTD prototype expose **Linear (MAME)** and
+  **Custom (SM2-Emu)** aiming conversion choices; Behind Enemy Lines includes
+  a validated initial calibration preset for the integrated upstream aiming.
+- **Gamepad feedback:** native cabinet outputs and synthetic steering feedback
+  are adapted to Libretro rumble. Synthetic cornering feedback respects the
+  frontend-processed input and a minimum threshold to avoid center noise.
+
+See [control profiles](CONTROL_PROFILES.md) and the
+[core manual](LIBRETRO.md) for bindings, options and verification limits.
+
+### Operator Settings And Linked Cabinets
+
+- **Automatic Initial NVRAM Setup:** validated first-boot settings and approved
+  calibration presets, while valid existing saves retain priority.
+- **NVRAM Settings:** game-specific operator settings in Core Options, with
+  native checksums/mirrors preserved and a reset notification when changes
+  require restarting the machine. Region defaults prefer Export, Europe, then
+  U.S.A. where those choices exist.
+- **Linked Cabinets and Auto Network Role Settings:** frontend Netpacket
+  transport and native cabinet identity are configured independently. Disabled
+  linked play retains local communication-board loopback where upstream uses
+  it. Linked sessions remain experimental; support is qualified per game.
+- **Generic multi-instance launcher:** per-instance saved options and SRAM,
+  one-based gamepad assignments or explicit no-gamepad selection, and windows
+  fitted to the desktop. Rider windows occupy a row, with a trailing Relay
+  below. The launcher has no fixed game or default cabinet topology.
+
+See the [settings catalog](GAME_SETTINGS_CATALOG.md) and
+[launcher guide](Docs/LINKED_CABINET_LAUNCHER.md).
+
+### Power Sled — Experimental Reconstruction
+
+- **Undumped Master reconstructed from the Relay program:** `powsledm` is
+  identified as **Master, Undumped: Relay-Derived Version**. A dedicated Master
+  archive is optional when the required donor ROMs are available. No original
+  Master dump or factory-equivalent behavior is claimed.
+- **Cabinet roles and colors:** Master/Slave/Relay roles remain separate from
+  Silver, Red, Black and Yellow ride colors. Yellow is available in the Service
+  Menu and NVRAM settings. Supported configurations include Master with up to
+  three Slaves and an optional Relay, and Master + Relay without a Slave.
+- **Standalone Mode:** the Master can run a local race with one player and
+  three native computer opponents. The Relay can instead run its continuous
+  attract sequence without simulated race-start input. This option applies
+  only when Linked Cabinets is Disabled.
+- **Relay Audio On Master:** an additional emulated sound board runs Relay
+  music alongside rider effects, with a separate Relay Audio Gain.
+- **Relay Commands On Master:** mode selection, boarding confirmation,
+  race-start and emergency-stop commands can be handled from the Master.
+  Start/Select can return from results to attract mode.
+- **AI Finish Speed Fix:** an optional bypass of the native computer-opponent
+  speed limit near the finish. This intentionally changes game behavior.
+
+These options default to Enabled, with role-specific visibility: Master-only
+features appear on the Master, the Relay exposes Standalone Mode, and the
+Slave exposes none of these four switches. See the
+[standalone implementation](Docs/POWER_SLED_STANDALONE_EXPERIMENT_2026-10-10.md),
+[Relay attract mode](Docs/POWER_SLED_RELAY_ATTRACT_2026-10-11.md) and
+[Master command integration](Docs/POWER_SLED_RELAY_COMMANDS_ON_MASTER_2026-10-11.md).
+
+### Cabinet Audio And Additional Game Adaptations
+
+- **Manx TT cabinet audio:** select Twin/Deluxe sound ROMs from the native
+  Cabinet Type, including the additional Deluxe sound board when donor ROMs
+  are present. A Deluxe controller acknowledgement stub passes initialization;
+  cabinet motors and position feedback are not simulated.
+- **Audio source controls:** per-board Auto/Mute/manual gains and a separate
+  Power Sled Relay gain expose the sound sources through Core Options. SCSP
+  output low-pass filtering is enabled by default.
+- **Cabinet-specific controls and presentation:** independent Power Sled lever
+  inputs, supplementary Ski Super G Inclining bindings, Super GT 24h View 1/2,
+  and Auto 16:9 for Super GT's native Input Type B. The optional upstream
+  widescreen expansion is integrated with the core's aspect-ratio selection.
+- **Daytona GTX 2004:** preliminary set support with MAME-derived protection
+  handling and reviewed initial operator settings.
+
+See [Manx TT cabinet audio](Docs/MANX_TT_CABINET_AUDIO_2026-10-10.md),
+[GPU integration](GPU.md) and the [roadmap](PORTING_PLAN.md) for details.
+
 ## Latest Update — 0.9.51.2
 
 This release reconciles the applicable upstream changes through **SM2-Emu
-0.9.51**, with port revision **0**. The historical full-source import remains
+0.9.51**, with port revision **2**. The historical full-source import remains
 0.9.13; selective integrations and documented frontend exclusions establish
 the current coverage. See the [reconciliation ledger](Docs/UPSTREAM_RECONCILIATION_0.9.51.md).
 
