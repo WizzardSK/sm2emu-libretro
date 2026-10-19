@@ -174,6 +174,34 @@ The user closed the current networking test campaign on 2026-10-18; future
 newly observed faults will be recorded as new activities. The previous True 3D Widescreen candidate is implemented with the
 current shared direct-activation convention in section 8. The newer upstream candidates and their dispositions are below.
 
+## Direct MAME Audio Review — 2026-10-19
+
+Reference and evidence: [MAME Audio Corrections](Docs/MAME_AUDIO_INTEGRATION_2026-10-19.md).
+These changes do not imply a new reconciled SM2 upstream version.
+
+| Status | Activity | Integration / Remaining Work |
+| --- | --- | --- |
+| 🟢 | SCSP MIDI FIFO Correctness | Adapted MAME `b99614c513af`: status-only reads and partial-write merging no longer consume input; correct input/output status, input overflow and 68000 byte lanes. FIFO/state tests and bounded old/new ROM comparisons pass. |
+| 🟢 | MultiPCM Voice Registers | Adapted register portion of `d65391dcfab3`: envelope registers 7–9, AM register 10 and unknown-register rejection. Existing invalid-voice guard retained. Current-state replay and legacy AM-register selection migration pass. |
+| 🟢 | MultiPCM Exponential Attack | Adapted `49093cf0feca`, with golden PCM checkpoints from the MAME attack equation. Format 13 keeps the existing serialized byte counts and 9 MiB Libretro container; formats 4–12 remain readable. Standalone/headless/core builds, chip checks, four-board bounded comparisons and RetroArch Daytona playback pass. |
+| ⚪ | YM3413 External DSP — Excluded | [User-approved exclusion](Docs/YM3413_APPLICABILITY_REVIEW_2026-10-19.md). The reviewed Sega sound boards do not connect this DSP. Reopen only if hardware/firmware evidence establishes applicability. SCSP's separate internal DSP is already emulated. |
+| 🟢 | Dead Or Alive Real Protection | [Implemented and verified](Docs/DOA_PROTECTION_REVIEW_2026-10-19.md): MAME 317-0229 transform/decompression and Model 2A/2B wiring for all five sets. Exhaustive transform/native transaction comparisons, unchanged 1,500-frame video/PCM/NVRAM outputs, genuine legacy-state qualification and real RetroArch combat/state checks pass. Format 14; legacy DOA states are rejected with an OSD explanation. Busy timing remains the MAME approximation. |
+
+## Upstream 0.9.52 And Later Review — 2026-10-19
+
+Reviewed `upstream/main` `1b070674b50827436d8d893f6183ae33431b3f57`;
+release `v0.9.52` is `c1c8c99806b0fdc7116b6e746c52c701cc552ba1`.
+The review below records selective integration and exclusions; the advertised
+upstream version has not advanced. The separately approved single-cabinet label
+now follows the current Framework wording; raw values and behavior are unchanged.
+
+| Status | Activity | Integration / Remaining Work |
+| --- | --- | --- |
+| 🟢 | Optional Crosshair Inactivity Hiding | Implemented Crosshair Inactivity Timeout: Disabled default; 1–8, 10, 15, 30 and 60 seconds. Per-player virtual input activity controls presentation only; existing visibility and Standard fallback remain. ROM-free checks cover unused players, independent activity, expiration, disabling and off-screen/mask precedence. See Docs/CROSSHAIR_CUSTOM_AND_TIMEOUT_2026-10-19.md. |
+| 🟢 | Custom Crosshair PNGs — Existing Style Selector | Implemented Auto / SM2-Emu / Supermodel / Custom, preserving saved built-in values and SM2-Emu default. Auto falls back per player; Custom reports selected players' missing/invalid PNGs once. User artwork lives in system/sm2-emu/crosshairs with upstream game/player → game → parent/player → parent → default/player → default precedence. Help states path/naming/limits. Software and Vulkan 120-frame captures match exactly, verify alpha numerically and preserve PCM/NVRAM; Vulkan context recreation passes. A bounded 2,300-frame RetroArch Vulkan run with Custom selected and a valid replay also completes. OpenGL compiles and shares the geometry/overlay path; native GL runtime is not qualified on macOS. See Docs/CROSSHAIR_CUSTOM_AND_TIMEOUT_2026-10-19.md. |
+| — | Bezel Artwork — Excluded | User excludes `bbfe99e`: artwork overlays and viewport presentation belong to the frontend. Do not import standalone bezel discovery, ImGui drawing or picture-area controls into the adapter. |
+| — | Wheel Panel Spring / DIP Strength — Excluded After Review | `1467a24` (merged by `ad5bdc0`) changes standalone physical-wheel spring, operator DIP strength and torque gain. The adapter's `GamepadRumble` consumes `decode_drive_command` output and synthetic steering deflection; it does not instantiate the modified DaytonaBoard/IndyBoard wheel simulators or use SDL wheel settings. This commit changes neither the shared command decoder nor machine replies. No applicable rumble correction was found; retain current gamepad feedback. |
+
 ## Upstream 0.9.45–0.9.51 Review — 2026-10-18
 
 Reference: `upstream/main` `ac373ee` (49 commits after the reconciled 0.9.44

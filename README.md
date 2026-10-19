@@ -163,6 +163,34 @@ Slave exposes none of these four switches. See the
 See [Manx TT cabinet audio](Docs/MANX_TT_CABINET_AUDIO_2026-10-10.md),
 [GPU integration](GPU.md) and the [roadmap](PORTING_PLAN.md) for details.
 
+## Development Changes — Not Yet Released
+
+- **MAME audio corrections:** SCSP MIDI FIFO status/data handling and 68000
+  byte-lane reads; MultiPCM envelope/AM register handling and exponential note
+  attack. Existing NVRAM retains precedence. Save State format 14 preserves the
+  fixed Libretro container size and older-format reading for other games; legacy
+  Dead or Alive states are incompatible. Older core builds cannot read new states.
+  See [scope and verification](Docs/MAME_AUDIO_INTEGRATION_2026-10-19.md).
+- **Dead or Alive protection:** real MAME-derived 317-0229 decryption and
+  decompression replaces the fixed startup response for all five Model 2A/2B
+  revisions. No new ROMs or NVRAM reset required. Legacy DOA Save States are
+  rejected with an on-screen explanation; new states store the complete decoder.
+  See [implementation and verification](Docs/DOA_PROTECTION_REVIEW_2026-10-19.md).
+- **Linked Cabinets:** the single-cabinet choice is labelled **1 Cabinet / Disabled**,
+  following the shared Framework convention. Saved values and network behavior
+  are unchanged.
+- **Crosshair Style:** Auto searches user PNGs and falls back to SM2-Emu;
+  SM2-Emu and Supermodel force their built-in styles; Custom requires a PNG
+  and reports missing or invalid artwork. The existing SM2-Emu default remains.
+- **Crosshair Inactivity Timeout:** Disabled by default, or a configurable
+  1–60 second timeout, independently for each player. Native game reticles and
+  game inputs are unaffected.
+
+Put custom PNGs in `<system directory>/sm2-emu/crosshairs/`, named
+`<game>-p1.png`, `<game>-p2.png` or `<game>.png`. Parent and `default` names are
+fallbacks. PNG alpha is supported; maximum dimensions are 1024×1024. Reload
+content after changing files. See [implementation and verification](Docs/CROSSHAIR_CUSTOM_AND_TIMEOUT_2026-10-19.md).
+
 ## Latest Update — 0.9.51.2
 
 This release reconciles the applicable upstream changes through **SM2-Emu

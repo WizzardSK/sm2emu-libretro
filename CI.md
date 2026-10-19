@@ -223,3 +223,18 @@ bit-exact repeated PCM or a decoder-branch trace. All eight frontend runs exit 0
 installed core/configuration/ROMs/existing saves retain their hashes. No remote
 installed-core replacement or new CI run is claimed. Evidence and limits:
 [Native Batocera Audio Validation](Docs/NATIVE_BATOCERA_AUDIO_VALIDATION_2026-10-09.md).
+
+The custom-crosshair integration links the existing vendored stb image decoder
+into the adapter. Binary packaging also retains `licenses/stb-image.txt`,
+including its MIT/public-domain alternatives. Package/source checks verify this
+notice against the corresponding source archive alongside the other licences.
+
+### Dead Or Alive Protection Checks — 2026-10-19
+
+CI runs `sm2-libretro-doa-protection-checks`: exhaustive 317-0229 transform
+fingerprint from the pinned MAME source, table/bit-buffer persistence, invalid
+input bounds, source wrapping and Model 2A/2B register accesses. The optional
+explicit database/ROM arguments produce native boot traces for local comparison;
+CI's default invocation is ROM-free. Genuine older-state ABI tests remain
+separate from the drive-reply unit checks; changing a current image's version
+header alone no longer constructs an older Model 2B layout.

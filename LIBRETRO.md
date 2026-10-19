@@ -1329,3 +1329,59 @@ and Software keep their existing behavior. Changes apply on return to game
 without resetting. Expansion is experimental; individual games can expose
 scenery missing from the original picture. See
 `Docs/WIDESCREEN_MODE_INTEGRATION_2026-10-18.md`.
+
+## Custom Crosshairs And Inactivity — 2026-10-19
+
+Input → **Crosshair Style** now offers Auto, SM2-Emu, Supermodel and Custom.
+The saved `sm2` / `supermodel` values and SM2-Emu default remain compatible.
+Auto uses custom artwork per player when available, falling back to SM2-Emu.
+Custom draws only applicable PNGs; unavailable or invalid artwork is reported
+once for each selected player. **Show Crosshair** still controls visibility,
+including Automatic's native-reticle policy for positional-gun games.
+
+Store user PNGs under `<frontend system directory>/sm2-emu/crosshairs/`.
+Search order for each player is game-player, game, parent-player, parent,
+default-player, default: for example `vcop-p1.png`, `vcop.png`, then the
+corresponding parent names, `default-p1.png` and `default.png`. PNGs may contain
+transparency and must be at most 1024×1024. Like upstream, their dimensions are
+relative to a 1080-line image and scale with the internal raster. Reload content
+after editing files, or return to game with a built-in style before selecting
+Auto/Custom again. Files are cached, with no repeated disk lookup every frame.
+No crosshair artwork is bundled.
+
+**Crosshair Inactivity Timeout** offers Disabled (default), 1–8, 10, 15, 30 or
+60 seconds. With a timeout enabled, unused players' external reticles remain
+hidden; aim movement, firing or another gun action shows the corresponding
+reticle and restarts its timer. The timer uses emulated time, so pausing does
+not consume it and fast-forward advances it with the game. It never changes
+the game's coordinates, firing/reload behavior or built-in reticles. Reset
+clears activity; presentation timers and user PNGs are not Save State payload.
+Software and GPU paths share clipped geometry and PNG alpha composition.
+See [verification and limits](Docs/CROSSHAIR_CUSTOM_AND_TIMEOUT_2026-10-19.md).
+
+## MAME Audio Corrections And Save States — 2026-10-19
+
+The local development core includes SCSP MIDI FIFO/status and byte-access fixes,
+MultiPCM envelope/AM register corrections and an exponential note attack.
+These are chip-emulation corrections, with no new option or change to frontend
+volume/gain conventions. YM3413 external effects are excluded following the
+review of supported hardware. Dead or Alive's real protection is integrated below.
+
+New Save States use format 14. Formats 4–13 remain readable for other games;
+legacy Dead or Alive states are rejected because their uploaded protection
+tables are missing. The frontend container stays 9 MiB; older builds cannot
+read newly created states. Existing
+NVRAM is unchanged. Corrected synthesis can change audio after loading an old
+state. See [scope and verification](Docs/MAME_AUDIO_INTEGRATION_2026-10-19.md).
+
+## Dead Or Alive Protection — 2026-10-19
+
+All five Model 2A/2B revisions use the MAME-derived 317-0229 transformation and
+programmable decompression path. Existing ROMs supply the data and tables;
+NVRAM and input profiles are unchanged. No extra option is required.
+
+Save States created before this integration cannot restore the missing decoder
+tables and are rejected before changing the machine. RetroArch displays:
+“Dead or Alive: this Save State predates the protection update and cannot be
+loaded. Start a new game.” Current states preserve uploads, buffered bits and
+the initial discarded read. See [implementation and evidence](Docs/DOA_PROTECTION_REVIEW_2026-10-19.md).

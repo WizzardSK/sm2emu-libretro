@@ -1318,3 +1318,52 @@ with no pending interval; machine reset clears it. Readers from before this
 feature cannot reproduce a pending interval in a newer state. No new public
 cross-version or cross-platform state guarantee is introduced. See
 `Docs/GEAR_SHIFT_NEUTRAL_TIME_2026-10-18.md` for verification and boundaries.
+
+## Crosshair Artwork And Inactivity — 2026-10-19
+
+The adapter's CrosshairPresentation owns cached user PNGs, per-player activity
+timers and deduplicated missing-artwork notices. It consumes normalized virtual
+gun activity without changing input arbitration, native game coordinates,
+NVRAM or machine timing. Lookup is restricted to the frontend system directory;
+image dimensions are checked before decoding with the existing vendored stb
+library. The machine and frontend-free runner acquire no image/UI dependency.
+
+CrosshairState shares immutable image data so asynchronous Software frames keep
+the correct artwork even after a style switch. All renderers use the same
+integer clipped geometry. Built-in GPU reticles keep their existing clear path;
+custom RGBA geometry uses the existing ImGui alpha-blended overlay pipeline,
+with or without the timing panel. No new per-image GPU resources require
+context-loss recovery. Software blends the same geometry into XRGB8888.
+Existing Save State layouts are unchanged; presentation timers are transient.
+
+## Direct MAME Audio Corrections — 2026-10-19
+
+SCSP MIDI status reads and partial-write merges are non-consuming; the 68000
+bus forwards byte masks. FIFO status/overflow follows MAME b99614c513af. The
+MIOVF flag persists in its native bit within the existing saved register image.
+MultiPCM follows MAME d65391dcfab3 for voice registers 7–10 and 49093cf0feca for
+exponential attack. External YM3413 processing is not part of this integration.
+
+State format 13 distinguishes old selected-AM register 7 from the new attack
+register 7. The old eight-byte per-voice register image remains sufficient:
+AM depth occupies its existing saved byte, while envelope register values are
+reconstructed from the existing Sample fields. Format 4–12 readers remain;
+byte counts and Libretro's fixed 9 MiB image are unchanged. New synthesis may
+change old-state audio continuation where the corrected behavior is exercised.
+See [implementation/evidence](Docs/MAME_AUDIO_INTEGRATION_2026-10-19.md).
+
+## Dead Or Alive 317-0229 — 2026-10-19
+
+The frontend-neutral `Sega3155838Comp` now adapts MAME 6743eb674d07's 317-0229
+transform and programmable prefix decoder. Model 2A/2B supply little-endian
+words from the existing 32 KiB RAM and decode source/table/output registers,
+including partial writes, the discarded first read and read-only register
+RAM overlays. The separate busy flag retains MAME's approximate timing.
+
+Archive format 14 serializes 319 device bytes instead of the previous four.
+The fixed 9 MiB Libretro image is unchanged. Machine loaders specify a minimum
+format of 14 for this protection; other games keep the versioned reader for
+formats 4–13. Legacy DOA images are rejected before mutation. Libretro reports
+that incompatibility through the existing OSD message interface, with the legacy
+message fallback. No fixed-string fallback, new Core Option or NVRAM change is
+introduced. See [scope and evidence](Docs/DOA_PROTECTION_REVIEW_2026-10-19.md).
