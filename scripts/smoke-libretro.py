@@ -101,7 +101,7 @@ def main():
     parser.add_argument('--aspect-ratio', choices=['auto','4_3','16_9'], default='auto')
     parser.add_argument('--expect-aspect', choices=['4:3','16:9'], default='4:3')
     parser.add_argument('--crosshairs', choices=['auto','0','1','2','3'], default='auto')
-    parser.add_argument('--crosshair-style', choices=['sm2','supermodel'], default='sm2')
+    parser.add_argument('--crosshair-style', choices=['sm2','supermodel','auto','custom'], default='sm2')
     parser.add_argument('--automatic-start-gear', choices=['enabled','disabled'], default='enabled')
     parser.add_argument('--core-option', action='append', default=[], metavar='KEY=VALUE',
                         help='Supply an additional Libretro core option')
@@ -380,6 +380,11 @@ def main():
         after = C.create_string_buffer(state_size)
         assert lib.retro_serialize(after, state_size)
         assert after.raw == before.raw
+        foreign_name_size = int.from_bytes(foreign[12:16], 'little')
+        foreign_name = foreign[16:16 + foreign_name_size].decode(errors='replace')
+        if (args.rom.stem in {'doa', 'doab', 'doaa', 'doaab', 'doaae'}
+                and foreign_name == args.rom.stem and int.from_bytes(foreign[8:12], 'little') < 14):
+            assert any('predates the protection update' in notice for notice in statuses), 'Missing DOA legacy-state notification'
     if args.expect_save_state_unavailable:
         state_size = lib.retro_serialize_size()
         state_data = C.create_string_buffer(state_size)

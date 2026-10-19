@@ -33,6 +33,7 @@ required = {
     "SOURCE.json",
     "licenses/BSD-3-Clause.txt",
     "licenses/ImGui.txt",
+    "licenses/stb-image.txt",
     "SHA256SUMS",
     "licenses/LZMA-SDK.txt",
     "licenses/Musashi.txt",
@@ -101,6 +102,7 @@ with tarfile.open(archive) as tar:
     for packaged, original in [('LICENSE','LICENSE'), ('NOTICE','NOTICE'),
             ('sm2_libretro.info','sm2_libretro.info'), ('system/sm2-emu/games.xml','data/games.xml'),
             ('licenses/ImGui.txt','3rdparty/imgui/LICENSE.txt'),
+            ('licenses/stb-image.txt','licenses/stb-image.txt'),
             ('licenses/BSD-3-Clause.txt','licenses/BSD-3-Clause.txt')]:
         assert hashlib.sha256((root/packaged).read_bytes()).hexdigest() == manifest['files'][original], (
             f'Source/package byte mismatch: {packaged} (checkout line endings must match source)'

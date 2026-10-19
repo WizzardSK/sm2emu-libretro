@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause
 // Libretro owns presentation and pacing; the upstream machine owns emulation.
 #include "libretro.h"
+#include "core/archive.h"
 #include "core_options.h"
 #include "gun_flash_state.h"
 #include "crosshair.h"
@@ -118,6 +119,7 @@ struct Content {
     RendererApi renderer_api = RendererApi::Software;
     bool async_frame_ready = false;
     libretro::CrosshairState async_crosshairs{};
+    libretro::CrosshairPresentation crosshair_presentation;
     libretro::TimingOverlayData async_timing_overlay_data{};
     double async_fps = 0;
     unsigned scale = 1;
@@ -510,6 +512,7 @@ void reset_configured_machine(Content& c)
     c.output_dc.reset();
     c.cadence_accumulator = 60.0 - c.native_fps;
     c.input_runtime = {};
+    c.crosshair_presentation.reset_activity();
     c.audio_frame_remainder = 0;
     c.audio_frames_due = 0;
     c.have_previous_run_start = false;
@@ -1001,6 +1004,7 @@ bool retro_load_game(const retro_game_info* game)
             throw std::runtime_error("Invalid ROM set name in database");
         auto next = std::make_unique<Content>();
         next->game = loaded->game;
+        next->crosshair_presentation.configure(next->game, system_path / "crosshairs");
         if (next->game.name == "powsledm")
             message(RETRO_LOG_INFO, "Power Sled Master program: Relay-derived");
         next->power_sled_audio.prepare(database, game->path, next->game.name,
@@ -1281,6 +1285,12 @@ void retro_run()
         }
         const auto status = content->machine->main_cpu_status();
         if (status.faulted) throw std::runtime_error(status.fault_message);
+        const auto crosshairs = content->crosshair_presentation.update(
+            content->game, content->input_runtime, libretro::crosshair_mask(content->game),
+            libretro::crosshair_style(), libretro::crosshair_timeout_seconds(),
+            1.0 / content->native_fps);
+        if (const auto notice = content->crosshair_presentation.take_notice(); !notice.empty())
+            message(RETRO_LOG_WARN, notice.c_str(), true);
         const auto video_start = std::chrono::steady_clock::now();
 #if defined(SM2_LIBRETRO_VULKAN) || defined(SM2_LIBRETRO_OPENGL)
         if (content->renderer_api != RendererApi::Software) {
@@ -1288,9 +1298,7 @@ void retro_run()
 #ifdef SM2_LIBRETRO_VULKAN
                 if (!content->gpu) throw std::runtime_error("Frontend Vulkan context is not ready");
                 content->gpu->render(*content->machine, video_cb,
-                    libretro::crosshair_state(content->game, content->input_runtime,
-                                              libretro::crosshair_mask(content->game),
-                                              libretro::crosshair_style()),
+                    crosshairs,
                     content->timing_overlay_data, content->fps,
                     libretro::texture_filter_quality(), libretro::upscale_2d_mode(),
                     content->wide_columns, wide_background(*content));
@@ -1301,9 +1309,7 @@ void retro_run()
 #ifdef SM2_LIBRETRO_OPENGL
                 if (!content->gl) throw std::runtime_error("Frontend OpenGL context is not ready");
                 content->gl->render(*content->machine, video_cb,
-                    libretro::crosshair_state(content->game, content->input_runtime,
-                                              libretro::crosshair_mask(content->game),
-                                              libretro::crosshair_style()),
+                    crosshairs,
                     content->timing_overlay_data, content->fps,
                     libretro::texture_filter_quality(), libretro::upscale_2d_mode(),
                     content->wide_columns, wide_background(*content));
@@ -1315,10 +1321,6 @@ void retro_run()
 #endif
         {
             content->machine->compose_video();
-            const auto crosshairs = libretro::crosshair_state(
-                content->game, content->input_runtime,
-                libretro::crosshair_mask(content->game),
-                libretro::crosshair_style());
             if (content->async_renderer && !content->machine->render_test_mode()) {
                 content->async_renderer->wait();
                 if (content->async_frame_ready) {
@@ -1419,6 +1421,16 @@ bool retro_unserialize(const void* data, size_t size)
     }
     if (!content || !data || size == 0)
         return false;
+    if (content->game.protection == rom::Protection::Sega315_5838_Doa) {
+        state::Header header;
+        usize offset = 0;
+        if (state::read_header(static_cast<const u8*>(data), size, header, offset)
+            && header.game == content->game.name && header.version < 14) {
+            message(RETRO_LOG_WARN,
+                    "Dead or Alive: this Save State predates the protection update and cannot be loaded. Start a new game.", true);
+            return false;
+        }
+    }
     if (content->game.name == "powsledm") {
         // Retain rejection of development states made with the removed Slave
         // donor. Their program addresses differ; reject before any mutation.
@@ -1469,8 +1481,11 @@ bool retro_unserialize(const void* data, size_t size)
                 input_runtime, cadence_accumulator, audio_frame_remainder,
                 audio_frames_due, flash, output_dc);
         }
-        if (!content->machine->load_state(static_cast<const u8*>(data), size))
+        if (!content->machine->load_state(static_cast<const u8*>(data), size)) {
+            if (content->game.protection == rom::Protection::Sega315_5838_Doa)
+                message(RETRO_LOG_WARN, "Dead or Alive: Save State is incompatible or damaged.", true);
             return false;
+        }
         reset_frontend_after_state_load(*content);
         content->machine->video().set_gun_flash_state(flash);
         content->output_dc = output_dc;

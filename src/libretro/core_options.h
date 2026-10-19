@@ -105,7 +105,7 @@ inline constexpr std::array<LinkedCabinetGame, 32> linked_cabinet_games{{
 }};
 
 inline constexpr std::array<retro_core_option_value, 9> linked_cabinet_values{{
-    {"-1", "Disabled"}, {"2", "2 Cabinets"}, {"3", "3 Cabinets"},
+    {"-1", "1 Cabinet / Disabled"}, {"2", "2 Cabinets"}, {"3", "3 Cabinets"},
     {"4", "4 Cabinets"}, {"5", "5 Cabinets"}, {"6", "6 Cabinets"},
     {"7", "7 Cabinets"}, {"8", "8 Cabinets"}, {"9", "9 Cabinets"},
 }};
@@ -132,7 +132,7 @@ inline std::string_view linked_cabinet_network_family(std::string_view game)
 
 inline constexpr const char* linked_cabinets_help =
     "Select the total number of linked cabinets, including a Relay where supported. "
-    "Disabled disconnects optional communication boards or keeps required boards in local loopback; "
+    "1 Cabinet / Disabled disconnects optional communication boards or keeps required boards in local loopback; "
     "it does not change the selected native role. Supported totals and role combinations depend on the game. "
     "Effective changes reset automatically when returning to the game.";
 
@@ -573,12 +573,27 @@ inline void build_option_definitions()
     retro_core_option_v2_definition crosshair_style{};
     crosshair_style.key = "sm2_crosshair_style";
     crosshair_style.desc = "Crosshair Style";
-    crosshair_style.info = "Select the shape of the external crosshair in lightgun games.";
+    crosshair_style.info = "Select the crosshair shape. Auto uses a custom PNG or SM2-Emu; Custom requires a PNG and reports missing artwork. PNGs: system/sm2-emu/crosshairs/game-p1.png, game-p2.png or game.png; parent and default names are fallbacks. Maximum 1024 x 1024. Reload content after changing PNGs.";
     crosshair_style.category_key = "input";
-    crosshair_style.values[0] = {"sm2", "SM2-Emu"};
-    crosshair_style.values[1] = {"supermodel", "Supermodel"};
+    crosshair_style.values[0] = {"auto", "Auto"};
+    crosshair_style.values[1] = {"sm2", "SM2-Emu"};
+    crosshair_style.values[2] = {"supermodel", "Supermodel"};
+    crosshair_style.values[3] = {"custom", "Custom"};
     crosshair_style.default_value = "sm2";
     registered_definitions.push_back(crosshair_style);
+
+    retro_core_option_v2_definition crosshair_timeout{};
+    crosshair_timeout.key = "sm2_crosshair_timeout";
+    crosshair_timeout.desc = "Crosshair Inactivity Timeout";
+    crosshair_timeout.info = "Hide each player's external crosshair after the selected time without aiming or firing. Movement or a gun action shows it again. Disabled keeps the selected visibility. Has no effect on native game reticles.";
+    crosshair_timeout.category_key = "input";
+    crosshair_timeout.values[0] = {"disabled", "Disabled"};
+    constexpr std::array<const char*, 12> timeout_values{{"1", "2", "3", "4", "5", "6", "7", "8", "10", "15", "30", "60"}};
+    constexpr std::array<const char*, 12> timeout_labels{{"1 Second", "2 Seconds", "3 Seconds", "4 Seconds", "5 Seconds", "6 Seconds", "7 Seconds", "8 Seconds", "10 Seconds", "15 Seconds", "30 Seconds", "60 Seconds"}};
+    for (std::size_t i = 0; i < timeout_values.size(); ++i)
+        crosshair_timeout.values[i + 1] = {timeout_values[i], timeout_labels[i]};
+    crosshair_timeout.default_value = "disabled";
+    registered_definitions.push_back(crosshair_timeout);
 
     {
         retro_core_option_v2_definition mapping{};
@@ -811,10 +826,10 @@ inline void build_option_definitions()
         "sm2_multipcm1_gain", "sm2_multipcm2_gain", "sm2_ym3438_gain",
         "sm2_scsp_output_low_pass_filter",
         "sm2_manxtt_cabinet_audio", "sm2_power_sled_relay_audio_gain"}};
-    constexpr std::array<std::string_view, 22> input_order{{
+    constexpr std::array<std::string_view, 23> input_order{{
         "sm2_controller_profile_type", "sm2_gamepad_rumble",
         "sm2_hide_shot_flash",
-        "sm2_crosshairs", "sm2_crosshair_style", "sm2_gun_input",
+        "sm2_crosshairs", "sm2_crosshair_style", "sm2_crosshair_timeout", "sm2_gun_input",
         "sm2_offscreen_reload_shortcut", "sm2_mouse_edge_offscreen_reload",
         "sm2_four_speed_shifter", "sm2_gear_shift_neutral_time",
         "sm2_automatic_start_gear", "sm2_steering_response",
@@ -943,10 +958,21 @@ inline unsigned crosshair_mask(const rom::GameSpec& game)
 inline CrosshairStyle crosshair_style()
 {
     retro_variable option{"sm2_crosshair_style", nullptr};
-    return option_environment && option_variable(option)
-               && option.value && std::strcmp(option.value, "supermodel") == 0
-           ? CrosshairStyle::Supermodel
-           : CrosshairStyle::Sm2;
+    if (option_environment && option_variable(option) && option.value) {
+        if (std::strcmp(option.value, "supermodel") == 0) return CrosshairStyle::Supermodel;
+        if (std::strcmp(option.value, "auto") == 0) return CrosshairStyle::Auto;
+        if (std::strcmp(option.value, "custom") == 0) return CrosshairStyle::Custom;
+    }
+    return CrosshairStyle::Sm2;
+}
+
+inline unsigned crosshair_timeout_seconds()
+{
+    retro_variable option{"sm2_crosshair_timeout", nullptr};
+    if (option_environment && option_variable(option) && option.value)
+        for (unsigned seconds : {1u, 2u, 3u, 4u, 5u, 6u, 7u, 8u, 10u, 15u, 30u, 60u})
+            if (std::to_string(seconds) == option.value) return seconds;
+    return 0;
 }
 
 inline bool initial_nvram_setup_enabled()

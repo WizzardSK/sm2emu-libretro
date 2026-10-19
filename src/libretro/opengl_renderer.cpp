@@ -180,7 +180,7 @@ struct OpenGlRenderer::Impl {
         present.present(output_width, 384 * scale, static_cast<u32>(target), false);
         const CrosshairGeometry geometry = crosshair_geometry(
             crosshairs, output_width, 384 * scale);
-        if (geometry.count) {
+        if (geometry.count && !geometry.custom) {
             render::gl::Enable(GL_SCISSOR_TEST);
             render::gl::ColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
             for (std::size_t i = 0; i < geometry.count; ++i) {
@@ -195,10 +195,11 @@ struct OpenGlRenderer::Impl {
             }
             render::gl::Disable(GL_SCISSOR_TEST);
         }
-        if (timing.enabled && timing.valid) {
+        if ((timing.enabled && timing.valid) || geometry.custom) {
             ImGui_ImplOpenGL3_NewFrame();
             if (ImDrawData* overlay = build_timing_overlay(
-                    timing, output_width, 384 * scale, frames_per_second))
+                    timing, output_width, 384 * scale, frames_per_second,
+                    geometry.custom ? &geometry : nullptr))
                 ImGui_ImplOpenGL3_RenderDrawData(overlay);
         }
         if (video) video(RETRO_HW_FRAME_BUFFER_VALID, output_width, 384 * scale, 0);

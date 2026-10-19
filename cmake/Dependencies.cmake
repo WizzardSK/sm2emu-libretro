@@ -205,9 +205,9 @@ else()
     )
 endif()
 
-if(SM2_BUILD_STANDALONE)
+if(SM2_BUILD_STANDALONE OR SM2_BUILD_LIBRETRO)
 # ---------------------------------------------------------------------------
-# stb_image — JPEG/PNG decode for the game picker's box art
+# stb_image — JPEG/PNG decode for box art and Libretro custom crosshairs
 # ---------------------------------------------------------------------------
 # A single public-domain header, committed directly like the LZMA SDK sources.
 # Header-only with one implementation macro, so mirror the miniz trick: a tiny
@@ -230,6 +230,9 @@ else()
     target_compile_options(sm2_stb PRIVATE -w)
 endif()
 
+endif() # SM2_BUILD_STANDALONE OR SM2_BUILD_LIBRETRO
+
+if(SM2_BUILD_STANDALONE)
 # ---------------------------------------------------------------------------
 # libcurl — HTTP for the game picker's artwork scraper (soft dependency)
 # ---------------------------------------------------------------------------

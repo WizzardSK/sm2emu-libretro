@@ -5,6 +5,9 @@
 #include <algorithm>
 #include <array>
 #include <cstdio>
+#include <chrono>
+#include <filesystem>
+#include <fstream>
 #include <stdexcept>
 #include <string_view>
 #include <vector>
@@ -2345,5 +2348,73 @@ int main()
     check(selected_positional_crosshair.aims[0].active
               && !selected_positional_crosshair.aims[1].active,
           "Explicit selection enables an external positional-gun crosshair");
+    // User artwork lookup, per-player fallback, transparency and inactivity.
+    const auto artwork_dir = std::filesystem::temp_directory_path()
+        / ("sm2-crosshair-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+    std::filesystem::create_directory(artwork_dir);
+    struct Cleanup {
+        std::filesystem::path path;
+        ~Cleanup() { std::error_code error; std::filesystem::remove_all(path, error); }
+    } cleanup{artwork_dir};
+    constexpr unsigned char png[] = {137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82, 0, 0, 0, 9, 0, 0, 0, 9, 8, 6, 0, 0, 0, 224, 145, 6, 16, 0, 0, 0, 20, 73, 68, 65, 84, 120, 156, 99, 248, 207, 192, 208, 64, 8, 51, 140, 42, 34, 74, 17, 0, 19, 70, 121, 48, 237, 96, 113, 203, 0, 0, 0, 0, 73, 69, 78, 68, 174, 66, 96, 130};
+    const auto write_png = [&](const char* name) {
+        std::ofstream file(artwork_dir / name, std::ios::binary);
+        file.write(reinterpret_cast<const char*>(png), sizeof(png));
+        check(file.good(), "Write synthetic PNG fixture");
+    };
+    auto clone = *vcop;
+    clone.name = "testclone";
+    clone.parent = "vcop";
+    libretro::CrosshairPresentation presentation;
+    presentation.configure(clone, artwork_dir);
+    runtime = {};
+    runtime.gun_aim_active = {true, true};
+    runtime.gun_cursor_x = {124, 371};
+    runtime.gun_cursor_y = {96, 287};
+    auto shown = presentation.update(clone, runtime, 3, libretro::CrosshairStyle::Auto, 0, 0.1);
+    check(!shown.images[0] && !shown.images[1] && shown.aims[0].active,
+          "Auto without artwork retains the SM2-Emu fallback and Disabled timeout");
+    shown = presentation.update(clone, runtime, 3, libretro::CrosshairStyle::Custom, 0, 0.1);
+    check(!shown.images[0] && libretro::crosshair_geometry(shown, 496, 384).count == 0
+          && !presentation.take_notice().empty(), "Forced Custom reports missing PNGs without substituting a reticle");
+    presentation.update(clone, runtime, 3, libretro::CrosshairStyle::Custom, 0, 0.1);
+    check(presentation.take_notice().empty(), "Missing artwork notification does not repeat each frame");
+    write_png("vcop-p1.png");
+    write_png("default-p2.png");
+    // A malformed higher-priority file must not defeat a valid parent fallback.
+    { std::ofstream invalid(artwork_dir / "testclone.png"); invalid << "invalid PNG"; }
+    presentation.configure(clone, artwork_dir);
+    shown = presentation.update(clone, runtime, 3, libretro::CrosshairStyle::Custom, 0, 0.1);
+    check(shown.images[0] && shown.images[1] && presentation.take_notice().empty(),
+          "Custom lookup supports parent/player and default/player PNGs past malformed candidates");
+    check(shown.images[0]->pixels[0] == 0x80ff0000,
+          "PNG decoding preserves colour and partial alpha");
+    std::fill(crosshair_frame.begin(), crosshair_frame.end(), 0x000000ff);
+    libretro::draw_crosshairs(crosshair_frame, 496, 384, shown);
+    check(std::count(crosshair_frame.begin(), crosshair_frame.end(), 0x0080007f) > 0,
+          "Software custom reticle blends PNG alpha over the game");
+    const auto clipped = libretro::crosshair_geometry(shown, 1984, 1536);
+    check(clipped.custom && std::all_of(clipped.rectangles.begin(), clipped.rectangles.end(), [](const auto& r) {
+        return r.x >= 0 && r.y >= 0 && r.x + r.width <= 1984 && r.y + r.height <= 1536;
+    }), "Scaled custom geometry stays within the frame");
+    shown = presentation.update(clone, runtime, 3, libretro::CrosshairStyle::Supermodel, 0, 0.1);
+    check(!shown.images[0] && !shown.images[1], "Explicit built-in style ignores custom PNGs");
+    presentation.reset_activity();
+    shown = presentation.update(clone, runtime, 3, libretro::CrosshairStyle::Sm2, 3, 0.1);
+    check(!shown.aims[0].active && !shown.aims[1].active, "Timeout hides unused players independently");
+    runtime.gun_activity[0] = true;
+    shown = presentation.update(clone, runtime, 3, libretro::CrosshairStyle::Sm2, 3, 0.1);
+    check(shown.aims[0].active && !shown.aims[1].active, "P1 activity does not show P2's idle crosshair");
+    runtime.gun_activity = {};
+    shown = presentation.update(clone, runtime, 3, libretro::CrosshairStyle::Sm2, 3, 2.5);
+    check(shown.aims[0].active, "Crosshair remains visible before timeout");
+    shown = presentation.update(clone, runtime, 3, libretro::CrosshairStyle::Sm2, 3, 0.6);
+    check(!shown.aims[0].active, "Crosshair hides after configured timeout");
+    shown = presentation.update(clone, runtime, 3, libretro::CrosshairStyle::Sm2, 0, 0.1);
+    check(shown.aims[0].active && shown.aims[1].active, "Disabling timeout immediately restores selected visibility");
+    runtime.gun_activity = {true, true};
+    runtime.gun_aim_offscreen[0] = true;
+    shown = presentation.update(clone, runtime, 2, libretro::CrosshairStyle::Sm2, 3, 0.1);
+    check(!shown.aims[0].active && shown.aims[1].active, "Activity never overrides the visibility mask or off-screen state");
     std::puts("Input profile checks passed");
 }

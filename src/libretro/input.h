@@ -95,6 +95,7 @@ struct InputRuntime {
     std::array<s16, 2> gun_lightgun_y{};
     std::array<bool, 2> gun_lightgun_initialized{};
     std::array<bool, 2> gun_aim_active{};
+    std::array<bool, 2> gun_activity{}; // Presentation activity, not serialized game state.
     std::array<bool, 2> gun_aim_offscreen{};
 };
 

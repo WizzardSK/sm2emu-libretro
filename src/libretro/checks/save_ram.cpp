@@ -204,7 +204,8 @@ int main()
            "music level leads the balance, numbered gains and SCSP filter");
     expect(adjacent("sm2_hide_shot_flash", "sm2_crosshairs")
                && adjacent("sm2_crosshairs", "sm2_crosshair_style")
-               && adjacent("sm2_crosshair_style", "sm2_gun_input")
+               && adjacent("sm2_crosshair_style", "sm2_crosshair_timeout")
+               && adjacent("sm2_crosshair_timeout", "sm2_gun_input")
                && adjacent("sm2_gun_input", "sm2_offscreen_reload_shortcut")
                && adjacent("sm2_offscreen_reload_shortcut", "sm2_mouse_edge_offscreen_reload"),
            "lightgun controls retain their approved order");
@@ -347,6 +348,17 @@ int main()
     expect(sfight_automatic && std::string_view(sfight_automatic->default_value) == "off",
            "Sonic the Fighters preserves its native Automatic Off default");
     const auto* crosshairs = find_definition("sm2_crosshairs");
+    const auto* style = find_definition("sm2_crosshair_style");
+    const auto* timeout = find_definition("sm2_crosshair_timeout");
+    expect(style && std::string_view(style->default_value) == "sm2"
+           && std::string_view(style->values[0].value) == "auto"
+           && std::string_view(style->values[3].value) == "custom",
+           "Crosshair styles add Auto/Custom while preserving saved values and the default");
+    expect(timeout && std::string_view(timeout->default_value) == "disabled"
+           && std::string_view(timeout->values[3].value) == "3"
+           && std::string_view(timeout->values[12].value) == "60",
+           "Crosshair inactivity is optional with a configurable 1-60 second timeout");
+
     const auto* mouse_edge_reload =
         find_definition("sm2_mouse_edge_offscreen_reload");
     const auto* linked_cabinets = find_definition("sm2_linked_cabinets_daytona");
@@ -492,7 +504,7 @@ int main()
                && motor_linked_cabinets < nvram_settings
                && std::string_view(linked_cabinets->default_value) == "-1"
                && std::string_view(linked_cabinets->values[0].value) == "-1"
-               && std::string_view(linked_cabinets->values[0].label) == "Disabled"
+               && std::string_view(linked_cabinets->values[0].label) == "1 Cabinet / Disabled"
                && std::string_view(linked_cabinets->values[1].value) == "2"
                && std::string_view(linked_cabinets->values[1].label) == "2 Cabinets"
                && std::string_view(linked_cabinets->values[7].value) == "8"

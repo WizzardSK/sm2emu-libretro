@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: BSD-3-Clause
 #include "timing_overlay.h"
+#include "crosshair.h"
 
 #include <imgui.h>
 
@@ -117,9 +118,10 @@ void timing_overlay_shutdown()
 
 ImDrawData* build_timing_overlay(const TimingOverlayData& data,
                                  unsigned width, unsigned height,
-                                 double frames_per_second)
+                                 double frames_per_second,
+                                 const CrosshairGeometry* crosshairs)
 {
-    if (!initialized || !data.enabled || !data.valid || !width || !height)
+    if (!initialized || (!(data.enabled && data.valid) && !crosshairs) || !width || !height)
         return nullptr;
     ImGuiIO& io = ImGui::GetIO();
     io.DisplaySize = ImVec2(static_cast<float>(width), static_cast<float>(height));
@@ -131,36 +133,47 @@ ImDrawData* build_timing_overlay(const TimingOverlayData& data,
     io.FontGlobalScale = 1.0f;
 
     ImGui::NewFrame();
-    const float font_pixels = static_cast<float>(std::clamp(data.font_pixels, 11u, 14u));
-    ImGui::PushFont(nullptr, font_pixels * layout_scale);
-    ImGui::SetNextWindowPos(
-        ImVec2(kPanelMargin * layout_scale, kPanelMargin * layout_scale),
-        ImGuiCond_Always);
-    ImGui::SetNextWindowBgAlpha(0.55f);
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding,
-                        ImVec2(8.0f * layout_scale, 8.0f * layout_scale));
-    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
-                        ImVec2(8.0f * layout_scale, 4.0f * layout_scale));
-    ImGui::Begin("##timings", nullptr,
-        ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoInputs |
-        ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoMove |
-        ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoBringToFrontOnFocus |
-        ImGuiWindowFlags_AlwaysAutoResize);
+    if (crosshairs) {
+        auto* draw = ImGui::GetBackgroundDrawList();
+        for (const auto& rect : crosshairs->rectangles) {
+            const auto c = rect.colour;
+            draw->AddRectFilled(ImVec2(static_cast<float>(rect.x), static_cast<float>(rect.y)),
+                ImVec2(static_cast<float>(rect.x + rect.width), static_cast<float>(rect.y + rect.height)),
+                IM_COL32((c >> 16) & 255, (c >> 8) & 255, c & 255, c >> 24));
+        }
+    }
+    if (data.enabled && data.valid) {
+        const float font_pixels = static_cast<float>(std::clamp(data.font_pixels, 11u, 14u));
+        ImGui::PushFont(nullptr, font_pixels * layout_scale);
+        ImGui::SetNextWindowPos(
+            ImVec2(kPanelMargin * layout_scale, kPanelMargin * layout_scale),
+            ImGuiCond_Always);
+        ImGui::SetNextWindowBgAlpha(0.55f);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding,
+                            ImVec2(8.0f * layout_scale, 8.0f * layout_scale));
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
+                            ImVec2(8.0f * layout_scale, 4.0f * layout_scale));
+        ImGui::Begin("##timings", nullptr,
+            ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoInputs |
+            ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoMove |
+            ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoBringToFrontOnFocus |
+            ImGuiWindowFlags_AlwaysAutoResize);
 
-    ImGui::Text("SM2 timing (%s)", data.native_timing ? "57.524 Hz" : "60 Hz");
-    ImGui::Separator();
-    ImGui::Text("61-frame averages");
-    coloured_value("Machine", data.machine_ms, 12.0f, 17.0f, "ms");
-    coloured_value("Video", data.video_ms, 12.0f, 17.0f, "ms");
-    coloured_value("Audio/pacing", data.audio_ms, 4.0f, 8.0f, "ms");
-    coloured_value("retro_run", data.run_ms, 16.0f, 20.0f, "ms");
-    coloured_value("Worst", data.worst_ms, 20.0f, 34.0f, "ms");
-    ImGui::Text("Actual      : %5.1f FPS", static_cast<double>(data.actual_fps));
-    ImGui::Text("Engine cap  : %5.1f FPS", static_cast<double>(data.engine_cap_fps));
-    ImGui::Text("Callback cap: %5.1f FPS", static_cast<double>(data.callback_cap_fps));
-    ImGui::End();
-    ImGui::PopStyleVar(2);
-    ImGui::PopFont();
+        ImGui::Text("SM2 timing (%s)", data.native_timing ? "57.524 Hz" : "60 Hz");
+        ImGui::Separator();
+        ImGui::Text("61-frame averages");
+        coloured_value("Machine", data.machine_ms, 12.0f, 17.0f, "ms");
+        coloured_value("Video", data.video_ms, 12.0f, 17.0f, "ms");
+        coloured_value("Audio/pacing", data.audio_ms, 4.0f, 8.0f, "ms");
+        coloured_value("retro_run", data.run_ms, 16.0f, 20.0f, "ms");
+        coloured_value("Worst", data.worst_ms, 20.0f, 34.0f, "ms");
+        ImGui::Text("Actual      : %5.1f FPS", static_cast<double>(data.actual_fps));
+        ImGui::Text("Engine cap  : %5.1f FPS", static_cast<double>(data.engine_cap_fps));
+        ImGui::Text("Callback cap: %5.1f FPS", static_cast<double>(data.callback_cap_fps));
+        ImGui::End();
+        ImGui::PopStyleVar(2);
+        ImGui::PopFont();
+    }
     ImGui::Render();
     return ImGui::GetDrawData();
 }

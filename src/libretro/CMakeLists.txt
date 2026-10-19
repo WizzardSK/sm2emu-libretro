@@ -16,7 +16,7 @@ add_library(sm2_libretro SHARED core.cpp crosshair.cpp input.cpp initial_nvram.c
     ../osd/drive_command.cpp)
 target_include_directories(sm2_libretro PRIVATE include)
 target_link_libraries(sm2_libretro PRIVATE sm2_hw sm2_render sm2_warnings
-    sm2_libretro_imgui)
+    sm2_libretro_imgui sm2_stb)
 set_target_properties(sm2_libretro PROPERTIES PREFIX "" OUTPUT_NAME "sm2_libretro"
     LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/libretro"
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/libretro")
@@ -48,7 +48,7 @@ if(SM2_LIBRETRO_CHECKS)
     add_executable(sm2-libretro-timing-overlay-checks
         checks/timing_overlay.cpp timing_overlay.cpp)
     target_include_directories(sm2-libretro-timing-overlay-checks PRIVATE
-        . "${PROJECT_SOURCE_DIR}/src")
+        . include "${PROJECT_SOURCE_DIR}/src")
     target_link_libraries(sm2-libretro-timing-overlay-checks PRIVATE
         sm2_libretro_imgui sm2_warnings)
     add_executable(sm2-libretro-input-checks checks/input.cpp crosshair.cpp input.cpp)
@@ -56,7 +56,7 @@ if(SM2_LIBRETRO_CHECKS)
         . include "${PROJECT_SOURCE_DIR}/src")
     target_compile_definitions(sm2-libretro-input-checks PRIVATE
         SM2_GAMES_XML_PATH="${PROJECT_SOURCE_DIR}/data/games.xml")
-    target_link_libraries(sm2-libretro-input-checks PRIVATE sm2_rom sm2_warnings)
+    target_link_libraries(sm2-libretro-input-checks PRIVATE sm2_rom sm2_stb sm2_warnings)
     add_executable(sm2-libretro-save-ram-checks checks/save_ram.cpp initial_nvram.cpp
         automatic_network.cpp
         nvram_settings.cpp save_ram.cpp)

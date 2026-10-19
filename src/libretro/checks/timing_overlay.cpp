@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause
 #include "timing_overlay.h"
+#include "crosshair.h"
+#include <imgui.h>
 
 #include <algorithm>
 #include <cstdint>
@@ -35,6 +37,15 @@ int main()
         scaled_frame, scaled_width, scaled_height, data, 57.524160);
     sm2::libretro::draw_timing_overlay_software(
         scaled_frame, scaled_width, scaled_height, data, 57.524160);
+    sm2::libretro::CrosshairGeometry custom{};
+    custom.custom = true;
+    custom.rectangles.push_back({200, 100, 8, 8, 0x80ff0000});
+    custom.count = 1;
+    auto* custom_draw = sm2::libretro::build_timing_overlay({}, width, height, 60, &custom);
+    if (!custom_draw || custom_draw->TotalVtxCount < 4) return 6;
+    const int custom_vertices = custom_draw->TotalVtxCount;
+    auto* combined_draw = sm2::libretro::build_timing_overlay(data, width, height, 60, &custom);
+    if (!combined_draw || combined_draw->TotalVtxCount <= custom_vertices) return 7;
     sm2::libretro::timing_overlay_shutdown();
 
     unsigned min_x = width, min_y = height, max_x = 0, max_y = 0;

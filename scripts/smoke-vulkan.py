@@ -33,6 +33,9 @@ def main():
     p.add_argument('--initial-nvram-setup',choices=['enabled','disabled'],default='enabled')
     p.add_argument('--hide-shot-flash',choices=['disabled','enabled'],default='disabled')
     p.add_argument('--gun-inputs',action='store_true',help='Replay coin, start, aim and lightgun shots')
+    p.add_argument('--crosshairs', choices=['auto','0','1','2','3'])
+    p.add_argument('--crosshair-style', choices=['sm2','supermodel','auto','custom'], default='sm2')
+    p.add_argument('--crosshair-timeout', choices=['disabled','1','2','3','4','5','6','7','8','10','15','30','60'], default='disabled')
     p.add_argument('--scale',type=int,choices=range(1,9),default=1)
     p.add_argument('--texture-filter',choices=['faithful','2','4','8','16'],default='faithful')
     p.add_argument('--upscale-2d',choices=['faithful','xbr','scalefx'],default='faithful')
@@ -54,7 +57,8 @@ def main():
     paths={9:str(a.system.resolve()).encode(),31:str(out/'saves').encode()}
     options={b'sm2_aspect_ratio':a.aspect_ratio.encode(),
              b'sm2_widescreen_mode':a.widescreen_mode.encode(),b'sm2_hide_shot_flash':a.hide_shot_flash.encode(),
-             b'sm2_gun_input':b'analog' if a.gun_inputs else b'hybrid',b'sm2_crosshairs':b'0' if a.gun_inputs else b'auto',
+             b'sm2_gun_input':b'analog' if a.gun_inputs else b'hybrid',b'sm2_crosshairs':a.crosshairs.encode() if a.crosshairs else (b'0' if a.gun_inputs else b'auto'),
+             b'sm2_crosshair_style':a.crosshair_style.encode(),b'sm2_crosshair_timeout':a.crosshair_timeout.encode(),
              b'sm2_renderer':b'vulkan',b'sm2_internal_resolution':str(a.scale).encode(),
              b'sm2_texture_filter':a.texture_filter.encode(),b'sm2_upscale_2d':a.upscale_2d.encode(),
              b'sm2_initial_nvram_setup':a.initial_nvram_setup.encode(),
@@ -170,6 +174,7 @@ def main():
     host.sm2_gpu_stop();core.retro_unload_game()
     shutil.copytree(out/'saves',out/'baseline-nvram')
     report={'hide_shot_flash':a.hide_shot_flash,'gun_inputs':a.gun_inputs,'initial_nvram_setup':a.initial_nvram_setup,'frames':a.frames,'gpu_frames':gpu_frames,'duplicated_frames':duplicates,
+        'crosshairs':a.crosshairs,'crosshair_style':a.crosshair_style,'crosshair_timeout':a.crosshair_timeout,
         'aspect_ratio':a.aspect_ratio,'widescreen_mode':a.widescreen_mode,
         'expected_width':a.expect_width,'widescreen_switch_frame':a.widescreen_switch_frame,'scale':a.scale,'texture_filter':a.texture_filter,'upscale_2d':a.upscale_2d,
         'av_timing':a.av_timing,'timing_overlay':a.timing_overlay,

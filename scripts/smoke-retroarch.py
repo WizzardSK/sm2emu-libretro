@@ -86,6 +86,8 @@ def main():
     p.add_argument('--gamepad-rumble',choices=['enabled','disabled'],default='enabled')
     p.add_argument('--crosshairs',choices=['0','1','2','3'],default='0',
                    help='Crosshair mask: disabled, P1, P2, or both players')
+    p.add_argument('--crosshair-style', choices=['sm2','supermodel','auto','custom'], default='sm2')
+    p.add_argument('--crosshair-timeout', choices=['disabled','1','2','3','4','5','6','7','8','10','15','30','60'], default='disabled')
     p.add_argument('--timeout',type=int,default=180)
     p.add_argument('--max-frames',type=int,default=2300,
                    help='Frontend frame limit; raise for a bounded live-menu inspection')
@@ -293,6 +295,8 @@ def main():
         f'sm2_offscreen_reload_shortcut = "{a.offscreen_reload_shortcut}"\n'
         f'sm2_gamepad_rumble = "{a.gamepad_rumble}"\n'
         f'sm2_crosshairs = "{a.crosshairs}"\n'
+        f'sm2_crosshair_style = "{a.crosshair_style}"\n'
+        f'sm2_crosshair_timeout = "{a.crosshair_timeout}"\n'
         f'sm2_desert_elevation_control = "{a.desert_elevation_control}"\n'
         f'sm2_desert_elevation_speed = "{a.desert_elevation_speed}"\n'
         f'sm2_desert_elevation_axis = "{a.desert_elevation_axis}"\n'
@@ -365,7 +369,7 @@ def main():
             'scsp_output_low_pass_filter':a.scsp_output_low_pass_filter,
             'source_gains':source_gains,
             'aspect_ratio':a.aspect_ratio,
-            'crosshairs':a.crosshairs,'save_ram_size':len(srm),'elapsed_seconds':elapsed,'exit_code':result.returncode,'audio_frames':params.nframes,'audio_rate':params.framerate,
+            'crosshairs':a.crosshairs,'crosshair_style':a.crosshair_style,'crosshair_timeout':a.crosshair_timeout,'save_ram_size':len(srm),'elapsed_seconds':elapsed,'exit_code':result.returncode,'audio_frames':params.nframes,'audio_rate':params.framerate,
             'audio_peak':peak,'audio_sha256':hashlib.sha256(pcm).hexdigest(),
             'screenshot_sha256':hashlib.sha256(png).hexdigest(),
             'note':'Inspect screenshot for gameplay; audible quality and physical devices require manual validation.'}

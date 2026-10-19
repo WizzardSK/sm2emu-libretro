@@ -8,6 +8,8 @@ struct ImDrawData;
 
 namespace sm2::libretro {
 
+struct CrosshairGeometry;
+
 struct TimingOverlayData {
     bool enabled = false;
     bool valid = false;
@@ -29,7 +31,8 @@ void timing_overlay_initialize();
 void timing_overlay_shutdown();
 ImDrawData* build_timing_overlay(const TimingOverlayData& data,
                                  unsigned width, unsigned height,
-                                 double frames_per_second);
+                                 double frames_per_second,
+                                 const CrosshairGeometry* crosshairs = nullptr);
 
 // Software rendering uses the same ImGui draw data as the GPU backends.
 void draw_timing_overlay_software(std::span<std::uint32_t> frame,

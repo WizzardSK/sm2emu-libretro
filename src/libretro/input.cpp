@@ -899,6 +899,7 @@ void poll_input(hw::Inputs& inputs, const rom::GameSpec& game,
     inputs.in0 = inputs.in1 = inputs.in2 = inputs.in3 = inputs.in4 = 0xff;
     inputs.player_starts = 0xff;
     inputs.gun_offscreen = 0;
+    runtime.gun_activity = {};
     const auto profile = recognize_profile(game);
     if (profile == InputProfile::Driving4SpeedVR1Handbrake) inputs.in2 = 0x00;
     if (profile == InputProfile::SpecialSkiSuperG) inputs.in2 = 0x00;
@@ -1027,6 +1028,8 @@ void poll_input(hw::Inputs& inputs, const rom::GameSpec& game,
                         || (allow_analog && (pressed(RETRO_DEVICE_ID_JOYPAD_A)
                                             || pressed(RETRO_DEVICE_ID_JOYPAD_L)))
                         || lg_reload);
+            runtime.gun_activity[p] = (allow_lightgun && (lg_moved || lg_action)) || mouse_x || mouse_y
+                || stick_step(stick_x) || stick_step(stick_y) || shot || secondary;
             const bool offscreen_shot = game.lightgun.present && lg_offscreen && lg_trigger;
             constexpr float mouse_edge = 0.05f;
             const bool mouse_edge_shot = game.lightgun.present

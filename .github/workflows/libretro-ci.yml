@@ -138,6 +138,7 @@ jobs:
           cp source-dist/SOURCE.json dist/
           cp licenses/BSD-3-Clause.txt dist/licenses/BSD-3-Clause.txt
           cp 3rdparty/imgui/LICENSE.txt dist/licenses/ImGui.txt
+          cp licenses/stb-image.txt dist/licenses/stb-image.txt
           cp data/games.xml dist/system/sm2-emu/
           cp CI.md dist/README.md
           cp 3rdparty/musashi/readme.txt dist/licenses/Musashi.txt

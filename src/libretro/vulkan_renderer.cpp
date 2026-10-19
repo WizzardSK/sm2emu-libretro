@@ -274,10 +274,10 @@ struct VulkanRenderer::Impl final : render::vk::PassContext {
         const CrosshairGeometry geometry = crosshair_geometry(
             crosshairs, output_width, 384 * scale);
         ImDrawData* overlay = nullptr;
-        if (timing.enabled && timing.valid) {
+        if ((timing.enabled && timing.valid) || geometry.custom) {
             ImGui_ImplVulkan_NewFrame();
             overlay = build_timing_overlay(timing, output_width, 384 * scale,
-                                           frames_per_second);
+                                           frames_per_second, geometry.custom ? &geometry : nullptr);
         }
         if (geometry.count || overlay) {
             VkRenderingAttachmentInfo colour{};
@@ -293,7 +293,7 @@ struct VulkanRenderer::Impl final : render::vk::PassContext {
             rendering.colorAttachmentCount = 1;
             rendering.pColorAttachments = &colour;
             vkCmdBeginRendering(cmd(), &rendering);
-            for (std::size_t i = 0; i < geometry.count; ++i) {
+            for (std::size_t i = 0; !geometry.custom && i < geometry.count; ++i) {
                 const auto& rect = geometry.rectangles[i];
                 VkClearAttachment crosshair_attachment{};
                 crosshair_attachment.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
