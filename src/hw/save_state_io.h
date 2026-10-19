@@ -47,11 +47,12 @@ using SerializeFn = std::function<void(Archive&)>;
                                         const SerializeFn& serialize);
 
 /// Validate and apply an in-memory SM2STATE image transactionally. A rejected
-/// or truncated image leaves the running machine untouched.
+/// or truncated image leaves the running machine untouched. The board may
+/// require a newer minimum format when old hardware state is incomplete.
 [[nodiscard]] bool load_state_from_buffer(const u8* data, usize size,
                                           const std::string& game, u32 board,
                                           bool in_frame,
-                                          const SerializeFn& serialize);
+                                          const SerializeFn& serialize, u32 minimum_format = 4);
 
 /// Write `serialize`'s payload, behind an SM2STATE header keyed by `game` /
 /// `board`, to `path`. `in_frame` must be false (save only between frames).
@@ -67,7 +68,7 @@ using SerializeFn = std::function<void(Archive&)>;
 /// fix-ups (generation bumps etc.).
 [[nodiscard]] bool load_state_from_file(const std::string& path, const std::string& game,
                                         u32 board, bool in_frame,
-                                        const SerializeFn& serialize);
+                                        const SerializeFn& serialize, u32 minimum_format = 4);
 
 // ---------------------------------------------------------------------------
 // Slots

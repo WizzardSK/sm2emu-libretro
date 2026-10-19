@@ -44,7 +44,7 @@ bool save_state_to_buffer(std::vector<u8>& out, const std::string& game, u32 boa
 }
 
 bool load_state_from_buffer(const u8* data, usize size, const std::string& game,
-                            u32 board, bool in_frame, const SerializeFn& serialize)
+                            u32 board, bool in_frame, const SerializeFn& serialize, u32 minimum_format)
 {
     if (in_frame) {
         SM2_ERROR("load_state called mid-frame; only allowed between frames");
@@ -67,6 +67,12 @@ bool load_state_from_buffer(const u8* data, usize size, const std::string& game,
     }
     if (parsed.board != board) {
         SM2_ERROR("save-state: board mismatch — refused");
+        return false;
+    }
+
+    if (parsed.version < minimum_format) {
+        SM2_ERROR("save-state: '%s' requires format %u or later; legacy hardware state is incomplete",
+                  game.c_str(), minimum_format);
         return false;
     }
 
@@ -122,7 +128,7 @@ bool save_state_to_file(const std::string& path, const std::string& game, u32 bo
 }
 
 bool load_state_from_file(const std::string& path, const std::string& game, u32 board,
-                          bool in_frame, const SerializeFn& serialize)
+                          bool in_frame, const SerializeFn& serialize, u32 minimum_format)
 {
     if (in_frame) {
         SM2_ERROR("load_state called mid-frame; only allowed between frames");
@@ -150,7 +156,7 @@ bool load_state_from_file(const std::string& path, const std::string& game, u32 
     }
 
     if (!load_state_from_buffer(buffer.data(), buffer.size(), game, board,
-                                in_frame, serialize)) {
+                                in_frame, serialize, minimum_format)) {
         return false;
     }
 

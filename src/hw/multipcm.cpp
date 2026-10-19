@@ -146,8 +146,21 @@ void MultiPcm::serialize(Archive& ar)
     ar.raw(m_bank);
     ar.raw(m_cur_slot);
     ar.raw(m_address);
+    if (ar.loading() && ar.format_version() < 13 && m_address == 7) m_address = 10;
     for (Slot& slot : m_slots) {
-        ar.raw(slot.regs);
+        // The old eight-byte register image remains sufficient: envelope
+        // registers 7-9 are losslessly represented by Sample below. Its last
+        // byte continues to store AM depth, now addressed as register 10.
+        std::array<u8, 8> saved_regs{};
+        if (ar.saving()) {
+            std::copy_n(slot.regs.begin(), 7, saved_regs.begin());
+            saved_regs[7] = slot.regs[10];
+        }
+        ar.raw(saved_regs);
+        if (ar.loading()) {
+            std::copy_n(saved_regs.begin(), 7, slot.regs.begin());
+            slot.regs[10] = saved_regs[7];
+        }
         ar.raw(slot.playing);
         ar.raw(slot.sample);
         ar.raw(slot.offset);
@@ -173,6 +186,9 @@ void MultiPcm::serialize(Archive& ar)
     }
     if (ar.loading() && !ar.failed()) {
         for (Slot& slot : m_slots) {
+            slot.regs[7] = (slot.sample.attack_reg << 4) | slot.sample.decay1_reg;
+            slot.regs[8] = (slot.sample.decay_level << 4) | slot.sample.decay2_reg;
+            slot.regs[9] = (slot.sample.key_rate_scale << 4) | slot.sample.release_reg;
             const u32 pitch_step = slot.pitch_lfo.phase_step;
             const u32 amplitude_step = slot.amplitude_lfo.phase_step;
             lfo_compute_step(slot.pitch_lfo, slot.lfo_frequency, slot.vibrato, false);
@@ -240,7 +256,7 @@ void MultiPcm::retrigger_sample(Slot& slot)
 
     envelope_generator_calc(slot);
     slot.envelope.state  = State::Attack;
-    slot.envelope.volume = 0;
+    slot.envelope.volume = (0x3ff - 0x2a0) << kEgShift;
 }
 
 void MultiPcm::update_step(Slot& slot)
@@ -311,7 +327,9 @@ s32 MultiPcm::envelope_generator_update(Slot& slot)
 {
     switch (slot.envelope.state) {
         case State::Attack:
-            slot.envelope.volume += slot.envelope.attack_rate;
+            slot.envelope.volume += static_cast<s32>(
+                (static_cast<s64>((0x817 << (kEgShift - 1)) - slot.envelope.volume)
+                 * slot.envelope.attack_rate) >> 24);
             if (slot.envelope.volume >= (0x3ff << kEgShift)) {
                 slot.envelope.state = State::Decay1;
                 if (slot.envelope.decay1_rate >= (0x400 << kEgShift)) {
@@ -426,7 +444,7 @@ s32 MultiPcm::amplitude_lfo_step(Lfo& lfo) const
 
 void MultiPcm::write_slot(Slot& slot, u32 reg, u8 value)
 {
-    if (reg > 7) {
+    if (reg > 10) {
         return;
     }
     slot.regs[reg] = value;
@@ -441,8 +459,11 @@ void MultiPcm::write_slot(Slot& slot, u32 reg, u8 value)
             // LFO defaults out of its metadata.
             init_sample(slot.sample,
                         static_cast<u32>(slot.regs[1]) | ((slot.regs[2] & 1u) << 8));
+            slot.regs[7] = (slot.sample.attack_reg << 4) | slot.sample.decay1_reg;
+            slot.regs[8] = (slot.sample.decay_level << 4) | slot.sample.decay2_reg;
+            slot.regs[9] = (slot.sample.key_rate_scale << 4) | slot.sample.release_reg;
             write_slot(slot, 6, slot.sample.lfo_vibrato_reg);
-            write_slot(slot, 7, slot.sample.lfo_amp_reg);
+            write_slot(slot, 10, slot.sample.lfo_amp_reg);
             if (slot.playing) {
                 retrigger_sample(slot);
             }
@@ -482,16 +503,27 @@ void MultiPcm::write_slot(Slot& slot, u32 reg, u8 value)
             break;
 
         case 6:  // LFO frequency and pitch depth
-        case 7:  // Amplitude depth
+        case 10:  // Amplitude depth
             slot.lfo_frequency = static_cast<u8>((slot.regs[6] >> 3) & 7);
             slot.vibrato       = static_cast<u8>(slot.regs[6] & 7);
-            slot.tremolo       = static_cast<u8>(slot.regs[7] & 7);
+            slot.tremolo       = static_cast<u8>(slot.regs[10] & 7);
             if (value != 0) {
                 lfo_compute_step(slot.pitch_lfo, slot.lfo_frequency, slot.vibrato, false);
                 lfo_compute_step(slot.amplitude_lfo, slot.lfo_frequency, slot.tremolo, true);
             }
             break;
 
+        case 7:  // Attack / Decay 1
+        case 8:  // Decay level / Decay 2
+        case 9:  // Rate correction / Release
+            slot.sample.attack_reg = slot.regs[7] >> 4;
+            slot.sample.decay1_reg = slot.regs[7] & 0xf;
+            slot.sample.decay_level = slot.regs[8] >> 4;
+            slot.sample.decay2_reg = slot.regs[8] & 0xf;
+            slot.sample.key_rate_scale = slot.regs[9] >> 4;
+            slot.sample.release_reg = slot.regs[9] & 0xf;
+            envelope_generator_calc(slot);
+            break;
         default:
             break;
     }
@@ -511,7 +543,7 @@ void MultiPcm::write(u32 offset, u8 value)
             break;
         }
         case 2:  // Register select
-            m_address = value > 7 ? 7u : value;
+            m_address = value;
             break;
         default:
             break;

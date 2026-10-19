@@ -73,7 +73,9 @@ public:
     [[nodiscard]] u32 sample_rate() const { return m_rate_hz; }
     [[nodiscard]] u32 active_voices() const;
 
-    /// Save/restore the bank and all 28 voices. Each voice's two LFO
+    /// Save/restore the bank and all 28 voices. Envelope registers 7-9 are
+    /// reconstructed from Sample; the old register-image byte 7 stores AM (10).
+    /// Each voice's two LFO
     /// table/scale pointers are EXCLUDED and re-derived on load (from the saved
     /// lfo_frequency/vibrato/tremolo), like the SCSP. The constant tables and
     /// sample-ROM span are excluded. The derived rate fields are re-set at
@@ -131,7 +133,7 @@ private:
     };
 
     struct Slot {
-        std::array<u8, 8> regs{};
+        std::array<u8, 11> regs{};
         bool     playing          = false;
         Sample   sample;
         u32      offset           = 0;

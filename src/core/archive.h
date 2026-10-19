@@ -36,7 +36,7 @@
 namespace sm2 {
 
 namespace state {
-inline constexpr u32 kFormatVersion = 12;
+inline constexpr u32 kFormatVersion = 14;
 }
 
 class Archive {
@@ -137,6 +137,8 @@ inline constexpr char     kMagic[8]      = {'S', 'M', '2', 'S', 'T', 'A', 'T', '
 // board CPU/chips/UART plus its exact-rate output resampler.
 // Version 10 adds the Manx TT Deluxe AMS acknowledgement state on Model 2A.
 // Version 11 adds optional second SCSP hardware, MIDI routing and mixer queue.
+// Version 13 identifies corrected MultiPCM registers and SCSP MIDI overflow.
+// Version 14 stores the real 317-0229 decoder and Model 2 initial-read state.
 
 /// Header fields, in file order. The game name and board are supplied by the
 /// caller so this stays free of the rom layer.
@@ -155,7 +157,7 @@ void write_header(Archive& ar, const Header& header);
 /// when the magic and a supported version match; otherwise logs a reason and returns false.
 /// Game/board matching against the running machine is the caller's job (it
 /// alone knows them) — this only guarantees the file is a well-formed state of
-/// a supported format version (4 through 11).
+/// a supported format version (4 through 14).
 [[nodiscard]] bool read_header(const u8* data, usize size, Header& out,
                                usize& payload_offset);
 

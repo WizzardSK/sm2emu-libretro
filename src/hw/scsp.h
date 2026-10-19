@@ -60,7 +60,8 @@ public:
     // -- register access, from the sound 68000 ------------------------------
     // `offset` is a word index, as MAME's read/write take it.
 
-    [[nodiscard]] u16 read(u32 offset);
+    /// Only a driven MIBUF data lane consumes MIDI; status-only reads do not.
+    [[nodiscard]] u16 read(u32 offset, u16 mem_mask = 0xffff);
     void write(u32 offset, u16 data, u16 mem_mask = 0xffff);
 
     // -- audio --------------------------------------------------------------
@@ -170,9 +171,9 @@ private:
     void UpdateSlotReg(int s, int r);
     void UpdateReg(int reg);
     void UpdateSlotRegR(int slot, int reg);
-    void UpdateRegR(int reg);
+    void UpdateRegR(int reg, u16 mem_mask, bool side_effects);
     void w16(u32 addr, u16 val);
-    u16 r16(u32 addr);
+    u16 r16(u32 addr, u16 mem_mask = 0xffff, bool side_effects = true);
     inline s32 UpdateSlot(SCSP_SLOT *slot);
     void DoMasterSamples(s16 *output, u32 frames);
     void exec_dma();
@@ -244,6 +245,7 @@ private:
     u8 m_MidiOutW, m_MidiOutR;
     u8 m_MidiStack[32];
     u8 m_MidiW, m_MidiR;
+    bool m_midi_in_overflow = false;
     s32 m_EG_TABLE[0x400];
     int m_LPANTABLE[0x10000];
     int m_RPANTABLE[0x10000];

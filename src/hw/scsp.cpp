@@ -244,7 +244,15 @@ void Scsp::reset()
 
 void Scsp::serialize(Archive& ar)
 {
-	ar.bytes(m_udata.datab, sizeof(m_udata.datab));
+    // MIOVF already has a physical status bit in the saved register image.
+    if (ar.saving()) {
+        m_udata.data[0x4/2] = (m_udata.data[0x4/2] & ~0x0400)
+            | (m_midi_in_overflow ? 0x0400 : 0);
+    }
+    ar.bytes(m_udata.datab, sizeof(m_udata.datab));
+    if (ar.loading()) {
+        m_midi_in_overflow = ar.format_version() >= 13 && (m_udata.data[0x4/2] & 0x0400);
+    }
 
 	for (SCSP_SLOT& slot : m_Slots) {
 		// Every field except the two LFO table/scale pointers, which point into
@@ -549,9 +557,13 @@ void Scsp::service_midi_out()
 void Scsp::midi_in(u8 value)
 {
 	// Upstream's rcv_complete, minus the bit assembly.
-	m_MidiStack[m_MidiW++] = value;
-	m_MidiW &= 31;
-	++m_stats.midi_in_bytes;
+    if (((m_MidiW + 1) & 31) == m_MidiR) {
+        m_midi_in_overflow = true;
+    } else {
+        m_MidiStack[m_MidiW++] = value;
+        m_MidiW &= 31;
+    }
+    ++m_stats.midi_in_bytes;
 
 	CheckPendingIRQ();
 }
@@ -702,6 +714,7 @@ void Scsp::init()
 
 	m_IrqTimA = m_IrqTimBC = m_IrqMidi = m_IrqCPU = m_IrqDMA = 0;
 	m_MidiR = m_MidiW = 0;
+    m_midi_in_overflow = false;
 	m_MidiOutR = m_MidiOutW = 0;
 
 	m_DSP.memory = m_memory;
@@ -1040,30 +1053,34 @@ void Scsp::UpdateSlotRegR(int slot,int reg)
 {
 }
 
-void Scsp::UpdateRegR(int reg)
+void Scsp::UpdateRegR(int reg, u16 mem_mask, bool side_effects)
 {
 	switch (reg & 0x3f)
 	{
 		case 4:
 		case 5:
 			{
-				u16 v = m_udata.data[0x4/2];
-				v &= 0xff00;
-				v |= m_MidiStack[m_MidiR];
-				SM2_TRACE("scsp: read %x from MIDI", v);
-				if (m_MidiR != m_MidiW)
-				{
-					++m_MidiR;
-					m_MidiR &= 31;
-				}
-				if (m_MidiR == m_MidiW)     // if the input FIFO is empty, clear the IRQ
-				{
-					irq_cb(m_IrqMidi, false);
-					m_udata.data[0x20 / 2] &= ~8;
-				}
-				m_udata.data[0x4/2] = v;
-			}
-			break;
+                // MAME b99614c: status reads do not consume the input FIFO.
+                u16 v = m_MidiStack[m_MidiR];
+                if (((m_MidiOutW + 1) & 31) == m_MidiOutR) v |= 0x1000;
+                if (m_MidiOutR == m_MidiOutW) v |= 0x0800;
+                if (m_midi_in_overflow) v |= 0x0400;
+                if (((m_MidiW + 1) & 31) == m_MidiR) v |= 0x0200;
+                if (m_MidiR == m_MidiW) v |= 0x0100;
+                m_udata.data[0x4/2] = v;
+                if ((mem_mask & 0x00ff) && side_effects) {
+                    m_midi_in_overflow = false;
+                    if (m_MidiR != m_MidiW) {
+                        ++m_MidiR;
+                        m_MidiR &= 31;
+                    }
+                    if (m_MidiR == m_MidiW) {
+                        irq_cb(m_IrqMidi, false);
+                        m_udata.data[0x20/2] &= ~8;
+                    }
+                }
+            }
+            break;
 		case 8:
 		case 9:
 			{
@@ -1146,7 +1163,7 @@ void Scsp::w16(u32 addr, u16 val)
 	}
 }
 
-u16 Scsp::r16(u32 addr)
+u16 Scsp::r16(u32 addr, u16 mem_mask, bool side_effects)
 {
 	u16 v = 0;
 	addr &= 0xffff;
@@ -1161,7 +1178,7 @@ u16 Scsp::r16(u32 addr)
 	{
 		if (addr < 0x430)
 		{
-			UpdateRegR(addr & 0x3f);
+			UpdateRegR(addr & 0x3f, mem_mask, side_effects);
 			v = *((u16 *) (m_udata.datab + ((addr & 0x3f))));
 		}
 	}
@@ -1691,14 +1708,14 @@ void Scsp::set_slot_gains(const u16 gains[32])
 	m_slot_gain_active = any;
 }
 
-u16 Scsp::read(u32 offset)
+u16 Scsp::read(u32 offset, u16 mem_mask)
 {
-	return r16(offset * 2);
+	return r16(offset * 2, mem_mask);
 }
 
 void Scsp::write(u32 offset, u16 data, u16 mem_mask)
 {
-	u16 tmp = r16(offset * 2);
+	u16 tmp = r16(offset * 2, 0xffff, false);
 	// MAME's COMBINE_DATA.
 	tmp = (tmp & ~mem_mask) | (data & mem_mask);
 	w16(offset * 2, tmp);

@@ -194,7 +194,7 @@ enum class SideFill : u8 {
 
 enum class Protection {
     None,
-    Sega315_5838_Doa,  ///< 315-5838/317-0229 compression chip, DOA hack mode.
+    Sega315_5838_Doa,  ///< 315-5838/317-0229 compression chip, 317-0229 variant.
     Sega315_5881,      ///< 315-5881 stream cipher. Needs `protection_key`.
     DaytonaMaxx,       ///< PIC fitted by the Daytona USA To The MAXX upgrade.
     DaytonaGtx,        ///< GTX 2004 banked protection ROM overlay.

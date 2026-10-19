@@ -52,12 +52,10 @@ void check_machine(rom::Board board)
     check(machine.load_state(saved.data(), saved.size()), "restore drive-board centre");
     check(machine.read8(io + 0x06) == 0xa5, "saved centre and command restored");
 
-    // Version 11 ended after the inputs latch. Its last byte here is the
-    // version-12 centre field, so remove it to exercise the old image shape.
-    saved[8] = 11;
-    saved.pop_back();
-    check(machine.load_state(saved.data(), saved.size()), "load previous state version");
-    check(machine.read8(io + 0x06) == 0x80, "old state gets neutral board centre");
+    // Legacy board loading is covered with genuine pre-change state images
+    // in the ABI campaign. Relabelling a current image as v11 is invalid now
+    // that the v14 protection payload has a different size on Model 2B.
+
 }
 } // namespace
 

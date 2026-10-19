@@ -3,6 +3,7 @@
 #include "core/archive.h"
 #include "hw/model2_sound.h"
 #include "hw/dsb2.h"
+#include "hw/multipcm.h"
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -44,6 +45,41 @@ int main() {
         chip.write(0x780/2,0x1234);chip.write(0x7c0/2,0xdead);
         check(chip.read(0x780/2)==0x1234 && chip.read(0x7c0/2)==0,
               "Unmapped SCSP writes do not overwrite MADRS");
+        chip.reset();
+        check((chip.read(0x404/2, 0xff00) & 0x1900) == 0x0900,
+              "SCSP MIDI empty flags reflect both FIFOs");
+        chip.midi_in(0x12); chip.midi_in(0x34);
+        check((chip.read(0x404/2, 0xff00) & 0xff) == 0x12
+              && (chip.read(0x404/2, 0xff00) & 0xff) == 0x12,
+              "Reading MIDI status does not consume an input byte");
+        chip.write(0x404/2, 0, 0xff00);
+        check((chip.read(0x404/2) & 0xff) == 0x12
+              && (chip.read(0x404/2, 0x00ff) & 0xff) == 0x34,
+              "Register writes do not consume MIDI, data reads consume exactly one byte");
+        check(chip.read(0x404/2, 0xff00) & 0x0100, "MIDI input-empty flag follows draining");
+        chip.reset();
+        for (unsigned i=0; i<31; ++i) chip.midi_in(u8(i));
+        chip.midi_in(0xee);
+        check((chip.read(0x404/2, 0xff00) & 0x0600) == 0x0600,
+              "Full MIDI input FIFO drops a byte and sets overflow");
+        std::vector<u8> full_fifo; Archive fifo_save(full_fifo); chip.serialize(fifo_save);
+        for (unsigned i=0; i<31; ++i)
+            check((chip.read(0x404/2) & 0xff) == i, "FIFO overflow preserves queued MIDI ordering");
+        check(!(chip.read(0x404/2, 0xff00) & 0x0400), "MIBUF read acknowledges overflow");
+        Archive fifo_load(full_fifo.data(),full_fifo.size()); chip.serialize(fifo_load);
+        check(!fifo_load.failed() && (chip.read(0x404/2, 0xff00) & 0x0400),
+              "MIDI overflow and FIFO contents survive Save States");
+        chip.reset();
+        for (unsigned i=0; i<31; ++i) chip.write(0x406/2, u16(i));
+        check((chip.read(0x404/2, 0xff00) & 0x1800) == 0x1000,
+              "MIDI output full/empty flags reflect pending transmission");
+        memory.reset(); memory.midi_in(0x56); memory.midi_in(0x78);
+        const auto high_status = memory.read8(0x100404);
+        check(!(high_status & 1) && memory.read8(0x100405) == 0x56
+              && memory.read8(0x100405) == 0x78,
+              "68000 high-byte status read preserves the low-byte MIDI queue");
+        chip.reset();
+
         std::vector<u8> old,current;
         Archive old_save(old,5);chip.serialize(old_save);
         Archive save(current);chip.serialize(save);
@@ -109,6 +145,59 @@ int main() {
         check(invalid_load.failed(),"Non-finite SCSP filter history is rejected");
 
         // Zero bit allocations make valid, silent MPEG-1 Layer II frames.
+        // Synthetic constant PCM isolates envelope/register effects from sample motion.
+        std::vector<u8> pcm_rom(0x200, 0x40);
+        std::fill_n(pcm_rom.begin(), 12, 0);
+        pcm_rom[1]=1; pcm_rom[5]=0xff; pcm_rom[7]=7<<3;
+        pcm_rom[8]=0xf0; pcm_rom[10]=0xf0;
+        hw::MultiPcm pcm(10'000'000); pcm.attach(pcm_rom); pcm.reset();
+        const auto reg = [&](u8 index, u8 value) { pcm.write(2,index); pcm.write(0,value); };
+        reg(1,0); reg(5,1); reg(3,0x10); reg(4,0x80);
+        std::vector<u8> pcm_state; Archive pcm_save(pcm_state); pcm.serialize(pcm_save);
+        const auto pcm_reload = [&] { Archive a(pcm_state.data(),pcm_state.size()); pcm.serialize(a); check(!a.failed(),"PCM state loads"); };
+        const auto pcm_mix = [&](unsigned n) { std::vector<s32> out(n*2);pcm.generate(out.data(),n,100);return out; };
+        const auto unmodulated = pcm_mix(2048);
+        check(std::any_of(unmodulated.begin(),unmodulated.end(),[](auto v){return v!=0;}), "PCM tone is non-silent");
+        pcm_reload(); reg(0xff,0xff);
+        check(pcm_mix(2048)==unmodulated, "Unknown PCM registers do not alias AM depth");
+        pcm_reload(); reg(9,0xff);
+        check(pcm_mix(2048)==unmodulated, "PCM rate/release register does not become tremolo");
+        pcm_reload(); reg(10,7);
+        check(pcm_mix(2048)!=unmodulated, "PCM register 10 controls amplitude modulation");
+        pcm_reload(); reg(7,0); reg(4,0x80);
+        const auto slow_attack=pcm_mix(2048);
+        check(energy(slow_attack)<energy(unmodulated)/10, "PCM register 7 controls attack rather than AM");
+        pcm_reload(); reg(7,0x52); reg(8,0x47); reg(9,0xf5); reg(10,3); reg(4,0x80);
+        pcm_mix(200);
+        std::vector<u8> rates_state; Archive rates_save(rates_state); pcm.serialize(rates_save);
+        const auto rates_next=pcm_mix(1024);
+        Archive rates_load(rates_state.data(),rates_state.size());pcm.serialize(rates_load);
+        check(!rates_load.failed() && pcm_mix(1024)==rates_next,
+              "PCM envelope registers and LFO restore sample-exact continuation");
+        // The saved envelope parameters recreate registers 7-9 without changing byte count.
+        std::vector<u8> roundtrip; Archive rates_again(roundtrip);pcm.serialize(rates_again);
+        check(roundtrip.size()==pcm_state.size(), "New PCM register handling preserves state payload size");
+        // A version-12 selected register 7 denotes AM; version 13 denotes attack/decay.
+        pcm_reload(); reg(10,0); pcm.write(2,10);
+        std::vector<u8> old_pcm;Archive old_pcm_save(old_pcm,12);pcm.serialize(old_pcm_save);
+        const u32 old_address=7;std::memcpy(old_pcm.data()+8,&old_address,4);
+        Archive old_pcm_load(old_pcm.data(),old_pcm.size(),12);pcm.serialize(old_pcm_load);
+        pcm.write(0,7);
+        const auto legacy_modulated=pcm_mix(2048);
+        pcm_reload();reg(10,7);
+        check(legacy_modulated==pcm_mix(2048), "Legacy selected AM register migrates from 7 to 10");
+
+        // MAME 49093cf: AR=4, KRS=15, constant +64 PCM, centre pan, TL=0.
+        // Golden checkpoints from its fixed-point exponential attack equation.
+        pcm_reload(); reg(7,0x40); reg(4,0x80);
+        const auto attack=pcm_mix(2048);
+        constexpr std::array<unsigned,6> checkpoints{1,31,127,511,1023,2047};
+        constexpr std::array<s32,6> expected_attack{8,8,12,16,24,52};
+        for (unsigned i=0;i<checkpoints.size();++i)
+            check(attack[checkpoints[i]*2]==expected_attack[i]
+                  && attack[checkpoints[i]*2+1]==expected_attack[i],
+                  "PCM attack matches MAME exponential-curve checkpoints");
+
         std::vector<u8> mpeg(576*4,0),program(16,0);
         for(unsigned pos=0;pos<mpeg.size();pos+=576) {
             mpeg[pos]=0xff;mpeg[pos+1]=0xfd;mpeg[pos+2]=0x88;mpeg[pos+3]=0;

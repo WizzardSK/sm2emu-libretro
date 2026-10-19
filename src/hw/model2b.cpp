@@ -108,8 +108,8 @@ constexpr u32 kCryptRam        = 0x01d80000;  // 64 KB, 315-5881 staging buffer
 // it, and Dead or Alive is the only title here that fits one. Addresses from
 // MAME's model2_0229_mem, which both the 2A and 2B variants include.
 constexpr u32 kDoaRam          = 0x01d80000;  // 32 KB of plain RAM
-constexpr u32 kDoaSrcAddr      = 0x01d87ff0;  // sequential read offset
-constexpr u32 kDoaDataW        = 0x01d87ff4;  // unused in hack mode
+constexpr u32 kDoaSrcAddr      = 0x01d87ff0;  // encrypted source word address
+constexpr u32 kDoaDataW        = 0x01d87ff4;  // decoding table mode/data
 constexpr u32 kDoaProtR        = 0x01d87ff8;  // decompressed data
 constexpr u32 kDoaUnk          = 0x01d8400c;  // toggling busy-flag stub
 constexpr u32 kCryptReady      = 0x01d90000;
@@ -435,6 +435,10 @@ bool Model2B::init(const rom::GameSpec& game, rom::RomSet roms)
     m_comm_ram.assign(0x4000, 0);
     m_crypt_ram.assign(0x10000, 0);
     m_doa_ram.assign(0x8000, 0);
+    m_doa_comp.set_read_callback([this](u32 word_address) {
+        const u32 offset = (word_address & 0x3fffu) * 2;
+        return static_cast<u16>(m_doa_ram[offset] | (m_doa_ram[offset + 1] << 8));
+    });
 
     // 315-5881 protection chip setup.
     if (game.protection == rom::Protection::Sega315_5881 && game.protection_key == 0) {
@@ -1116,15 +1120,14 @@ u32 Model2B::register_read(u32 address, u32 width)
     }
 
     if (m_game.protection == rom::Protection::Sega315_5838_Doa) {
+        if (address >= kDoaSrcAddr && address < kDoaProtR) {
+            u32 result = 0;
+            for (unsigned i = 0; i < width; ++i)
+                result |= u32(m_doa_ram[address - kDoaRam + i]) << (i * 8);
+            return result;
+        }
         if (address >= kDoaProtR && address < kDoaProtR + 4) {
-            // doa reads 16 bits at a time; a 32-bit access packs two sequential
-            // 16-bit reads, matching MAME's doa_prot_r.
-            if (width == 4) {
-                const u32 high = m_doa_comp.data_r();
-                const u32 low  = m_doa_comp.data_r();
-                return (high << 16) | low;
-            }
-            return m_doa_comp.data_r();
+            return m_doa_comp.doa_read(address - kDoaProtR, width);
         }
         if (address >= kDoaUnk && address < kDoaUnk + 4) {
             m_doa_unk_toggle = !m_doa_unk_toggle;
@@ -1330,12 +1333,15 @@ void Model2B::register_write(u32 address, u32 value, u32 width)
     }
 
     if (m_game.protection == rom::Protection::Sega315_5838_Doa) {
-        if (address >= kDoaSrcAddr && address < kDoaSrcAddr + 4) {
-            m_doa_comp.srcaddr_w(value);
+        if (address >= kDoaSrcAddr && address < kDoaDataW + 4) {
+            m_doa_comp.doa_write(address - kDoaSrcAddr, value, width);
             return;
         }
-        if (address >= kDoaDataW && address < kDoaDataW + 4) {
-            m_doa_comp.data_w_doa(value);
+        // Read-only status/output registers overlay writable source RAM.
+        if ((address >= kDoaUnk && address < kDoaUnk + 4)
+            || (address >= kDoaProtR && address < kDoaProtR + 4)) {
+            for (unsigned i = 0; i < width && address - kDoaRam + i < m_doa_ram.size(); ++i)
+                m_doa_ram[address - kDoaRam + i] = u8(value >> (i * 8));
             return;
         }
     }
@@ -1825,7 +1831,8 @@ bool Model2B::save_state(std::vector<u8>& out) const
 bool Model2B::load_state(const std::string& path)
 {
     if (!load_state_from_file(path, m_game.name, static_cast<u32>(m_game.board),
-                              m_in_frame, [this](Archive& ar) { serialize(ar); })) {
+                              m_in_frame, [this](Archive& ar) { serialize(ar); },
+                              m_game.protection == rom::Protection::Sega315_5838_Doa ? 14u : 4u)) {
         return false;
     }
     ++m_texture_generation;
@@ -1841,7 +1848,8 @@ bool Model2B::load_state(const u8* data, usize size)
 {
     if (!load_state_from_buffer(data, size, m_game.name,
                                 static_cast<u32>(m_game.board), m_in_frame,
-                                [this](Archive& ar) { serialize(ar); })) {
+                                [this](Archive& ar) { serialize(ar); },
+                              m_game.protection == rom::Protection::Sega315_5838_Doa ? 14u : 4u)) {
         return false;
     }
     ++m_texture_generation;

@@ -6,46 +6,45 @@
 #pragma once
 
 #include "core/types.h"
+#include <array>
+#include <functional>
+#include <utility>
 
-namespace sm2 {
-class Archive;
-}
+namespace sm2 { class Archive; }
 
 namespace sm2::hw {
 
-/// Sega 315-5838/317-0229 compression and encryption chip, DOA hack mode only.
-///
-/// MAME never implemented the real compression/decryption algorithm for Dead
-/// or Alive; its own device hardcodes the one 50-byte string the boot check
-/// reads and returns 0x00 past it (`HACK_MODE_DOA`). This device replicates
-/// exactly that, and nothing else the real chip does for other titles
-/// (Decathlete's cipher, the ST-V compression tree upload, the no-key
-/// pseudo-random mode).
+/// Sega 317-0229 word substitution and programmable prefix decompression.
+/// Adapted from MAME 6743eb674d07. The source callback supplies little-endian
+/// i960 RAM words; the decoder consumes their transformed bits MSB first.
 class Sega3155838Comp {
 public:
     void reset();
-
-    /// Two sequential bytes of the fixed string, packed high/low, matching
-    /// MAME's `data_r()`. Reading past the string's end yields 0x00 forever.
+    void set_read_callback(std::function<u16(u32)> callback) { m_read = std::move(callback); }
+    [[nodiscard]] static u16 decipher(u16 ciphertext);
     [[nodiscard]] u16 data_r();
+    void source_w(u32 data, u32 mask = 0xffffffffu);
+    void table_w(u32 offset, u16 data);
 
-    /// Resets the sequential read offset to `value`, matching `srcaddr_w`.
-    /// MAME's device also resets its internal compression bit-decoder state
-    /// here, which has no equivalent in hack mode.
-    void srcaddr_w(u32 value) { m_srcoffset = value & 0x007fffff; }
-
-    /// Protection input data. Hack mode never reads it back; kept as a named
-    /// no-op, matching `data_w_doa`, so the address decode still names every
-    /// register the real chip has.
-    void data_w_doa(u32 /*value*/) {}
-
-    /// Save/restore the sequential read offset (the only durable state).
+    /// Model 2's output bus discards an initial read after each source write.
+    [[nodiscard]] u32 doa_read(u32 byte_offset, unsigned width);
+    void doa_write(u32 byte_offset, u32 data, unsigned width);
     void serialize(Archive& ar);
 
 private:
-    [[nodiscard]] u8 next_byte();
-
-    u32 m_srcoffset = 0;
+    [[nodiscard]] u8 decompress_byte();
+    std::function<u16(u32)> m_read;
+    std::array<u16, 24> m_tree{};
+    std::array<u8, 256> m_dictionary{};
+    u8 m_tree_words = 0;
+    u16 m_dictionary_bytes = 0;
+    bool m_upload_dictionary = false;
+    u32 m_source = 0;
+    u16 m_word = 0;
+    u8 m_bits = 0;
+    u16 m_output = 0xffff;
+    bool m_abort = false;
+    bool m_dummy = true;
 };
 
-}  // namespace sm2::hw
+} // namespace sm2::hw

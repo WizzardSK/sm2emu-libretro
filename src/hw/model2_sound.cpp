@@ -738,6 +738,15 @@ void Model2Sound::write16(u32 address, u16 value)
 
 u8 Model2Sound::read8(u32 address)
 {
+    // Preserve the byte lane at the SCSP: reading status must not pop MIBUF.
+    const u32 masked = address & kAddressMask;
+    if (masked >= kScspBase && masked < kScspBase + kScspSize) {
+        bus_wait(masked);
+        ++m_counters.scsp_reads;
+        const u16 mask = (masked & 1) ? u16{0x00ff} : u16{0xff00};
+        const u16 word = m_scsp.read((masked - kScspBase) >> 1, mask);
+        return (masked & 1) ? static_cast<u8>(word) : static_cast<u8>(word >> 8);
+    }
     // Byte lane 0 of the word is the high half on a big-endian bus.
     const u16 word = read16(address & ~1u);
     return (address & 1) != 0 ? static_cast<u8>(word) : static_cast<u8>(word >> 8);
