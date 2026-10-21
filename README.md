@@ -28,6 +28,16 @@ The release also provides the complete source archive, including pinned submodul
 ROMs are not included. Use legally obtained sets that match the game definitions
 shipped with the core.
 
+### Libretro Buildbot
+
+The repository includes a [GitLab CI recipe](.gitlab-ci.yml), contributed in
+[PR #2](https://github.com/Zer0one/sm2-emu-libretro/pull/2), for future Libretro
+buildbot distribution. It targets Linux, Windows, Android and macOS; buildbot
+macOS jobs currently provide Software rendering only. GitHub release packages
+retain their existing GPU renderers. Merging the recipe alone does not enable
+Online Updater availability. Preflight builds passed on GitHub runners; the
+actual buildbot environment still needs qualification.
+
 ## Installation
 
 1. Copy `sm2_libretro` to the frontend's core directory.
