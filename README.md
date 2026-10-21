@@ -33,8 +33,8 @@ shipped with the core.
 The repository includes a [GitLab CI recipe](.gitlab-ci.yml), contributed in
 [PR #2](https://github.com/Zer0one/sm2-emu-libretro/pull/2), for future Libretro
 buildbot distribution. It targets Linux, Windows, Android and macOS; buildbot
-macOS jobs currently provide Software rendering only. GitHub release packages
-retain their existing GPU renderers. Merging the recipe alone does not enable
+macOS jobs provide Software and Vulkan rendering (OpenGL needs 4.3, which
+macOS does not have), building glslc from source on the Mac runners. Merging the recipe alone does not enable
 Online Updater availability. Preflight builds passed on GitHub runners; the
 actual buildbot environment still needs qualification.
 

@@ -9,9 +9,11 @@
 # compiled to SPIR-V at build time, and the GL ones are checked with it), none
 # of which the buildbot's xenial/focal images have, so the Linux jobs run on
 # ubuntu:24.04 and pull them in, the way other C++20 cores do. Android takes
-# glslc and the Vulkan headers from the NDK. macOS builds the software
-# renderer only, which needs no glslc: the buildbot's Mac runners are not
-# known to have it, and they cannot be given packages from here.
+# glslc and the Vulkan headers from the NDK. macOS builds the software and
+# Vulkan renderers (MoltenVK in RetroArch; the OpenGL renderer needs 4.3,
+# which macOS does not have). The buildbot's Macs have git, cmake, clang and
+# python3 but no package manager, so glslc is built there from shaderc's
+# source and the Vulkan headers are cloned, both at pinned tags.
 
 # Core definitions
 .core-defs:
@@ -124,21 +126,45 @@ libretro-build-windows-x64:
     - mv $BUILD_DIR/$EXTRA_PATH/$LIBNAME $LIBNAME
     - strip --strip-unneeded $LIBNAME || x86_64-w64-mingw32.static-strip --strip-unneeded $LIBNAME
 
-# macOS: the software renderer only (see the top), with the system's make
-# (no Ninja on those runners) and the deployment target the project's own CI
-# uses, which the C++20 library needs.
+# macOS: the software and Vulkan renderers (see the top), with the system's
+# make (no Ninja on those runners) and the deployment target the project's own
+# CI uses, which the C++20 library needs.
+#
+# glslc is built for the machine the job runs on, not for the slice being
+# built, so it is configured without the template's architecture flags. Only
+# its executable is built: shaderc's tests, examples and the glslang and
+# SPIRV-Tools command-line tools are skipped.
 .core-defs-osx:
   extends: .core-defs
   variables:
+    SHADERC_TAG: v2026.4
+    VULKAN_HEADERS_TAG: vulkan-sdk-1.4.350.1
     CORE_ARGS: >-
       -DSM2_BUILD_STANDALONE=OFF -DSM2_BUILD_TESTS=OFF
-      -DSM2_BUILD_LIBRETRO=ON -DSM2_LIBRETRO_VULKAN=OFF -DSM2_LIBRETRO_OPENGL=OFF
+      -DSM2_BUILD_LIBRETRO=ON -DSM2_LIBRETRO_VULKAN=ON -DSM2_LIBRETRO_OPENGL=OFF
       -DSM2_BUILD_OPENGL_DESKTOP=OFF
+      -DSM2_GLSLC=$CI_PROJECT_DIR/macos-tools/shaderc/build/glslc/glslc
+      -DSM2_VULKAN_INCLUDE_DIR=$CI_PROJECT_DIR/macos-tools/Vulkan-Headers/include
       -DCMAKE_DISABLE_FIND_PACKAGE_miniz=TRUE
       -DCMAKE_DISABLE_FIND_PACKAGE_pugixml=TRUE
       -DCMAKE_DISABLE_FIND_PACKAGE_lzmasdk=TRUE
       -DCMAKE_OSX_DEPLOYMENT_TARGET=13.0
     MACOSX_DEPLOYMENT_TARGET: "13.0"
+  before_script:
+    # Replaces the template's before_script, which sets NUMPROC with nproc, a
+    # coreutils binary these runners do not have.
+    - export NUMPROC=$(($(sysctl -n hw.ncpu)/5)); [ "$NUMPROC" -ge 1 ] || NUMPROC=1
+    - mkdir -p macos-tools
+    - git clone --depth 1 -b "$VULKAN_HEADERS_TAG" https://github.com/KhronosGroup/Vulkan-Headers.git macos-tools/Vulkan-Headers
+    - git clone --depth 1 -b "$SHADERC_TAG" https://github.com/google/shaderc.git macos-tools/shaderc
+    - (cd macos-tools/shaderc && python3 utils/git-sync-deps)
+    - >-
+      ${CMAKE} -S macos-tools/shaderc -B macos-tools/shaderc/build
+      -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES=$(uname -m)
+      -DSHADERC_SKIP_TESTS=ON -DSHADERC_SKIP_EXAMPLES=ON -DSHADERC_SKIP_COPYRIGHT_CHECK=ON
+      -DSPIRV_SKIP_TESTS=ON -DSPIRV_SKIP_EXECUTABLES=ON -DENABLE_GLSLANG_BINARIES=OFF
+    - ${CMAKE} --build macos-tools/shaderc/build --target glslc_exe -- -j $(sysctl -n hw.ncpu)
+    - macos-tools/shaderc/build/glslc/glslc --version
 
 # macOS 64-bit (ARM)
 libretro-build-osx-arm64:
