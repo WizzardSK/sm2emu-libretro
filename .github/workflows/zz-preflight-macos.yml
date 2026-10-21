@@ -1,0 +1,47 @@
+name: buildbot preflight (macOS)
+on: [push, workflow_dispatch]
+jobs:
+  macos:
+    name: macOS ${{ matrix.arch }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {arch: arm64, os: macos-15, extra: '-DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_APPLE_SILICON_PROCESSOR=arm64 -DCMAKE_SYSTEM_PROCESSOR=arm64'}
+          - {arch: x86_64, os: macos-15-intel, extra: ''}
+    runs-on: ${{ matrix.os }}
+    env:
+      MACOSX_DEPLOYMENT_TARGET: "13.0"
+      CMAKE: cmake
+      CI_PROJECT_DIR: ${{ github.workspace }}
+      SHADERC_TAG: v2026.4
+      VULKAN_HEADERS_TAG: vulkan-sdk-1.4.350.1
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+          persist-credentials: false
+      - name: The recipe's before_script and script
+        run: |
+          set -ex
+          if command -v glslc; then echo "a glslc is on PATH; the recipe passes its own"; fi
+          export NUMPROC=$(($(sysctl -n hw.ncpu)/5)); [ "$NUMPROC" -ge 1 ] || NUMPROC=1
+          mkdir -p macos-tools
+          git clone --depth 1 -b "$VULKAN_HEADERS_TAG" https://github.com/KhronosGroup/Vulkan-Headers.git macos-tools/Vulkan-Headers
+          git clone --depth 1 -b "$SHADERC_TAG" https://github.com/google/shaderc.git macos-tools/shaderc
+          (cd macos-tools/shaderc && python3 utils/git-sync-deps)
+          ${CMAKE} -S macos-tools/shaderc -B macos-tools/shaderc/build -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES=$(uname -m) -DSHADERC_SKIP_TESTS=ON -DSHADERC_SKIP_EXAMPLES=ON -DSHADERC_SKIP_COPYRIGHT_CHECK=ON -DSPIRV_SKIP_TESTS=ON -DSPIRV_SKIP_EXECUTABLES=ON -DENABLE_GLSLANG_BINARIES=OFF
+          ${CMAKE} --build macos-tools/shaderc/build --target glslc_exe -- -j $(sysctl -n hw.ncpu)
+          macos-tools/shaderc/build/glslc/glslc --version
+          CORE_ARGS="-DSM2_BUILD_STANDALONE=OFF -DSM2_BUILD_TESTS=OFF -DSM2_BUILD_LIBRETRO=ON -DSM2_LIBRETRO_VULKAN=ON -DSM2_LIBRETRO_OPENGL=OFF -DSM2_BUILD_OPENGL_DESKTOP=OFF -DSM2_GLSLC=$CI_PROJECT_DIR/macos-tools/shaderc/build/glslc/glslc -DSM2_VULKAN_INCLUDE_DIR=$CI_PROJECT_DIR/macos-tools/Vulkan-Headers/include -DCMAKE_DISABLE_FIND_PACKAGE_miniz=TRUE -DCMAKE_DISABLE_FIND_PACKAGE_pugixml=TRUE -DCMAKE_DISABLE_FIND_PACKAGE_lzmasdk=TRUE -DCMAKE_OSX_DEPLOYMENT_TARGET=13.0"
+          ${CMAKE} -DCMAKE_BUILD_TYPE=Release $CORE_ARGS . -Bbuild/osx-${{ matrix.arch }} ${{ matrix.extra }}
+          ${CMAKE} --build build/osx-${{ matrix.arch }} --target sm2_libretro --config Release -- -j $NUMPROC
+          mv build/osx-${{ matrix.arch }}/libretro/sm2_libretro.dylib sm2_libretro.dylib
+          lipo -info sm2_libretro.dylib
+          otool -L sm2_libretro.dylib
+          nm -gU sm2_libretro.dylib | grep -c " _retro_"
+          strings sm2_libretro.dylib | grep -c -i "vulkan" || true
+      - uses: actions/upload-artifact@v7
+        with:
+          name: sm2_libretro-macos-${{ matrix.arch }}
+          path: sm2_libretro.dylib
